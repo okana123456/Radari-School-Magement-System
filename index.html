@@ -570,6 +570,7 @@ on conflict (school_code) do nothing;
 <div id="app"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <script>
 /* ============================================================================
  * CONFIG
@@ -636,6 +637,10 @@ function viewLogin(){
       </form>
       <div class="divider">or</div>
       <button class="btn secondary block" id="toSignup">Create an account</button>
+      <div style="margin-top:1.5rem;padding:1rem;background:var(--green-50);border-radius:var(--radius);font-size:.82rem">
+        <div style="font-weight:600;margin-bottom:.35rem;color:var(--green)">Demo access</div>
+        <div class="muted">Sign up with any email using school code <b>RADARI01</b> and select role <b>Admin</b>. After signing in, go to Settings and click <b>Seed demo data</b> to populate the system.</div>
+      </div>
     </div></div>
   </div>`;
   $('#toSignup').onclick = viewSignup;
@@ -1148,22 +1153,48 @@ modules.attendance = async (m)=>{
 };
 
 /* --- CBC GRADING GRID --- */
+// KNEC 8-point scale for Junior Secondary (Grades 7-9)
+function pctToKnec(pct){
+  const p = +pct;
+  if(isNaN(p)||p<0||p>100) return null;
+  if(p>=90) return {code:'EE',label:'Exceeding Expectation',points:8};
+  if(p>=80) return {code:'ME',label:'Meeting Expectation',points:7};
+  if(p>=70) return {code:'ME',label:'Meeting Expectation',points:6};
+  if(p>=60) return {code:'AE',label:'Approaching Expectation',points:5};
+  if(p>=50) return {code:'AE',label:'Approaching Expectation',points:4};
+  if(p>=40) return {code:'BE',label:'Below Expectation',points:3};
+  if(p>=30) return {code:'BE',label:'Below Expectation',points:2};
+  return {code:'BE',label:'Below Expectation',points:1};
+}
+function isJuniorSecondary(grade){ return ['Grade 7','Grade 8','Grade 9'].includes(grade); }
+
 modules.grading = async (m)=>{
   const sid = state.profile.school_id;
   const { data:strands=[] } = await sb.from('cbc_strands').select('*').eq('school_id',sid).order('subject');
-  m.innerHTML = `<h1>CBC grading</h1>
+  const GRADES = ['PP1','PP2','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6','Grade 7','Grade 8','Grade 9'];
+  m.innerHTML = `<h1>CBC Grading</h1>
     <div class="toolbar">
-      <div class="field"><label>Grade</label><select id="g">${['PP1','PP2','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6','Grade 7','Grade 8','Grade 9'].map(g=>`<option>${g}</option>`).join('')}</select></div>
-      <div class="field"><label>Stream</label><input id="s"></div>
+      <div class="field"><label>Grade</label><select id="g">${GRADES.map(g=>`<option>${g}</option>`).join('')}</select></div>
+      <div class="field"><label>Stream</label><input id="s" placeholder="optional"></div>
       <div class="field"><label>Strand</label>
-        <select id="strand">${strands.length?strands.map(s=>`<option value="${s.id}">${esc(s.subject)} \u2014 ${esc(s.strand)}${s.sub_strand?' / '+esc(s.sub_strand):''}</option>`).join(''):'<option value="">No strands yet \u2014 add one below</option>'}</select>
+        <select id="strand">${strands.length?strands.map(s=>`<option value="${s.id}">${esc(s.subject)} \u2014 ${esc(s.strand)}${s.sub_strand?' / '+esc(s.sub_strand):''}</option>`).join(''):'<option value="">No strands \u2014 add one first</option>'}</select>
       </div>
       <div class="field"><label>Term</label><select id="t"><option>1</option><option>2</option><option>3</option></select></div>
       <div class="field"><label>Year</label><input id="y" type="number" value="${new Date().getFullYear()}"></div>
       <button class="btn secondary" id="load">Load grid</button>
       <button class="btn secondary" id="addStrand">Add strand</button>
     </div>
+    <div id="modeNote" class="small muted" style="margin-bottom:.75rem"></div>
     <div id="grid"></div>`;
+
+  const updateModeNote = ()=>{
+    const g=$('#g').value;
+    $('#modeNote').textContent = isJuniorSecondary(g)
+      ? 'Junior Secondary mode: enter percentage (0\u2013100). The KNEC 8-point equivalent will be shown automatically.'
+      : 'Lower/Upper Primary mode: tap to select EE / ME / AE / BE. Default is ME.';
+  };
+  $('#g').onchange = updateModeNote; updateModeNote();
+
   $('#addStrand').onclick = async ()=>{
     const subject=prompt('Subject?'); if(!subject) return;
     const strand=prompt('Strand?'); if(!strand) return;
@@ -1172,42 +1203,78 @@ modules.grading = async (m)=>{
     const { error } = await sb.from('cbc_strands').insert({ school_id:sid, grade, subject, strand, sub_strand });
     if(error) toast(error.message,true); else { toast('Strand added'); modules.grading(m); }
   };
+
   $('#load').onclick = async ()=>{
     const grade=$('#g').value, stream=$('#s').value, strand_id=$('#strand').value, term=+$('#t').value, year=+$('#y').value;
     if(!strand_id){ toast('Add a strand first',true); return; }
+    const js = isJuniorSecondary(grade);
     let q = sb.from('students').select('id,full_name,admission_number').eq('school_id',sid).eq('grade',grade).order('full_name');
     if(stream) q=q.eq('stream',stream);
     const { data:students=[] } = await q;
     const { data:existing=[] } = await sb.from('assessments').select('student_id,score,remarks').eq('strand_id',strand_id).eq('term',term).eq('year',year);
     const map = Object.fromEntries(existing.map(e=>[e.student_id, e]));
     const grid=$('#grid');
-    grid.innerHTML = `<div class="card">${students.length?`
-      <table class="grading"><thead><tr><th>Learner</th><th style="width:240px">Score</th><th>Remarks</th></tr></thead>
-      <tbody>${students.map(s=>{
-        const cur = map[s.id]?.score || 'ME';
-        return `<tr data-id="${s.id}">
-          <td>${esc(s.full_name)}</td>
-          <td><div class="score-cell">
-            ${['EE','ME','AE','BE'].map(sc=>`<button class="score-btn ${cur===sc?'active':''} ${sc==='BE'?'be':sc==='AE'?'ae':''}" data-sc="${sc}">${sc}</button>`).join('')}
-          </div></td>
-          <td><input class="rmk" value="${esc(map[s.id]?.remarks||'')}"></td>
-        </tr>`;
-      }).join('')}</tbody></table>
-      <div class="small muted" style="margin-top:.5rem">Default score is ME &mdash; only tap to change the exceptions.</div>
-      <div style="margin-top:1rem"><button class="btn primary" id="save">Save all scores</button></div>
-      `:'<div class="empty"><i class="ti ti-clipboard-check"></i><div>No learners in this class.</div></div>'}</div>`;
-    grid.querySelectorAll('.score-btn').forEach(b=>b.onclick=()=>{
-      b.parentNode.querySelectorAll('.score-btn').forEach(x=>x.classList.remove('active'));
-      b.classList.add('active');
-    });
+
+    if(js){
+      // Junior Secondary — percentage input with live KNEC conversion
+      grid.innerHTML = `<div class="card">${students.length?`
+        <table class="grading"><thead><tr><th>Learner</th><th style="width:110px">%</th><th style="width:200px">KNEC equivalent</th><th>Remarks</th></tr></thead>
+        <tbody>${students.map(s=>{
+          const saved = map[s.id];
+          // score field stores raw pct for JS grades
+          const savedPct = saved?.score && !isNaN(+saved.score) ? saved.score : '';
+          const k = savedPct!=='' ? pctToKnec(savedPct) : null;
+          return `<tr data-id="${s.id}">
+            <td>${esc(s.full_name)}</td>
+            <td><input class="pct-input" type="number" min="0" max="100" value="${esc(savedPct)}" placeholder="0\u2013100" style="width:90px;padding:.4rem .5rem;font-size:.9rem"></td>
+            <td class="knec-label" style="font-size:.82rem;color:var(--ink-2)">${k?`<b>${k.code}</b> \u2014 ${k.label} <span class="badge">${k.points} pts</span>`:'\u2014'}</td>
+            <td><input class="rmk" value="${esc(saved?.remarks||'')}" style="font-size:.85rem"></td>
+          </tr>`;
+        }).join('')}</tbody></table>
+        <div class="small muted" style="margin-top:.5rem">Type a percentage and move to the next field to see the KNEC 8-point conversion.</div>
+        <div style="margin-top:1rem"><button class="btn primary" id="save">Save all scores</button></div>
+        `:'<div class="empty"><i class="ti ti-clipboard-check"></i><div>No learners in this class.</div></div>'}</div>`;
+      // live conversion on input
+      grid.querySelectorAll('.pct-input').forEach(inp=>inp.oninput=()=>{
+        const k=pctToKnec(inp.value);
+        const lbl=inp.closest('tr').querySelector('.knec-label');
+        lbl.innerHTML = k?`<b>${k.code}</b> \u2014 ${k.label} <span class="badge">${k.points} pts</span>`:'\u2014';
+      });
+    } else {
+      // Primary — EE/ME/AE/BE buttons
+      grid.innerHTML = `<div class="card">${students.length?`
+        <table class="grading"><thead><tr><th>Learner</th><th style="width:240px">Score</th><th>Remarks</th></tr></thead>
+        <tbody>${students.map(s=>{
+          const cur = map[s.id]?.score || 'ME';
+          return `<tr data-id="${s.id}">
+            <td>${esc(s.full_name)}</td>
+            <td><div class="score-cell">
+              ${['EE','ME','AE','BE'].map(sc=>`<button class="score-btn ${cur===sc?'active':''} ${sc==='BE'?'be':sc==='AE'?'ae':''}" data-sc="${sc}">${sc}</button>`).join('')}
+            </div></td>
+            <td><input class="rmk" value="${esc(map[s.id]?.remarks||'')}"></td>
+          </tr>`;
+        }).join('')}</tbody></table>
+        <div class="small muted" style="margin-top:.5rem">Default is ME \u2014 tap only to change exceptions.</div>
+        <div style="margin-top:1rem"><button class="btn primary" id="save">Save all scores</button></div>
+        `:'<div class="empty"><i class="ti ti-clipboard-check"></i><div>No learners in this class.</div></div>'}</div>`;
+      grid.querySelectorAll('.score-btn').forEach(b=>b.onclick=()=>{
+        b.parentNode.querySelectorAll('.score-btn').forEach(x=>x.classList.remove('active'));
+        b.classList.add('active');
+      });
+    }
+
     if($('#save')) $('#save').onclick = async ()=>{
-      const rows = $$('#grid tbody tr').map(tr=>({
-        student_id: tr.dataset.id,
-        strand_id, term, year,
-        score: tr.querySelector('.score-btn.active')?.dataset.sc || 'ME',
-        remarks: tr.querySelector('.rmk').value || null,
-      }));
-      // delete existing for this strand+term+year+student set, then insert (simple upsert)
+      const rows = $$('#grid tbody tr').map(tr=>{
+        let score, remarks;
+        remarks = tr.querySelector('.rmk')?.value || null;
+        if(js){
+          const pct = tr.querySelector('.pct-input')?.value;
+          score = pct!=='' && pct!==undefined ? String(pct) : null;
+        } else {
+          score = tr.querySelector('.score-btn.active')?.dataset.sc || 'ME';
+        }
+        return { student_id:tr.dataset.id, strand_id, term, year, score, remarks };
+      }).filter(r=>r.score!==null);
       await sb.from('assessments').delete().eq('strand_id',strand_id).eq('term',term).eq('year',year).in('student_id', rows.map(r=>r.student_id));
       const { error } = await sb.from('assessments').insert(rows);
       if(error) toast(error.message,true); else toast('Scores saved');
@@ -1471,34 +1538,155 @@ modules.reports = async (m)=>{
   }
   m.innerHTML = `<h1>Report cards</h1>
     <div class="toolbar">
-      <div class="field"><label>Learner</label><select id="stu">${students.map(s=>`<option value="${s.id}">${esc(s.full_name)} \u2014 ${esc(s.grade||'')}</option>`).join('')}</select></div>
+      <div class="field"><label>Learner</label><select id="stu">${students.map(s=>`<option value="${s.id}" data-grade="${esc(s.grade||'')}">${esc(s.full_name)} \u2014 ${esc(s.grade||'')}</option>`).join('')}</select></div>
       <div class="field"><label>Term</label><select id="t"><option>1</option><option>2</option><option>3</option></select></div>
       <div class="field"><label>Year</label><input id="y" type="number" value="${new Date().getFullYear()}"></div>
       <button class="btn primary" id="gen">Generate</button>
       <button class="btn secondary" id="prn">Print</button>
     </div>
     <div id="rep"></div>`;
+
   $('#gen').onclick = async ()=>{
-    const sidu=$('#stu').value, term=+$('#t').value, year=+$('#y').value;
+    const stuSel=$('#stu'), sidu=stuSel.value, term=+$('#t').value, year=+$('#y').value;
+    const selectedGrade = stuSel.options[stuSel.selectedIndex]?.dataset.grade||'';
+    const isGrade9 = selectedGrade==='Grade 9';
+    const isJS = isJuniorSecondary(selectedGrade);
+
     const [{data:s},{data:a=[]},{data:att=[]}] = await Promise.all([
       sb.from('students').select('*').eq('id',sidu).single(),
       sb.from('assessments').select('score,remarks, cbc_strands(subject,strand,sub_strand)').eq('student_id',sidu).eq('term',term).eq('year',year),
       sb.from('student_attendance').select('status').eq('student_id',sidu),
     ]);
     const attRate = att.length? Math.round(att.filter(x=>x.status==='present').length/att.length*100):null;
-    $('#rep').innerHTML = `<div class="card" id="report">
-      <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1px solid var(--stone);padding-bottom:1rem;margin-bottom:1rem">
-        <div><div class="brand-mark" style="color:var(--green)">${esc(state.school?.name||APP_NAME)}</div>
-          <div class="muted small">${esc(state.school?.county||'')} ${state.school?.sub_county?'\u2014 '+esc(state.school?.sub_county):''}</div></div>
-        <div class="small muted">Term ${esc(term)} \u2014 ${esc(year)}</div>
+
+    // Build subject competency map for radar
+    const subjectMap = {};
+    a.forEach(x=>{
+      const subj = x.cbc_strands?.subject||'Unknown';
+      if(!subjectMap[subj]) subjectMap[subj]=[];
+      const numericScore = isJS && !isNaN(+x.score)
+        ? pctToKnec(+x.score)?.points||0
+        : {EE:4,ME:3,AE:2,BE:1}[x.score]||0;
+      subjectMap[subj].push(numericScore);
+    });
+    const radarLabels = Object.keys(subjectMap);
+    const radarData = radarLabels.map(k=>{
+      const arr=subjectMap[k]; return arr.length?Math.round(arr.reduce((a,b)=>a+b,0)/arr.length*10)/10:0;
+    });
+    const maxScore = isJS ? 8 : 4;
+
+    // Grade 9 transition: pull Grades 7 & 8 historical SBA data
+    let transitionHTML = '';
+    if(isGrade9){
+      const { data:hist=[] } = await sb.from('assessments')
+        .select('score, cbc_strands(subject,grade)')
+        .eq('student_id',sidu);
+      // Group by grade, subject; average scores; apply 20% SBA weight each year
+      const gradeSubj = {};
+      hist.forEach(h=>{
+        const g=h.cbc_strands?.grade||''; const subj=h.cbc_strands?.subject||'';
+        if(!['Grade 7','Grade 8','Grade 9'].includes(g)) return;
+        if(!gradeSubj[g]) gradeSubj[g]={};
+        if(!gradeSubj[g][subj]) gradeSubj[g][subj]=[];
+        const pts = !isNaN(+h.score) ? pctToKnec(+h.score)?.points||0 : {EE:8,ME:6,AE:4,BE:2}[h.score]||0;
+        gradeSubj[g][subj].push(pts);
+      });
+      const weightedRows = [];
+      ['Grade 7','Grade 8','Grade 9'].forEach(g=>{
+        const subjects = gradeSubj[g]||{};
+        Object.keys(subjects).forEach(subj=>{
+          const avg = subjects[subj].reduce((a,b)=>a+b,0)/subjects[subj].length;
+          const weight = g==='Grade 9'?0.6:0.2;
+          weightedRows.push({ grade:g, subject:subj, avg:Math.round(avg*10)/10, contribution:Math.round(avg*weight*10)/10 });
+        });
+      });
+      const totalContrib = weightedRows.reduce((a,r)=>a+r.contribution,0);
+      const projectedPts = weightedRows.length ? Math.round(totalContrib/weightedRows.length*10)/10 : null;
+      const projectedKnec = projectedPts ? (projectedPts>=7?'EE':projectedPts>=5?'ME':projectedPts>=3?'AE':'BE') : '\u2014';
+      transitionHTML = `
+        <div class="card" style="margin-top:1.25rem">
+          <h3>Grade 9 Transition Score (60-20-20 Model)</h3>
+          <p class="muted small">Grade 9 contributes 60%, Grades 7 and 8 each contribute 20% as School-Based Assessment weight.</p>
+          <table><thead><tr><th>Grade</th><th>Subject</th><th>Avg Score (pts)</th><th>Weighted Contribution</th></tr></thead>
+          <tbody>${weightedRows.map(r=>`<tr><td>${esc(r.grade)}</td><td>${esc(r.subject)}</td><td>${r.avg}</td><td>${r.contribution}</td></tr>`).join('')}</tbody></table>
+          <div style="margin-top:1rem;padding:1rem;background:var(--green-50);border-radius:var(--radius);display:flex;gap:2rem;align-items:center">
+            <div><div class="small muted">Projected transition points</div><div style="font-family:'Fraunces',serif;font-size:2.5rem;color:var(--green);line-height:1">${projectedPts??'\u2014'}</div></div>
+            <div><div class="small muted">Projected performance level</div><div style="font-size:1.4rem;font-weight:600;color:var(--green)">${projectedKnec}</div></div>
+          </div>
+        </div>`;
+    }
+
+    $('#rep').innerHTML = `<div id="report">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1px solid var(--stone);padding-bottom:1rem;margin-bottom:1.25rem">
+          <div><div class="brand-mark" style="color:var(--green);font-size:1.5rem">${esc(state.school?.name||APP_NAME)}</div>
+            <div class="muted small">${esc(state.school?.county||'')}${state.school?.sub_county?' \u2014 '+esc(state.school?.sub_county):''}</div></div>
+          <div class="small muted" style="text-align:right">Term ${term} \u2014 ${year}<br>${new Date().toLocaleDateString('en-KE',{day:'numeric',month:'long',year:'numeric'})}</div>
+        </div>
+        <h2 style="margin-bottom:.2rem">${esc(s.full_name)}</h2>
+        <div class="muted small">${esc(s.grade||'')} ${esc(s.stream||'')} &middot; Adm. ${esc(s.admission_number||'')} &middot; ${esc(s.gender||'')}</div>
+
+        <div class="row" style="margin-top:1.5rem;align-items:flex-start">
+          <div class="col">
+            <h3>CBC Competency Scores</h3>
+            ${a.length?`<table><thead><tr><th>Subject</th><th>Strand</th><th>Score</th>${isJS?'<th>Points</th>':''}<th>Remarks</th></tr></thead>
+            <tbody>${a.map(x=>{
+              const k = isJS && !isNaN(+x.score) ? pctToKnec(+x.score) : null;
+              return `<tr>
+                <td>${esc(x.cbc_strands?.subject||'')}</td>
+                <td>${esc(x.cbc_strands?.strand||'')}${x.cbc_strands?.sub_strand?' / '+esc(x.cbc_strands.sub_strand):''}</td>
+                <td><span class="badge ${x.score==='BE'||k?.code==='BE'?'terra':x.score==='AE'||k?.code==='AE'?'amber':''}">${isJS&&k?x.score+'%':esc(x.score)}</span></td>
+                ${isJS?`<td><b>${k?.points??'\u2014'}</b> pts \u2014 ${k?.label??''}</td>`:''}
+                <td class="small muted">${esc(x.remarks||'')}</td>
+              </tr>`;
+            }).join('')}</tbody></table>`
+            :'<div class="muted small">No assessments for this term yet.</div>'}
+          </div>
+          ${radarLabels.length>=3?`
+          <div class="col" style="max-width:280px">
+            <h3>Competency Profile</h3>
+            <canvas id="radarChart" width="260" height="260"></canvas>
+          </div>`:''}
+        </div>
+
+        <div style="margin-top:1.25rem;display:flex;gap:2rem;flex-wrap:wrap">
+          <div><span class="small muted">Attendance rate</span><br><b>${attRate===null?'\u2014':attRate+'%'}</b>${attRate!==null&&attRate<75?` <span class="badge terra">Below threshold</span>`:''}</div>
+        </div>
+        <p class="muted small" style="margin-top:1rem;border-top:1px solid var(--stone);padding-top:.75rem">
+          ${isJS?'EE Exceeding Expectation \u00b7 ME Meeting Expectation \u00b7 AE Approaching Expectation \u00b7 BE Below Expectation \u00b7 Points scale: 1\u20138'
+          :'EE Exceeding \u00b7 ME Meeting \u00b7 AE Approaching \u00b7 BE Below Expectations'}
+        </p>
       </div>
-      <h2 style="margin-bottom:.2rem">${esc(s.full_name)}</h2>
-      <div class="muted">${esc(s.grade||'')} ${esc(s.stream||'')} &middot; Adm. ${esc(s.admission_number||'')}</div>
-      <h3 style="margin-top:1.25rem">CBC competency scores</h3>
-      ${a.length?`<table><thead><tr><th>Subject</th><th>Strand</th><th>Sub-strand</th><th>Score</th><th>Remarks</th></tr></thead><tbody>${a.map(x=>`<tr><td>${esc(x.cbc_strands?.subject||'')}</td><td>${esc(x.cbc_strands?.strand||'')}</td><td>${esc(x.cbc_strands?.sub_strand||'')}</td><td><b>${esc(x.score)}</b></td><td>${esc(x.remarks||'')}</td></tr>`).join('')}</tbody></table>`:'<div class="muted small">No assessments captured for this term yet.</div>'}
-      <p style="margin-top:1.25rem"><b>Attendance rate:</b> ${attRate===null?'\u2014':attRate+'%'}</p>
-      <p class="muted small">EE Exceeding &middot; ME Meeting &middot; AE Approaching &middot; BE Below Expectations</p>
+      ${transitionHTML}
     </div>`;
+
+    // Draw radar chart if we have enough subjects
+    if(radarLabels.length>=3 && window.Chart){
+      const ctx=document.getElementById('radarChart')?.getContext('2d');
+      if(ctx){
+        if(window._radarChart) window._radarChart.destroy();
+        window._radarChart = new Chart(ctx,{
+          type:'radar',
+          data:{
+            labels:radarLabels,
+            datasets:[{
+              label:'Competency',
+              data:radarData,
+              backgroundColor:'rgba(31,68,52,.12)',
+              borderColor:'rgba(31,68,52,.7)',
+              pointBackgroundColor:'rgba(31,68,52,.9)',
+              pointRadius:4,
+              borderWidth:2
+            }]
+          },
+          options:{
+            scales:{r:{min:0,max:maxScore,ticks:{stepSize:1,font:{size:9}},pointLabels:{font:{size:10}}}},
+            plugins:{legend:{display:false}},
+            animation:{duration:400}
+          }
+        });
+      }
+    }
   };
   $('#prn').onclick=()=>window.print();
 };
@@ -1588,6 +1776,7 @@ modules.knec = async (m)=>{
 
 /* --- SETTINGS --- */
 modules.settings = async (m)=>{
+  const isAdmin = ['admin','headteacher'].includes(state.profile.role);
   m.innerHTML = `<h1>Settings</h1>
     <div class="card" style="max-width:560px">
       <h3>Your profile</h3>
@@ -1601,13 +1790,20 @@ modules.settings = async (m)=>{
       <h3>Your school</h3>
       <p class="small muted">${esc(state.school?.name||'No school linked.')}</p>
       ${state.school?`<p class="small">School code: <b>${esc(state.school.school_code)}</b> &mdash; share this with teachers and parents joining your school.</p>`:''}
-    </div>`;
+    </div>
+    ${isAdmin?`<div class="card" style="max-width:560px;border:1px solid var(--amber)">
+      <h3>Demo data</h3>
+      <p class="small muted">Populate this school with sample students, teachers, assessments, attendance, fees, notices, and incidents so you can explore every feature immediately.</p>
+      <p class="small muted">Only run this once. Running it again will create duplicate records.</p>
+      <button class="btn primary" id="seedBtn">Seed demo data now</button>
+    </div>`:''}`;
   $('#p').onsubmit = async (e)=>{
     e.preventDefault();
     const f=Object.fromEntries(new FormData(e.target));
     const { error } = await sb.from('users').update(f).eq('id',state.profile.id);
     if(error) toast(error.message,true); else { toast('Saved'); Object.assign(state.profile, f); }
   };
+  if($('#seedBtn')) $('#seedBtn').onclick = ()=>window.seedDemoData();
 };
 
 /* ============================================================================
@@ -1646,13 +1842,19 @@ async function boot(){
   }
   // initial route from hash
   const h = location.hash.replace('#','');
-  if(h && NAV.find(n=>n.id===h)) state.route = h;
+  if(h && findNavItem(h)) state.route = h;
   viewShell();
+  // register service worker for offline support
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('#').catch(()=>{});
+  }
+  // sync any offline queued scores
+  syncOfflineQueue();
 }
 
 window.addEventListener('hashchange', ()=>{
   const h = location.hash.replace('#','');
-  if(h && NAV.find(n=>n.id===h) && state.profile){ state.route=h; render(); }
+  if(h && findNavItem(h) && state.profile){ state.route=h; render(); }
 });
 
 sb.auth.onAuthStateChange((event)=>{
@@ -1660,7 +1862,167 @@ sb.auth.onAuthStateChange((event)=>{
   if(event==='PASSWORD_RECOVERY'){ viewSetPassword(); }
 });
 
-boot();
+/* ============================================================================
+ * OFFLINE QUEUE — save grading scores locally when offline, sync when back
+ * ==========================================================================*/
+const OFFLINE_KEY = 'radari_offline_queue';
+
+function offlineEnqueue(rows){
+  const q = JSON.parse(localStorage.getItem(OFFLINE_KEY)||'[]');
+  q.push(...rows);
+  localStorage.setItem(OFFLINE_KEY, JSON.stringify(q));
+  toast('No connection. Scores saved locally and will sync when online.');
+}
+
+async function syncOfflineQueue(){
+  const q = JSON.parse(localStorage.getItem(OFFLINE_KEY)||'[]');
+  if(!q.length) return;
+  if(!navigator.onLine) return;
+  const { error } = await sb.from('assessments').upsert(q, { onConflict:'student_id,strand_id,term,year' });
+  if(!error){
+    localStorage.removeItem(OFFLINE_KEY);
+    toast(`Synced ${q.length} offline score(s) to the server.`);
+  }
+}
+window.addEventListener('online', syncOfflineQueue);
+
+/* ============================================================================
+ * DEMO DATA SEEDER
+ * Run seedDemoData() in the browser console to populate the demo school
+ * with sample teachers, students, strands, assessments, attendance, fees,
+ * notices, and incidents so you can see all features working immediately.
+ * ==========================================================================*/
+window.seedDemoData = async function(){
+  toast('Seeding demo data, please wait...');
+  const sid = state.profile?.school_id;
+  if(!sid){ toast('No school linked to your account.',true); return; }
+
+  // Teachers
+  const teachers = [
+    { school_id:sid, full_name:'Jane Wanjiku', tsc_number:'TSC-00123', gender:'F', phone:'0712345678', email:'wanjiku@radari.ke', qualification:'B.Ed (Primary)', specialisation:'Mathematics & Science', date_joined:'2019-01-15', employment_status:'active' },
+    { school_id:sid, full_name:'Peter Otieno', tsc_number:'TSC-00456', gender:'M', phone:'0723456789', email:'otieno@radari.ke', qualification:'Diploma in Education', specialisation:'English & Creative Arts', date_joined:'2021-03-01', employment_status:'active' },
+    { school_id:sid, full_name:'Mary Njeri', tsc_number:'TSC-00789', gender:'F', phone:'0734567890', email:'njeri@radari.ke', qualification:'B.Ed (Junior Secondary)', specialisation:'Integrated Science & Health', date_joined:'2022-08-10', employment_status:'active' },
+  ];
+  const { data:insertedTeachers=[] } = await sb.from('teachers').insert(teachers).select('id,full_name');
+
+  // Students — mix of grades including Grade 7-9
+  const students = [
+    { school_id:sid, full_name:'Amina Khalid', admission_number:'ADM/2024/001', grade:'Grade 4', stream:'A', gender:'F', date_of_birth:'2015-03-12' },
+    { school_id:sid, full_name:'Brian Mwangi', admission_number:'ADM/2024/002', grade:'Grade 4', stream:'A', gender:'M', date_of_birth:'2015-07-22' },
+    { school_id:sid, full_name:'Cynthia Akinyi', admission_number:'ADM/2024/003', grade:'Grade 4', stream:'A', gender:'F', date_of_birth:'2015-01-05' },
+    { school_id:sid, full_name:'David Kamau', admission_number:'ADM/2024/004', grade:'Grade 4', stream:'A', gender:'M', date_of_birth:'2015-09-30' },
+    { school_id:sid, full_name:'Esther Waweru', admission_number:'ADM/2024/005', grade:'Grade 4', stream:'A', gender:'F', date_of_birth:'2015-11-14' },
+    { school_id:sid, full_name:'Felix Ochieng', admission_number:'ADM/2024/006', grade:'Grade 7', stream:'A', gender:'M', date_of_birth:'2012-04-18' },
+    { school_id:sid, full_name:'Grace Mutua', admission_number:'ADM/2024/007', grade:'Grade 7', stream:'A', gender:'F', date_of_birth:'2012-08-25' },
+    { school_id:sid, full_name:'Hassan Abdi', admission_number:'ADM/2024/008', grade:'Grade 9', stream:'A', gender:'M', date_of_birth:'2010-02-10' },
+    { school_id:sid, full_name:'Irene Chebet', admission_number:'ADM/2024/009', grade:'Grade 9', stream:'A', gender:'F', date_of_birth:'2010-06-03' },
+    { school_id:sid, full_name:'James Njoroge', admission_number:'ADM/2024/010', grade:'Grade 9', stream:'A', gender:'M', date_of_birth:'2010-12-19' },
+  ];
+  const { data:insertedStudents=[] } = await sb.from('students').insert(students).select('id,full_name,grade');
+
+  // CBC Strands — primary and junior secondary
+  const strands = [
+    { school_id:sid, grade:'Grade 4', subject:'Mathematics', strand:'Numbers', sub_strand:'Whole Numbers' },
+    { school_id:sid, grade:'Grade 4', subject:'English', strand:'Listening & Speaking', sub_strand:'Oral Communication' },
+    { school_id:sid, grade:'Grade 4', subject:'Science & Technology', strand:'Living Things', sub_strand:'Plants' },
+    { school_id:sid, grade:'Grade 4', subject:'Creative Arts', strand:'Visual Arts', sub_strand:'Drawing' },
+    { school_id:sid, grade:'Grade 4', subject:'Social Studies', strand:'Our Environment', sub_strand:'Physical Features' },
+    { school_id:sid, grade:'Grade 7', subject:'Mathematics', strand:'Numbers', sub_strand:'Integers' },
+    { school_id:sid, grade:'Grade 7', subject:'English', strand:'Reading', sub_strand:'Comprehension' },
+    { school_id:sid, grade:'Grade 7', subject:'Integrated Science', strand:'Cells', sub_strand:'Cell Structure' },
+    { school_id:sid, grade:'Grade 9', subject:'Mathematics', strand:'Algebra', sub_strand:'Linear Equations' },
+    { school_id:sid, grade:'Grade 9', subject:'English', strand:'Writing', sub_strand:'Essay Writing' },
+    { school_id:sid, grade:'Grade 9', subject:'Integrated Science', strand:'Genetics', sub_strand:'Heredity' },
+    { school_id:sid, grade:'Grade 9', subject:'Social Studies', strand:'Governance', sub_strand:'Democracy' },
+  ];
+  const { data:insertedStrands=[] } = await sb.from('cbc_strands').insert(strands).select('id,grade,subject');
+
+  // Assessments — primary uses EE/ME/AE/BE, JS uses percentages
+  const assessRows = [];
+  const g4students = insertedStudents.filter(s=>s.grade==='Grade 4');
+  const g4strands = insertedStrands.filter(s=>s.grade==='Grade 4');
+  const g4scores = ['EE','ME','ME','AE','ME'];
+  g4students.forEach((stu,i)=>{
+    g4strands.forEach(str=>{
+      assessRows.push({ student_id:stu.id, strand_id:str.id, term:1, year:2025, score:g4scores[i%g4scores.length], remarks:'Good effort' });
+    });
+  });
+  const g7students = insertedStudents.filter(s=>s.grade==='Grade 7');
+  const g7strands = insertedStrands.filter(s=>s.grade==='Grade 7');
+  const g7pcts = ['78','65','82'];
+  g7students.forEach((stu,i)=>{
+    g7strands.forEach(str=>{
+      assessRows.push({ student_id:stu.id, strand_id:str.id, term:1, year:2025, score:String(+g7pcts[i%g7pcts.length]+Math.floor(Math.random()*10)), remarks:'' });
+    });
+  });
+  const g9students = insertedStudents.filter(s=>s.grade==='Grade 9');
+  const g9strands = insertedStrands.filter(s=>s.grade==='Grade 9');
+  const g9pcts = ['88','72','91'];
+  g9students.forEach((stu,i)=>{
+    g9strands.forEach(str=>{
+      assessRows.push({ student_id:stu.id, strand_id:str.id, term:1, year:2025, score:String(+g9pcts[i%g9pcts.length]+Math.floor(Math.random()*8)), remarks:'' });
+    });
+  });
+  if(assessRows.length) await sb.from('assessments').insert(assessRows);
+
+  // Attendance — last 14 days for Grade 4 students
+  const attRows = [];
+  for(let d=0;d<14;d++){
+    const dt = new Date(); dt.setDate(dt.getDate()-d);
+    if(dt.getDay()===0||dt.getDay()===6) continue;
+    const dateStr = dt.toISOString().slice(0,10);
+    insertedStudents.forEach(stu=>{
+      const roll = Math.random();
+      attRows.push({ student_id:stu.id, school_id:sid, date:dateStr, status:roll>0.9?'absent':roll>0.85?'late':'present', noted_by:state.profile.id });
+    });
+  }
+  if(attRows.length) await sb.from('student_attendance').upsert(attRows,{onConflict:'student_id,date'});
+
+  // Fee structures & balances
+  const { data:feeStructs=[] } = await sb.from('fee_structures').insert([
+    { school_id:sid, grade:'Grade 4', term:1, year:2025, amount:5500, description:'Tuition fee' },
+    { school_id:sid, grade:'Grade 7', term:1, year:2025, amount:7500, description:'Tuition fee' },
+    { school_id:sid, grade:'Grade 9', term:1, year:2025, amount:8500, description:'Tuition fee' },
+  ]).select('id');
+  const feeRows = insertedStudents.map(stu=>{
+    const paid = Math.random()>0.3 ? (Math.random()>0.5 ? 8500 : 4000) : 0;
+    return { student_id:stu.id, school_id:sid, term:1, year:2025, amount_due:8500, amount_paid:paid };
+  });
+  await sb.from('fee_balances').insert(feeRows);
+
+  // Health records
+  await sb.from('student_health').insert([
+    { student_id:insertedStudents[0]?.id, condition_name:'Asthma', description:'Mild intermittent asthma triggered by dust', severity:'mild', requires_medication:true, medication_notes:'Blue inhaler in school bag', emergency_action:'Allow to use inhaler, rest in a cool area, call parent if no improvement in 10 minutes', diagnosed_by:'Dr. Kariuki, Nairobi Hospital' },
+    { student_id:insertedStudents[5]?.id, condition_name:'Epilepsy', description:'Generalised tonic-clonic seizures, last episode 6 months ago', severity:'severe', requires_medication:true, medication_notes:'Takes Carbamazepine 200mg daily', emergency_action:'Do not restrain. Clear area, protect head, time the seizure, call 999 if over 5 minutes', diagnosed_by:'Dr. Mwenda, Kenyatta National Hospital' },
+  ].filter(r=>r.student_id));
+
+  // Notices
+  await sb.from('notices').insert([
+    { school_id:sid, title:'Term 1 2025 Fee Deadline', body:'Please note that all outstanding Term 1 fees must be cleared by 28th February 2025. Parents with difficulties are encouraged to visit the school office.', audience:'parents', posted_by:state.profile.id },
+    { school_id:sid, title:'Staff Meeting — 17th June', body:'All teachers are reminded of the mandatory staff meeting on Monday 17th June at 4:00pm in the staffroom. Attendance is compulsory.', audience:'teachers', posted_by:state.profile.id },
+    { school_id:sid, title:'Junior Secondary Sports Day', body:'The annual Junior Secondary Sports Day will be held on 28th June 2025. All Grade 7-9 learners should report in sports attire.', audience:'all', posted_by:state.profile.id },
+  ]);
+
+  // Incidents
+  await sb.from('incidents').insert([
+    { student_id:insertedStudents[1]?.id, school_id:sid, reported_by:state.profile.id, incident_type:'discipline', description:'Disruptive behaviour during Mathematics lesson', action_taken:'Counseled by class teacher. Parent informed via phone.', incident_date:'2025-06-10' },
+    { student_id:insertedStudents[2]?.id, school_id:sid, reported_by:state.profile.id, incident_type:'commendation', description:'Represented school at county spelling bee and finished 2nd place', action_taken:'Certificate awarded at assembly', incident_date:'2025-06-05' },
+  ].filter(r=>r.student_id));
+
+  // Timetable
+  if(insertedTeachers.length){
+    const slots = [
+      { school_id:sid, teacher_id:insertedTeachers[0].id, grade:'Grade 4', stream:'A', subject:'Mathematics', day_of_week:'Mon', start_time:'08:00', end_time:'09:00' },
+      { school_id:sid, teacher_id:insertedTeachers[1].id, grade:'Grade 4', stream:'A', subject:'English', day_of_week:'Mon', start_time:'09:00', end_time:'10:00' },
+      { school_id:sid, teacher_id:insertedTeachers[2].id, grade:'Grade 7', stream:'A', subject:'Integrated Science', day_of_week:'Tue', start_time:'08:00', end_time:'09:00' },
+      { school_id:sid, teacher_id:insertedTeachers[0].id, grade:'Grade 9', stream:'A', subject:'Mathematics', day_of_week:'Wed', start_time:'10:00', end_time:'11:00' },
+    ];
+    await sb.from('timetables').insert(slots);
+  }
+
+  toast('Demo data seeded successfully. Reload the page to see everything.');
+  setTimeout(()=>navigate('dashboard'),2000);
+};
 </script>
 </body>
 </html>
