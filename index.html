@@ -1828,7 +1828,6 @@ async function loadProfile(){
 }
 
 async function boot(){
-  // password recovery flow lands here with type=recovery in the hash
   if(location.hash.includes('type=recovery') || location.hash==='#reset'){
     viewSetPassword(); return;
   }
@@ -1840,16 +1839,9 @@ async function boot(){
     const { data:school } = await sb.from('schools').select('*').eq('id',state.profile.school_id).maybeSingle();
     state.school = school;
   }
-  // initial route from hash
   const h = location.hash.replace('#','');
   if(h && findNavItem(h)) state.route = h;
   viewShell();
-  // register service worker for offline support
-  if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('#').catch(()=>{});
-  }
-  // sync any offline queued scores
-  syncOfflineQueue();
 }
 
 window.addEventListener('hashchange', ()=>{
@@ -2023,6 +2015,8 @@ window.seedDemoData = async function(){
   toast('Demo data seeded successfully. Reload the page to see everything.');
   setTimeout(()=>navigate('dashboard'),2000);
 };
+
+boot();
 </script>
 </body>
 </html>
