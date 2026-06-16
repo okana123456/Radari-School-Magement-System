@@ -1,0 +1,1581 @@
+<!doctype html>
+<!--
+================================================================================
+RADARI — CBC School Management System
+Single-file HTML + Supabase application for Kenyan primary & junior secondary.
+================================================================================
+
+SUPABASE SETUP — Run the following SQL ONCE in the Supabase SQL editor.
+After running, go to:
+  Authentication > URL Configuration  -> set Site URL to your deployed URL
+                                         and add it to Redirect URLs.
+  Authentication > Email Templates    -> customise the Confirm signup,
+                                         Magic link, and Reset password
+                                         templates to mention "Radari".
+
+--------------------------------------------------------------------------------
+-- SCHEMA
+--------------------------------------------------------------------------------
+-- enums
+do $$ begin
+  create type app_role as enum ('admin','headteacher','teacher','parent');
+exception when duplicate_object then null; end $$;
+
+create table if not exists public.schools (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  knec_code text unique,
+  county text, sub_county text, type text,
+  phone text, email text, logo_url text,
+  school_code text unique not null default substr(md5(random()::text),1,8),
+  created_at timestamptz default now()
+);
+
+create table if not exists public.users (
+  id uuid primary key references auth.users(id) on delete cascade,
+  school_id uuid references public.schools(id) on delete set null,
+  full_name text, email text, phone text,
+  role app_role not null default 'parent',
+  created_at timestamptz default now()
+);
+
+create table if not exists public.students (
+  id uuid primary key default gen_random_uuid(),
+  school_id uuid references public.schools(id) on delete cascade,
+  full_name text not null,
+  date_of_birth date, gender text,
+  admission_number text, grade text, stream text,
+  photo_url text,
+  parent_id uuid references public.users(id) on delete set null,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.student_health (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid references public.students(id) on delete cascade,
+  condition_name text, description text,
+  severity text check (severity in ('mild','moderate','severe')),
+  requires_medication boolean default false,
+  medication_notes text, emergency_action text, diagnosed_by text,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.student_attendance (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid references public.students(id) on delete cascade,
+  school_id uuid references public.schools(id) on delete cascade,
+  date date not null,
+  status text check (status in ('present','absent','late','excused')),
+  noted_by uuid references public.users(id),
+  created_at timestamptz default now(),
+  unique(student_id, date)
+);
+
+create table if not exists public.teachers (
+  id uuid primary key default gen_random_uuid(),
+  school_id uuid references public.schools(id) on delete cascade,
+  user_id uuid references public.users(id) on delete set null,
+  tsc_number text, full_name text, gender text,
+  phone text, email text, date_of_birth date, date_joined date,
+  qualification text, specialisation text,
+  employment_status text default 'active',
+  created_at timestamptz default now()
+);
+
+create table if not exists public.teacher_history (
+  id uuid primary key default gen_random_uuid(),
+  teacher_id uuid references public.teachers(id) on delete cascade,
+  school_id uuid references public.schools(id) on delete cascade,
+  event_type text, description text, event_date date,
+  recorded_by uuid references public.users(id),
+  created_at timestamptz default now()
+);
+
+create table if not exists public.teacher_cpd (
+  id uuid primary key default gen_random_uuid(),
+  teacher_id uuid references public.teachers(id) on delete cascade,
+  training_name text, provider text, date_attended date, certificate_url text,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.cbc_strands (
+  id uuid primary key default gen_random_uuid(),
+  school_id uuid references public.schools(id) on delete cascade,
+  grade text, subject text, strand text, sub_strand text,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.assessments (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid references public.students(id) on delete cascade,
+  teacher_id uuid references public.teachers(id),
+  strand_id uuid references public.cbc_strands(id) on delete cascade,
+  term int, year int,
+  score text check (score in ('EE','ME','AE','BE')),
+  remarks text,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.fee_structures (
+  id uuid primary key default gen_random_uuid(),
+  school_id uuid references public.schools(id) on delete cascade,
+  grade text, term int, year int, amount numeric, description text,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.fee_balances (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid references public.students(id) on delete cascade,
+  school_id uuid references public.schools(id) on delete cascade,
+  term int, year int,
+  amount_due numeric default 0, amount_paid numeric default 0,
+  balance numeric generated always as (amount_due - amount_paid) stored,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.mpesa_payments (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid references public.students(id) on delete cascade,
+  school_id uuid references public.schools(id) on delete cascade,
+  mpesa_ref text, amount numeric, phone_number text,
+  payment_date timestamptz default now(),
+  status text,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.timetables (
+  id uuid primary key default gen_random_uuid(),
+  school_id uuid references public.schools(id) on delete cascade,
+  teacher_id uuid references public.teachers(id),
+  grade text, stream text, subject text,
+  day_of_week text, start_time time, end_time time,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.lesson_plans (
+  id uuid primary key default gen_random_uuid(),
+  teacher_id uuid references public.teachers(id) on delete cascade,
+  strand_id uuid references public.cbc_strands(id),
+  grade text, term int, week_number int,
+  planned_topic text, delivered_topic text,
+  delivery_date date,
+  status text check (status in ('planned','delivered','skipped')) default 'planned',
+  created_at timestamptz default now()
+);
+
+create table if not exists public.assignments (
+  id uuid primary key default gen_random_uuid(),
+  teacher_id uuid references public.teachers(id) on delete cascade,
+  grade text, stream text, strand_id uuid references public.cbc_strands(id),
+  title text, description text, due_date date,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.assignment_submissions (
+  id uuid primary key default gen_random_uuid(),
+  assignment_id uuid references public.assignments(id) on delete cascade,
+  student_id uuid references public.students(id) on delete cascade,
+  status text check (status in ('pending','submitted','marked')) default 'pending',
+  marks_awarded text, feedback text,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.incidents (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid references public.students(id) on delete cascade,
+  school_id uuid references public.schools(id) on delete cascade,
+  reported_by uuid references public.users(id),
+  incident_type text check (incident_type in ('discipline','counseling','commendation','medical')),
+  description text, action_taken text, incident_date date,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.notices (
+  id uuid primary key default gen_random_uuid(),
+  school_id uuid references public.schools(id) on delete cascade,
+  title text, body text,
+  audience text check (audience in ('all','teachers','parents')) default 'all',
+  posted_by uuid references public.users(id),
+  created_at timestamptz default now()
+);
+
+create table if not exists public.leave_requests (
+  id uuid primary key default gen_random_uuid(),
+  teacher_id uuid references public.teachers(id) on delete cascade,
+  school_id uuid references public.schools(id) on delete cascade,
+  start_date date, end_date date, reason text,
+  status text check (status in ('pending','approved','rejected')) default 'pending',
+  approved_by uuid references public.users(id),
+  created_at timestamptz default now()
+);
+
+create table if not exists public.substitutions (
+  id uuid primary key default gen_random_uuid(),
+  leave_id uuid references public.leave_requests(id) on delete cascade,
+  timetable_id uuid references public.timetables(id) on delete cascade,
+  substitute_teacher_id uuid references public.teachers(id),
+  date date,
+  created_at timestamptz default now()
+);
+
+--------------------------------------------------------------------------------
+-- GRANTS (required so the Data API can reach the tables)
+--------------------------------------------------------------------------------
+grant usage on schema public to anon, authenticated;
+grant select on public.schools to anon, authenticated;
+grant all on public.users, public.students, public.student_health,
+              public.student_attendance, public.teachers, public.teacher_history,
+              public.teacher_cpd, public.cbc_strands, public.assessments,
+              public.fee_structures, public.fee_balances, public.mpesa_payments,
+              public.timetables, public.lesson_plans, public.assignments,
+              public.assignment_submissions, public.incidents, public.notices,
+              public.leave_requests, public.substitutions
+  to authenticated;
+
+--------------------------------------------------------------------------------
+-- RLS — security definer helpers to avoid recursion
+--------------------------------------------------------------------------------
+create or replace function public.current_school_id() returns uuid
+language sql stable security definer set search_path = public as $$
+  select school_id from public.users where id = auth.uid()
+$$;
+
+create or replace function public.current_role() returns app_role
+language sql stable security definer set search_path = public as $$
+  select role from public.users where id = auth.uid()
+$$;
+
+create or replace function public.has_role(_role app_role) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists(select 1 from public.users where id = auth.uid() and role = _role)
+$$;
+
+-- Enable RLS
+do $$ declare t text; begin
+  for t in select unnest(array['schools','users','students','student_health','student_attendance',
+    'teachers','teacher_history','teacher_cpd','cbc_strands','assessments','fee_structures',
+    'fee_balances','mpesa_payments','timetables','lesson_plans','assignments',
+    'assignment_submissions','incidents','notices','leave_requests','substitutions'])
+  loop
+    execute format('alter table public.%I enable row level security;', t);
+  end loop;
+end $$;
+
+-- schools: anyone can read schools (needed for join-by-school-code at signup);
+-- only admins update their own school.
+drop policy if exists schools_read on public.schools;
+create policy schools_read on public.schools for select to anon, authenticated using (true);
+drop policy if exists schools_write on public.schools;
+create policy schools_write on public.schools for all to authenticated
+  using (id = public.current_school_id() and public.current_role() in ('admin','headteacher'))
+  with check (id = public.current_school_id() and public.current_role() in ('admin','headteacher'));
+
+-- users: a user can read+update their own row, and admins/headteachers see their school
+drop policy if exists users_self on public.users;
+create policy users_self on public.users for all to authenticated
+  using (id = auth.uid() or (school_id = public.current_school_id() and public.current_role() in ('admin','headteacher')))
+  with check (id = auth.uid() or (school_id = public.current_school_id() and public.current_role() in ('admin','headteacher')));
+
+-- generic per-school policy template
+do $$ declare t text; begin
+  for t in select unnest(array['students','student_attendance','teachers','teacher_history',
+    'teacher_cpd','cbc_strands','assessments','fee_structures','fee_balances','mpesa_payments',
+    'timetables','lesson_plans','assignments','notices','leave_requests'])
+  loop
+    execute format('drop policy if exists %I_school on public.%I;', t, t);
+    execute format($p$create policy %I_school on public.%I for all to authenticated
+      using (school_id = public.current_school_id())
+      with check (school_id = public.current_school_id());$p$, t, t);
+  end loop;
+end $$;
+
+-- student_health: restricted to admin/headteacher/teacher of the same school
+drop policy if exists health_read on public.student_health;
+create policy health_read on public.student_health for all to authenticated
+  using (exists(select 1 from public.students s where s.id = student_id
+         and s.school_id = public.current_school_id()
+         and public.current_role() in ('admin','headteacher','teacher')))
+  with check (exists(select 1 from public.students s where s.id = student_id
+         and s.school_id = public.current_school_id()
+         and public.current_role() in ('admin','headteacher','teacher')));
+
+-- incidents: restricted similarly
+drop policy if exists incidents_rw on public.incidents;
+create policy incidents_rw on public.incidents for all to authenticated
+  using (school_id = public.current_school_id()
+         and public.current_role() in ('admin','headteacher','teacher'))
+  with check (school_id = public.current_school_id()
+         and public.current_role() in ('admin','headteacher','teacher'));
+
+-- assignment_submissions: per-school via assignment
+drop policy if exists subs_rw on public.assignment_submissions;
+create policy subs_rw on public.assignment_submissions for all to authenticated
+  using (exists(select 1 from public.assignments a where a.id = assignment_id
+         and exists(select 1 from public.teachers t where t.id = a.teacher_id
+                    and t.school_id = public.current_school_id())))
+  with check (true);
+
+-- substitutions
+drop policy if exists subs2_rw on public.substitutions;
+create policy subs2_rw on public.substitutions for all to authenticated
+  using (exists(select 1 from public.leave_requests l where l.id = leave_id
+         and l.school_id = public.current_school_id()))
+  with check (true);
+
+-- auto-create a users row when a new auth user signs up (links to school via metadata)
+create or replace function public.handle_new_user() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare _school uuid; _role app_role;
+begin
+  select id into _school from public.schools where school_code = new.raw_user_meta_data->>'school_code';
+  _role := coalesce((new.raw_user_meta_data->>'role')::app_role, 'parent');
+  insert into public.users (id, school_id, full_name, email, phone, role)
+  values (new.id, _school, new.raw_user_meta_data->>'full_name', new.email,
+          new.raw_user_meta_data->>'phone', _role);
+  return new;
+end $$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created after insert on auth.users
+for each row execute procedure public.handle_new_user();
+
+-- Seed a demo school so the very first signup has a school_code to use.
+insert into public.schools (name, county, sub_county, type, school_code)
+values ('Radari Demo Primary', 'Nairobi', 'Westlands', 'Primary', 'RADARI01')
+on conflict (school_code) do nothing;
+
+--------------------------------------------------------------------------------
+-- End SQL
+--------------------------------------------------------------------------------
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Radari — CBC School Management</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Fraunces:wght@500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css" />
+  <style>
+    :root{
+      --green:#1f4434;          /* deep forest green */
+      --green-700:#16382a;
+      --green-50:#eaf1ec;
+      --bg:#f7f4ee;             /* warm off-white */
+      --surface:#ffffff;
+      --stone:#e7e2d6;
+      --stone-2:#d8d2c2;
+      --ink:#1c1d1a;
+      --ink-2:#4a4a44;
+      --muted:#8a877d;
+      --amber:#b9802a;
+      --amber-bg:#f6e9c8;
+      --terracotta:#a4452e;
+      --terracotta-bg:#f4d7cc;
+      --shadow:0 1px 2px rgba(28,29,26,.04), 0 8px 28px -16px rgba(28,29,26,.18);
+      --radius:6px;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+      font-family:'Inter',system-ui,-apple-system,sans-serif;font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+    h1,h2,h3,h4{font-family:'Fraunces',Georgia,serif;font-weight:500;letter-spacing:-.01em;margin:0 0 .4em}
+    h1{font-size:2rem;line-height:1.15}
+    h2{font-size:1.35rem}
+    h3{font-size:1.05rem;font-family:'Inter',sans-serif;font-weight:600}
+    a{color:var(--green);text-decoration:none}
+    a:hover{text-decoration:underline}
+    .muted{color:var(--muted)}
+    .small{font-size:.85rem}
+    .row{display:flex;gap:1rem;flex-wrap:wrap}
+    .col{flex:1;min-width:220px}
+    .stack > * + *{margin-top:.75rem}
+
+    /* progress bar */
+    #progress{position:fixed;top:0;left:0;height:2px;width:0;background:var(--green);z-index:1000;transition:width .25s ease}
+
+    /* AUTH */
+    .auth{min-height:100vh;display:grid;grid-template-columns:1fr 1fr}
+    @media (max-width:860px){.auth{grid-template-columns:1fr}}
+    .auth-brand{background:var(--green);color:#f1ece0;padding:3rem;display:flex;flex-direction:column;justify-content:space-between;position:relative;overflow:hidden}
+    .auth-brand::before{content:"";position:absolute;inset:0;background-image:
+      radial-gradient(circle at 20% 30%, rgba(255,255,255,.05) 0, transparent 35%),
+      radial-gradient(circle at 80% 80%, rgba(255,255,255,.04) 0, transparent 30%),
+      repeating-linear-gradient(135deg, rgba(255,255,255,.025) 0 2px, transparent 2px 28px);
+      pointer-events:none}
+    .auth-brand > *{position:relative}
+    .auth-brand h1{font-size:2.6rem;color:#fbf7ec}
+    .auth-brand .tag{opacity:.8;max-width:380px}
+    .brand-mark{font-family:'Fraunces',serif;font-size:1.6rem;letter-spacing:.02em}
+    @media (max-width:860px){.auth-brand{display:none}}
+    .auth-form{background:var(--bg);padding:3rem 2rem;display:flex;flex-direction:column;justify-content:center;align-items:center}
+    .auth-form .inner{width:100%;max-width:380px}
+    .auth-form .mobile-brand{display:none;text-align:center;margin-bottom:2rem}
+    @media (max-width:860px){.auth-form .mobile-brand{display:block}}
+
+    label{display:block;font-size:.85rem;color:var(--ink-2);margin-bottom:.3rem}
+    input,select,textarea{
+      width:100%;padding:.75rem .85rem;border:1px solid var(--stone-2);
+      background:#fff;border-radius:var(--radius);font:inherit;color:var(--ink);
+      transition:border-color .15s, box-shadow .15s
+    }
+    input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(31,68,52,.15)}
+    .field{margin-bottom:1rem}
+    .field .err{color:var(--terracotta);font-size:.8rem;margin-top:.3rem;display:block}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;
+      padding:0 1.1rem;height:44px;border-radius:var(--radius);font:inherit;font-weight:500;cursor:pointer;border:1px solid transparent;background:transparent;color:var(--ink);transition:background .15s,border-color .15s}
+    .btn.primary{background:var(--green);color:#fff;border-color:var(--green)}
+    .btn.primary:hover{background:var(--green-700)}
+    .btn.primary[disabled]{opacity:.7;cursor:wait}
+    .btn.secondary{border-color:var(--green);color:var(--green);background:transparent}
+    .btn.secondary:hover{background:var(--green-50)}
+    .btn.danger{background:var(--terracotta);color:#fff;border-color:var(--terracotta)}
+    .btn.block{width:100%;height:48px}
+    .divider{display:flex;align-items:center;gap:.75rem;color:var(--muted);font-size:.8rem;margin:1.25rem 0}
+    .divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--stone-2)}
+    .pwd-check{font-size:.78rem;color:var(--muted);margin-top:.4rem}
+    .pwd-check span{display:inline-flex;align-items:center;gap:.25rem;margin-right:.85rem}
+    .pwd-check span.ok{color:var(--green)}
+    .form-link{font-size:.82rem;text-align:right;display:block;margin-top:-.4rem;margin-bottom:1rem}
+
+    /* APP SHELL */
+    .shell{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+    @media (max-width:860px){.shell{grid-template-columns:1fr}}
+    .sidebar{background:var(--surface);border-right:1px solid var(--stone);padding:1.5rem 1rem;display:flex;flex-direction:column;gap:1rem}
+    .sidebar .brand{font-family:'Fraunces',serif;font-size:1.4rem;color:var(--green);padding:0 .5rem}
+    .nav{display:flex;flex-direction:column;gap:.1rem}
+    .nav a{padding:.55rem .75rem;border-radius:var(--radius);color:var(--ink-2);font-size:.92rem}
+    .nav a:hover{background:var(--green-50);color:var(--green);text-decoration:none}
+    .nav a.active{background:var(--green-50);color:var(--green);font-weight:500}
+    .sidebar .footer{margin-top:auto;font-size:.8rem;color:var(--muted);padding:0 .5rem}
+
+    .topbar{display:none;padding:.75rem 1rem;background:var(--surface);border-bottom:1px solid var(--stone);
+      align-items:center;gap:.75rem;position:sticky;top:0;z-index:50}
+    .topbar .menu{background:none;border:none;font-size:1.4rem;color:var(--ink);cursor:pointer}
+    .topbar .school{font-weight:500}
+    .topbar .mod{margin-left:auto;color:var(--muted);font-size:.9rem}
+    @media (max-width:860px){
+      .topbar{display:flex}
+      .sidebar{position:fixed;left:0;top:0;bottom:0;width:260px;transform:translateX(-100%);transition:transform .2s;z-index:60}
+      .sidebar.open{transform:translateX(0)}
+      .scrim{display:none;position:fixed;inset:0;background:rgba(28,29,26,.4);z-index:55}
+      .scrim.show{display:block}
+    }
+
+    main{padding:2rem;min-width:0}
+    @media (max-width:860px){main{padding:1.25rem}}
+    .card{background:var(--surface);padding:1.25rem 1.25rem;border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:1.25rem}
+    .section-title{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:1rem}
+    .section-title .sub{color:var(--muted);font-size:.88rem}
+
+    /* dashboard asymmetric grid */
+    .metrics{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:1.25rem}
+    @media (max-width:860px){.metrics{grid-template-columns:1fr 1fr}}
+    .metric{padding:1.4rem;background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow)}
+    .metric .num{font-family:'Fraunces',serif;font-size:2.8rem;line-height:1;color:var(--green);font-weight:500}
+    .metric.lg .num{font-size:4rem}
+    .metric .lbl{color:var(--ink-2);margin-top:.5rem;font-size:.9rem}
+    .metric.lg{grid-row:span 2}
+
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:.7rem .6rem;text-align:left;border-bottom:1px solid var(--stone);font-size:.92rem}
+    th{font-weight:500;color:var(--ink-2);font-size:.82rem;border-bottom:1px solid var(--stone-2)}
+    tbody tr:nth-child(even){background:rgba(231,226,214,.25)}
+    tbody tr:hover{background:rgba(31,68,52,.04)}
+
+    .badge{display:inline-block;padding:.15rem .55rem;border-radius:999px;font-size:.75rem;background:var(--green-50);color:var(--green)}
+    .badge.amber{background:var(--amber-bg);color:var(--amber)}
+    .badge.terra{background:var(--terracotta-bg);color:var(--terracotta)}
+    .badge.muted{background:var(--stone);color:var(--ink-2)}
+
+    .grading td{padding:.4rem}
+    .score-cell{display:flex;gap:.25rem}
+    .score-btn{flex:1;padding:.45rem 0;border:1px solid var(--stone-2);background:#fff;border-radius:var(--radius);cursor:pointer;font-size:.8rem;color:var(--ink-2)}
+    .score-btn.active{background:var(--green);color:#fff;border-color:var(--green)}
+    .score-btn.active.be{background:var(--terracotta);border-color:var(--terracotta)}
+    .score-btn.active.ae{background:var(--amber);border-color:var(--amber)}
+
+    .toast{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:.7rem 1.2rem;border-radius:var(--radius);box-shadow:var(--shadow);z-index:200;opacity:0;transition:opacity .2s}
+    .toast.show{opacity:1}
+    .toast.error{background:var(--terracotta)}
+
+    .empty{padding:2.5rem 1rem;text-align:center;color:var(--muted)}
+    .empty .ti{font-size:2rem;display:block;margin-bottom:.5rem;color:var(--stone-2)}
+
+    .health-card{padding:.85rem 1rem;border-radius:var(--radius);margin-bottom:.5rem}
+    .health-card.mild,.health-card.moderate{background:var(--amber-bg);color:#5a3d11}
+    .health-card.severe{background:var(--terracotta-bg);color:#5a1d10}
+    .health-card .title{font-weight:600}
+
+    .toolbar{display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:1rem;align-items:flex-end}
+    .toolbar .field{margin:0;min-width:140px;flex:1}
+
+    .hide{display:none !important}
+  </style>
+</head>
+<body>
+
+<div id="progress"></div>
+<div id="toast" class="toast"></div>
+<div id="app"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ============================================================================
+ * CONFIG
+ * ==========================================================================*/
+const SUPABASE_URL = 'https://wxmryautvozlklebwdhj.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind4bXJ5YXV0dm96bGtsZWJ3ZGhqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NDc4MDMsImV4cCI6MjA5NzEyMzgwM30.tkI6I67tfqK9PbhspeOqRVbKgrvHNAqVeAXu4MrGvc8';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const APP_NAME = 'Radari';
+const TAGLINE  = 'A school management system built for Kenya\u2019s CBC classroom.';
+
+/* ============================================================================
+ * UTILS
+ * ==========================================================================*/
+const $ = (sel, root=document) => root.querySelector(sel);
+const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
+const el = (html) => { const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstElementChild; };
+const esc = (s) => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const progress = {
+  start(){ const b=$('#progress'); b.style.width='15%'; this._t=setInterval(()=>{const w=parseFloat(b.style.width); if(w<85) b.style.width=(w+5)+'%';},250); },
+  done(){ clearInterval(this._t); const b=$('#progress'); b.style.width='100%'; setTimeout(()=>b.style.width='0',300); }
+};
+const toast = (msg, isErr=false) => {
+  const t=$('#toast'); t.textContent=msg; t.classList.toggle('error',isErr); t.classList.add('show');
+  clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'),3000);
+};
+
+/* ============================================================================
+ * STATE
+ * ==========================================================================*/
+const state = {
+  session:null,
+  profile:null,  // row from public.users
+  school:null,
+  route:'dashboard',
+};
+
+/* ============================================================================
+ * AUTH VIEWS
+ * ==========================================================================*/
+function brandPanel(){
+  return `<div class="auth-brand">
+    <div class="brand-mark">${APP_NAME}</div>
+    <div>
+      <h1>School life, gathered in one place.</h1>
+      <p class="tag">${TAGLINE} Track CBC competencies, attendance, fees and lesson plans from any phone.</p>
+    </div>
+    <div class="small" style="opacity:.7">Designed for Kenyan primary and junior secondary schools.</div>
+  </div>`;
+}
+
+function viewLogin(){
+  document.body.innerHTML = `<div id="progress"></div><div id="toast" class="toast"></div>
+  <div class="auth">
+    ${brandPanel()}
+    <div class="auth-form"><div class="inner">
+      <div class="mobile-brand"><div class="brand-mark" style="color:var(--green)">${APP_NAME}</div><div class="muted small">${TAGLINE}</div></div>
+      <h2 style="margin-bottom:1.25rem">Sign in</h2>
+      <form id="loginForm" class="stack" novalidate>
+        <div class="field"><label>Email address</label><input name="email" type="email" required></div>
+        <div class="field"><label>Password</label><input name="password" type="password" required></div>
+        <a href="#" id="toForgot" class="form-link">Forgot password</a>
+        <button class="btn primary block" type="submit" id="loginBtn">Sign in</button>
+      </form>
+      <div class="divider">or</div>
+      <button class="btn secondary block" id="toSignup">Create an account</button>
+    </div></div>
+  </div>`;
+  $('#toSignup').onclick = viewSignup;
+  $('#toForgot').onclick = (e)=>{e.preventDefault();viewForgot();};
+  $('#loginForm').onsubmit = async (e)=>{
+    e.preventDefault();
+    const btn=$('#loginBtn'); btn.disabled=true; btn.textContent='Signing in';
+    const f=new FormData(e.target);
+    const { error } = await sb.auth.signInWithPassword({ email:f.get('email'), password:f.get('password') });
+    btn.disabled=false; btn.textContent='Sign in';
+    if(error){
+      if(/confirm/i.test(error.message)) toast('Please confirm your email address before signing in. Check your inbox.', true);
+      else toast(error.message, true);
+      return;
+    }
+    await boot();
+  };
+}
+
+function pwdChecklist(pwd){
+  return {
+    len: pwd.length>=8,
+    up : /[A-Z]/.test(pwd),
+    num: /\d/.test(pwd),
+  };
+}
+
+function viewSignup(){
+  document.body.innerHTML = `<div id="progress"></div><div id="toast" class="toast"></div>
+  <div class="auth">
+    ${brandPanel()}
+    <div class="auth-form"><div class="inner">
+      <div class="mobile-brand"><div class="brand-mark" style="color:var(--green)">${APP_NAME}</div></div>
+      <h2 style="margin-bottom:1.25rem">Create an account</h2>
+      <form id="signupForm" class="stack" novalidate>
+        <div class="field"><label>Full name</label><input name="full_name" required></div>
+        <div class="field"><label>Email address</label><input name="email" type="email" required></div>
+        <div class="field"><label>Phone number</label><input name="phone" type="tel" placeholder="07XX XXX XXX"></div>
+        <div class="field"><label>School code</label><input name="school_code" required placeholder="Provided by your school admin">
+          <span class="small muted">No code yet? Try <b>RADARI01</b> to explore the demo school.</span>
+        </div>
+        <div class="field"><label>I am a</label>
+          <select name="role">
+            <option value="parent">Parent</option>
+            <option value="teacher">Teacher</option>
+            <option value="headteacher">Headteacher</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="field"><label>Password</label><input name="password" type="password" id="pwd" required>
+          <div class="pwd-check" id="pwdCheck">
+            <span data-k="len"><i class="ti ti-check"></i> 8 characters</span>
+            <span data-k="up"><i class="ti ti-check"></i> uppercase letter</span>
+            <span data-k="num"><i class="ti ti-check"></i> number</span>
+          </div>
+        </div>
+        <div class="field"><label>Confirm password</label><input name="password2" type="password" required></div>
+        <button class="btn primary block" type="submit" id="signupBtn">Create account</button>
+      </form>
+      <div class="divider">or</div>
+      <button class="btn secondary block" id="toLogin">Back to sign in</button>
+    </div></div>
+  </div>`;
+  $('#toLogin').onclick=viewLogin;
+  $('#pwd').oninput = (e)=>{
+    const c=pwdChecklist(e.target.value);
+    $$('#pwdCheck span').forEach(s=>s.classList.toggle('ok', c[s.dataset.k]));
+  };
+  $('#signupForm').onsubmit = async (e)=>{
+    e.preventDefault();
+    const f=new FormData(e.target);
+    const pwd=f.get('password');
+    const c=pwdChecklist(pwd);
+    if(!c.len||!c.up||!c.num){ toast('Password does not meet the requirements.', true); return; }
+    if(pwd!==f.get('password2')){ toast('Passwords do not match.', true); return; }
+    // verify school code exists
+    const { data:school, error:schErr } = await sb.from('schools').select('id,name').eq('school_code', f.get('school_code').trim()).maybeSingle();
+    if(schErr||!school){ toast('That school code is not recognised.', true); return; }
+    const btn=$('#signupBtn'); btn.disabled=true; btn.textContent='Creating account';
+    const { error } = await sb.auth.signUp({
+      email:f.get('email'), password:pwd,
+      options:{ data:{
+        full_name:f.get('full_name'), phone:f.get('phone'),
+        school_code:f.get('school_code').trim(), role:f.get('role')
+      }, emailRedirectTo: window.location.href.split('#')[0] }
+    });
+    btn.disabled=false; btn.textContent='Create account';
+    if(error){ toast(error.message,true); return; }
+    viewCheckEmail(f.get('email'));
+  };
+}
+
+function viewCheckEmail(email){
+  document.body.innerHTML = `<div id="progress"></div><div id="toast" class="toast"></div>
+  <div class="auth">${brandPanel()}
+    <div class="auth-form"><div class="inner" style="text-align:center">
+      <h2>Check your email</h2>
+      <p class="muted">We sent a confirmation link to</p>
+      <p style="font-weight:500">${esc(email)}</p>
+      <p class="muted small">Click the link in the email to activate your account. It can take a couple of minutes &mdash; check your spam folder too.</p>
+      <button class="btn secondary block" id="resend" style="margin-top:1.25rem">Resend confirmation email</button>
+      <a href="#" id="back" class="small" style="display:block;margin-top:1rem">Back to sign in</a>
+    </div></div>
+  </div>`;
+  $('#back').onclick=(e)=>{e.preventDefault();viewLogin();};
+  $('#resend').onclick = async ()=>{
+    const { error } = await sb.auth.resend({ type:'signup', email });
+    toast(error?error.message:'Confirmation email resent.', !!error);
+  };
+}
+
+function viewForgot(){
+  document.body.innerHTML = `<div id="progress"></div><div id="toast" class="toast"></div>
+  <div class="auth">${brandPanel()}
+    <div class="auth-form"><div class="inner">
+      <h2>Reset your password</h2>
+      <p class="muted small">Enter the email associated with your account.</p>
+      <form id="resetForm" class="stack">
+        <div class="field"><label>Email address</label><input name="email" type="email" required></div>
+        <button class="btn primary block" type="submit">Send reset link</button>
+      </form>
+      <a href="#" id="back" class="small" style="display:block;margin-top:1rem;text-align:center">Back to sign in</a>
+    </div></div>
+  </div>`;
+  $('#back').onclick=(e)=>{e.preventDefault();viewLogin();};
+  $('#resetForm').onsubmit = async (e)=>{
+    e.preventDefault();
+    const email=new FormData(e.target).get('email');
+    await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.href.split('#')[0] + '#reset' });
+    document.body.innerHTML = `<div id="progress"></div>
+      <div class="auth">${brandPanel()}<div class="auth-form"><div class="inner" style="text-align:center">
+        <h2>Check your inbox</h2>
+        <p class="muted">If that email address is registered, you will receive a password reset link shortly. Check your inbox and your spam folder.</p>
+        <a href="#" id="back2" class="btn secondary block" style="margin-top:1rem">Back to sign in</a>
+      </div></div></div>`;
+    $('#back2').onclick=(e)=>{e.preventDefault();viewLogin();};
+  };
+}
+
+function viewSetPassword(){
+  document.body.innerHTML = `<div id="progress"></div><div id="toast" class="toast"></div>
+  <div class="auth">${brandPanel()}
+    <div class="auth-form"><div class="inner">
+      <h2>Set a new password</h2>
+      <form id="setForm" class="stack">
+        <div class="field"><label>New password</label><input name="password" type="password" id="pwd" required>
+          <div class="pwd-check" id="pwdCheck">
+            <span data-k="len"><i class="ti ti-check"></i> 8 characters</span>
+            <span data-k="up"><i class="ti ti-check"></i> uppercase letter</span>
+            <span data-k="num"><i class="ti ti-check"></i> number</span>
+          </div>
+        </div>
+        <div class="field"><label>Confirm new password</label><input name="password2" type="password" required></div>
+        <button class="btn primary block" type="submit">Update password</button>
+      </form>
+    </div></div>
+  </div>`;
+  $('#pwd').oninput = (e)=>{
+    const c=pwdChecklist(e.target.value);
+    $$('#pwdCheck span').forEach(s=>s.classList.toggle('ok', c[s.dataset.k]));
+  };
+  $('#setForm').onsubmit = async (e)=>{
+    e.preventDefault();
+    const f=new FormData(e.target);
+    if(f.get('password')!==f.get('password2')){ toast('Passwords do not match.',true); return; }
+    const { error } = await sb.auth.updateUser({ password:f.get('password') });
+    if(error){ toast(error.message,true); return; }
+    toast('Password updated. Please sign in.');
+    await sb.auth.signOut(); viewLogin();
+  };
+}
+
+/* ============================================================================
+ * APP SHELL
+ * ==========================================================================*/
+const NAV = [
+  { id:'dashboard', label:'Dashboard', roles:['admin','headteacher','teacher','parent'] },
+  { id:'students',  label:'Students',  roles:['admin','headteacher','teacher'] },
+  { id:'attendance',label:'Attendance',roles:['admin','headteacher','teacher'] },
+  { id:'grading',   label:'CBC grading',roles:['admin','headteacher','teacher'] },
+  { id:'assignments',label:'Assignments',roles:['admin','headteacher','teacher','parent'] },
+  { id:'lessons',   label:'Lesson plans',roles:['admin','headteacher','teacher'] },
+  { id:'timetable', label:'Timetable', roles:['admin','headteacher','teacher','parent'] },
+  { id:'teachers',  label:'Teachers',  roles:['admin','headteacher'] },
+  { id:'leave',     label:'Leave & cover',roles:['admin','headteacher','teacher'] },
+  { id:'fees',      label:'Fees',      roles:['admin','headteacher','parent'] },
+  { id:'reports',   label:'Report cards',roles:['admin','headteacher','parent'] },
+  { id:'incidents', label:'Incidents', roles:['admin','headteacher','teacher'] },
+  { id:'notices',   label:'Notices',   roles:['admin','headteacher','teacher','parent'] },
+  { id:'knec',      label:'KNEC SBA export',roles:['admin','headteacher'] },
+  { id:'settings',  label:'Settings',  roles:['admin','headteacher','teacher','parent'] },
+];
+
+function viewShell(){
+  const role = state.profile?.role || 'parent';
+  const links = NAV.filter(n=>n.roles.includes(role)).map(n=>
+    `<a href="#${n.id}" data-route="${n.id}" class="${state.route===n.id?'active':''}">${n.label}</a>`).join('');
+  document.body.innerHTML = `
+  <div id="progress"></div><div id="toast" class="toast"></div>
+  <div class="shell">
+    <div class="scrim" id="scrim"></div>
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">${APP_NAME}</div>
+      <div class="small muted" style="padding:0 .5rem">${esc(state.school?.name||'')}</div>
+      <nav class="nav">${links}</nav>
+      <div class="footer">
+        <div>${esc(state.profile?.full_name||'')}</div>
+        <div style="text-transform:capitalize">${esc(role)}</div>
+        <a href="#" id="signOut" style="display:inline-block;margin-top:.5rem">Sign out</a>
+      </div>
+    </aside>
+    <div>
+      <div class="topbar">
+        <button class="menu" id="menuBtn" aria-label="Menu"><i class="ti ti-menu-2"></i></button>
+        <div class="school">${esc(state.school?.name||APP_NAME)}</div>
+        <div class="mod" id="modName"></div>
+      </div>
+      <main id="main"></main>
+    </div>
+  </div>`;
+  $('#signOut').onclick = async (e)=>{e.preventDefault(); await sb.auth.signOut(); location.reload();};
+  $('#menuBtn').onclick = ()=>{ $('#sidebar').classList.add('open'); $('#scrim').classList.add('show'); };
+  $('#scrim').onclick   = ()=>{ $('#sidebar').classList.remove('open'); $('#scrim').classList.remove('show'); };
+  $$('.nav a').forEach(a=>a.onclick=(e)=>{e.preventDefault(); navigate(a.dataset.route);});
+  render();
+}
+
+function navigate(route){
+  state.route = route;
+  location.hash = route;
+  $$('.nav a').forEach(a=>a.classList.toggle('active', a.dataset.route===route));
+  $('#sidebar')?.classList.remove('open'); $('#scrim')?.classList.remove('show');
+  render();
+}
+
+async function render(){
+  const main = $('#main'); if(!main) return;
+  const mod  = NAV.find(n=>n.id===state.route); $('#modName').textContent = mod?.label||'';
+  main.innerHTML = `<div class="muted">Loading\u2026</div>`;
+  progress.start();
+  try { await (modules[state.route]||modules.dashboard)(main); }
+  catch(e){ console.error(e); main.innerHTML = `<div class="card"><h3>Something went wrong</h3><p class="muted small">${esc(e.message||e)}</p></div>`; }
+  progress.done();
+}
+
+/* ============================================================================
+ * MODULES
+ * ==========================================================================*/
+const modules = {};
+
+/* --- DASHBOARD --- */
+modules.dashboard = async (m)=>{
+  const sid = state.profile.school_id;
+  if(!sid){
+    m.innerHTML = `<div class="card"><h2>Welcome to ${APP_NAME}</h2>
+      <p class="muted">Your account is not yet linked to a school. Ask your school admin for a school code and update it under Settings.</p></div>`;
+    return;
+  }
+  const [students, teachers, attToday, fees, notices, leave] = await Promise.all([
+    sb.from('students').select('id',{count:'exact',head:true}).eq('school_id',sid),
+    sb.from('teachers').select('id',{count:'exact',head:true}).eq('school_id',sid).eq('employment_status','active'),
+    sb.from('student_attendance').select('status').eq('school_id',sid).eq('date', new Date().toISOString().slice(0,10)),
+    sb.from('fee_balances').select('amount_due,amount_paid').eq('school_id',sid),
+    sb.from('notices').select('id,title,body,created_at').eq('school_id',sid).order('created_at',{ascending:false}).limit(3),
+    sb.from('leave_requests').select('id',{count:'exact',head:true}).eq('school_id',sid).eq('status','pending'),
+  ]);
+  const present = (attToday.data||[]).filter(r=>r.status==='present').length;
+  const total   = (attToday.data||[]).length;
+  const attRate = total? Math.round(present/total*100):null;
+  const due = (fees.data||[]).reduce((a,r)=>a+(+r.amount_due||0),0);
+  const paid= (fees.data||[]).reduce((a,r)=>a+(+r.amount_paid||0),0);
+  const collection = due? Math.round(paid/due*100):0;
+
+  m.innerHTML = `
+    <h1>Good ${new Date().getHours()<12?'morning':'afternoon'}, ${esc((state.profile.full_name||'').split(' ')[0])}.</h1>
+    <p class="muted" style="margin-top:-.4rem;margin-bottom:1.5rem">Here is what is happening at ${esc(state.school?.name||'your school')} today.</p>
+    <div class="metrics">
+      <div class="metric lg"><div class="num">${students.count||0}</div><div class="lbl">Learners enrolled</div></div>
+      <div class="metric"><div class="num">${teachers.count||0}</div><div class="lbl">Active teachers</div></div>
+      <div class="metric"><div class="num">${attRate===null?'\u2014':attRate+'%'}</div><div class="lbl">Attendance today</div></div>
+      <div class="metric"><div class="num">${collection}%</div><div class="lbl">Fee collection, current term</div></div>
+      <div class="metric"><div class="num">${leave.count||0}</div><div class="lbl">Leave requests pending</div></div>
+    </div>
+    <div class="card" style="margin-top:1.5rem">
+      <div class="section-title"><h3>Recent notices</h3><a href="#notices" class="sub" data-route="notices">View all</a></div>
+      ${(notices.data||[]).length? (notices.data||[]).map(n=>`
+        <div style="padding:.6rem 0;border-bottom:1px solid var(--stone)">
+          <div style="font-weight:500">${esc(n.title)}</div>
+          <div class="small muted">${new Date(n.created_at).toLocaleDateString()}</div>
+          <div class="small">${esc((n.body||'').slice(0,160))}</div>
+        </div>`).join('') : `<div class="empty"><i class="ti ti-news"></i><div>No notices yet.</div></div>`}
+    </div>`;
+  m.querySelectorAll('[data-route]').forEach(a=>a.onclick=(e)=>{e.preventDefault();navigate(a.dataset.route);});
+};
+
+/* --- STUDENTS --- */
+modules.students = async (m)=>{
+  const sid = state.profile.school_id;
+  const { data:students=[] } = await sb.from('students').select('*').eq('school_id',sid).order('full_name');
+  m.innerHTML = `
+    <div class="section-title"><h1 style="margin:0">Students</h1>
+      <button class="btn primary" id="addStu"><i class="ti ti-plus"></i> Add learner</button></div>
+    <div class="card">
+      ${students.length? `<table><thead><tr><th>Name</th><th>Adm.</th><th>Grade</th><th>Stream</th><th>Gender</th><th></th></tr></thead>
+      <tbody>${students.map(s=>`<tr>
+        <td><a href="#" data-id="${s.id}" class="open">${esc(s.full_name)}</a></td>
+        <td>${esc(s.admission_number||'')}</td>
+        <td>${esc(s.grade||'')}</td><td>${esc(s.stream||'')}</td><td>${esc(s.gender||'')}</td>
+        <td><a href="#" data-id="${s.id}" class="open small">Open</a></td>
+      </tr>`).join('')}</tbody></table>`
+      : `<div class="empty"><i class="ti ti-users"></i><div>No learners yet. Add your first learner to get started.</div></div>`}
+    </div>`;
+  $('#addStu').onclick = ()=>studentForm(null);
+  m.querySelectorAll('.open').forEach(a=>a.onclick=(e)=>{e.preventDefault(); student360(a.dataset.id);});
+};
+
+function studentForm(existing){
+  const m=$('#main');
+  m.innerHTML = `<div class="card" style="max-width:640px"><h2>${existing?'Edit learner':'Add a learner'}</h2>
+    <form id="f" class="stack">
+      <div class="row">
+        <div class="col field"><label>Full name</label><input name="full_name" required value="${esc(existing?.full_name||'')}"></div>
+        <div class="col field"><label>Admission number</label><input name="admission_number" value="${esc(existing?.admission_number||'')}"></div>
+      </div>
+      <div class="row">
+        <div class="col field"><label>Grade</label>
+          <select name="grade">${['PP1','PP2','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6','Grade 7','Grade 8','Grade 9'].map(g=>`<option ${existing?.grade===g?'selected':''}>${g}</option>`).join('')}</select>
+        </div>
+        <div class="col field"><label>Stream</label><input name="stream" value="${esc(existing?.stream||'')}"></div>
+        <div class="col field"><label>Gender</label>
+          <select name="gender"><option value="">\u2014</option>
+            <option ${existing?.gender==='M'?'selected':''}>M</option>
+            <option ${existing?.gender==='F'?'selected':''}>F</option></select>
+        </div>
+      </div>
+      <div class="field"><label>Date of birth</label><input type="date" name="date_of_birth" value="${esc(existing?.date_of_birth||'')}"></div>
+      <div style="display:flex;gap:.5rem"><button type="submit" class="btn primary">Save</button>
+        <button type="button" class="btn secondary" id="cancel">Cancel</button></div>
+    </form></div>`;
+  $('#cancel').onclick = ()=>navigate('students');
+  $('#f').onsubmit = async (e)=>{
+    e.preventDefault();
+    const f=Object.fromEntries(new FormData(e.target));
+    f.school_id = state.profile.school_id;
+    if(!f.date_of_birth) delete f.date_of_birth;
+    if(!f.gender) delete f.gender;
+    const { error } = existing
+      ? await sb.from('students').update(f).eq('id',existing.id)
+      : await sb.from('students').insert(f);
+    if(error){ toast(error.message,true); return; }
+    toast('Saved'); navigate('students');
+  };
+}
+
+async function student360(id){
+  const m=$('#main');
+  m.innerHTML = `<div class="muted">Loading learner\u2026</div>`;
+  const [{data:s},{data:health=[]},{data:att=[]},{data:fees=[]},{data:assess=[]},{data:inc=[]}] = await Promise.all([
+    sb.from('students').select('*').eq('id',id).single(),
+    sb.from('student_health').select('*').eq('student_id',id),
+    sb.from('student_attendance').select('date,status').eq('student_id',id).order('date',{ascending:false}).limit(60),
+    sb.from('fee_balances').select('*').eq('student_id',id),
+    sb.from('assessments').select('*, cbc_strands(subject,strand,sub_strand)').eq('student_id',id),
+    sb.from('incidents').select('*').eq('student_id',id).order('incident_date',{ascending:false}),
+  ]);
+  const present = att.filter(a=>a.status==='present').length;
+  const attPct = att.length? Math.round(present/att.length*100):null;
+  m.innerHTML = `
+    <a href="#" id="back" class="small"><i class="ti ti-arrow-left"></i> Back to students</a>
+    <div style="display:flex;gap:1.25rem;align-items:flex-end;margin:1rem 0 2rem">
+      <div>
+        <h1 style="margin-bottom:.2rem">${esc(s.full_name)}</h1>
+        <div class="muted">${esc(s.grade||'')} ${esc(s.stream||'')} &middot; Adm. ${esc(s.admission_number||'\u2014')}</div>
+      </div>
+      <button class="btn secondary" id="edit" style="margin-left:auto">Edit details</button>
+    </div>
+
+    <div class="row">
+      <div class="col card"><h3>Health</h3>
+        ${health.length? health.map(h=>`<div class="health-card ${esc(h.severity||'mild')}">
+          <div class="title">${esc(h.condition_name)} <span class="small" style="opacity:.7">&middot; ${esc(h.severity)}</span></div>
+          <div class="small">${esc(h.description||'')}</div>
+          ${h.emergency_action?`<div class="small" style="margin-top:.3rem"><b>If urgent:</b> ${esc(h.emergency_action)}</div>`:''}
+        </div>`).join('') : `<div class="muted small">No health conditions recorded.</div>`}
+        <button class="btn secondary" id="addHealth" style="margin-top:.75rem">Add condition</button>
+      </div>
+      <div class="col card"><h3>Attendance</h3>
+        <div class="metric" style="padding:0;box-shadow:none">
+          <div class="num">${attPct===null?'\u2014':attPct+'%'}</div>
+          <div class="lbl">Attendance rate (last ${att.length} days)</div>
+        </div>
+        ${attPct!==null && attPct<75?`<div class="badge terra" style="margin-top:.5rem">Below 75% \u2014 intervention recommended</div>`:''}
+      </div>
+      <div class="col card"><h3>Fees</h3>
+        ${fees.length? `<table><tbody>${fees.map(f=>`<tr><td>Term ${esc(f.term)} ${esc(f.year)}</td><td>KSh ${esc(f.amount_due)}</td><td>${esc(f.balance)} bal.</td></tr>`).join('')}</tbody></table>`:`<div class="muted small">No fee records yet.</div>`}
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:1.25rem"><h3>CBC competency record</h3>
+      ${assess.length? `<table><thead><tr><th>Subject</th><th>Strand</th><th>Sub-strand</th><th>Term</th><th>Year</th><th>Score</th></tr></thead>
+      <tbody>${assess.map(a=>`<tr><td>${esc(a.cbc_strands?.subject||'')}</td><td>${esc(a.cbc_strands?.strand||'')}</td><td>${esc(a.cbc_strands?.sub_strand||'')}</td><td>${esc(a.term)}</td><td>${esc(a.year)}</td><td><span class="badge ${a.score==='BE'?'terra':a.score==='AE'?'amber':''}">${esc(a.score)}</span></td></tr>`).join('')}</tbody></table>`
+      : `<div class="muted small">No assessments yet.</div>`}
+    </div>
+
+    <div class="card"><h3>Incidents &amp; commendations</h3>
+      ${inc.length? `<table><thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Action</th></tr></thead>
+      <tbody>${inc.map(i=>`<tr><td>${esc(i.incident_date||'')}</td><td><span class="badge ${i.incident_type==='discipline'?'terra':i.incident_type==='commendation'?'':'amber'}">${esc(i.incident_type)}</span></td><td>${esc(i.description||'')}</td><td>${esc(i.action_taken||'')}</td></tr>`).join('')}</tbody></table>`
+      : `<div class="muted small">No incidents logged.</div>`}
+    </div>`;
+  $('#back').onclick=(e)=>{e.preventDefault();navigate('students');};
+  $('#edit').onclick = ()=>studentForm(s);
+  $('#addHealth').onclick = ()=>{
+    const wrap = el(`<div class="card" style="max-width:560px;margin-top:1rem"><h3>Add health condition</h3>
+      <form id="hf" class="stack">
+        <div class="field"><label>Condition</label><input name="condition_name" required></div>
+        <div class="field"><label>Description</label><textarea name="description"></textarea></div>
+        <div class="field"><label>Severity</label><select name="severity"><option>mild</option><option>moderate</option><option>severe</option></select></div>
+        <div class="field"><label>Emergency action</label><textarea name="emergency_action"></textarea></div>
+        <div><button class="btn primary">Save</button></div>
+      </form></div>`);
+    m.appendChild(wrap);
+    wrap.querySelector('#hf').onsubmit = async (e)=>{
+      e.preventDefault();
+      const f=Object.fromEntries(new FormData(e.target)); f.student_id=id;
+      const { error } = await sb.from('student_health').insert(f);
+      if(error){ toast(error.message,true); return; }
+      student360(id);
+    };
+  };
+}
+
+/* --- ATTENDANCE --- */
+modules.attendance = async (m)=>{
+  const sid = state.profile.school_id;
+  const today = new Date().toISOString().slice(0,10);
+  m.innerHTML = `<h1>Attendance</h1>
+    <div class="toolbar">
+      <div class="field"><label>Grade</label><select id="g"><option value="">All</option>${['PP1','PP2','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6','Grade 7','Grade 8','Grade 9'].map(g=>`<option>${g}</option>`).join('')}</select></div>
+      <div class="field"><label>Stream</label><input id="s" placeholder="optional"></div>
+      <div class="field"><label>Date</label><input id="d" type="date" value="${today}"></div>
+      <button class="btn secondary" id="load">Load class</button>
+    </div><div id="att"></div>`;
+  $('#load').onclick = async ()=>{
+    const grade=$('#g').value, stream=$('#s').value, date=$('#d').value;
+    let q = sb.from('students').select('id,full_name,admission_number,grade,stream').eq('school_id',sid).order('full_name');
+    if(grade) q=q.eq('grade',grade); if(stream) q=q.eq('stream',stream);
+    const { data:students=[] } = await q;
+    const { data:existing=[] } = await sb.from('student_attendance').select('student_id,status').eq('date',date).in('student_id', students.map(s=>s.id).concat('00000000-0000-0000-0000-000000000000'));
+    const map = Object.fromEntries(existing.map(e=>[e.student_id, e.status]));
+    const a=$('#att'); a.innerHTML = `<div class="card">${students.length?`
+      <table class="grading"><thead><tr><th>Learner</th><th style="width:340px">Status</th></tr></thead>
+      <tbody>${students.map(s=>{
+        const cur = map[s.id]||'present';
+        return `<tr data-id="${s.id}"><td>${esc(s.full_name)} <span class="small muted">${esc(s.grade)} ${esc(s.stream||'')}</span></td>
+          <td><div class="score-cell">
+            ${['present','late','excused','absent'].map(st=>`<button class="score-btn ${cur===st?'active':''} ${st==='absent'?'be':''}" data-st="${st}">${st}</button>`).join('')}
+          </div></td></tr>`;
+      }).join('')}</tbody></table>
+      <div style="margin-top:1rem"><button class="btn primary" id="save">Save attendance</button></div>
+      `:'<div class="empty"><i class="ti ti-calendar"></i><div>No learners match.</div></div>'}</div>`;
+    a.querySelectorAll('.score-btn').forEach(b=>b.onclick=()=>{
+      b.parentNode.querySelectorAll('.score-btn').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+    });
+    if($('#save')) $('#save').onclick = async ()=>{
+      const rows = $$('#att tbody tr').map(tr=>{
+        const st = tr.querySelector('.score-btn.active')?.dataset.st || 'present';
+        return { student_id:tr.dataset.id, school_id:sid, date, status:st, noted_by:state.profile.id };
+      });
+      const { error } = await sb.from('student_attendance').upsert(rows, { onConflict:'student_id,date' });
+      if(error){ toast(error.message,true); return; }
+      toast('Attendance saved');
+    };
+  };
+};
+
+/* --- CBC GRADING GRID --- */
+modules.grading = async (m)=>{
+  const sid = state.profile.school_id;
+  const { data:strands=[] } = await sb.from('cbc_strands').select('*').eq('school_id',sid).order('subject');
+  m.innerHTML = `<h1>CBC grading</h1>
+    <div class="toolbar">
+      <div class="field"><label>Grade</label><select id="g">${['PP1','PP2','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6','Grade 7','Grade 8','Grade 9'].map(g=>`<option>${g}</option>`).join('')}</select></div>
+      <div class="field"><label>Stream</label><input id="s"></div>
+      <div class="field"><label>Strand</label>
+        <select id="strand">${strands.length?strands.map(s=>`<option value="${s.id}">${esc(s.subject)} \u2014 ${esc(s.strand)}${s.sub_strand?' / '+esc(s.sub_strand):''}</option>`).join(''):'<option value="">No strands yet \u2014 add one below</option>'}</select>
+      </div>
+      <div class="field"><label>Term</label><select id="t"><option>1</option><option>2</option><option>3</option></select></div>
+      <div class="field"><label>Year</label><input id="y" type="number" value="${new Date().getFullYear()}"></div>
+      <button class="btn secondary" id="load">Load grid</button>
+      <button class="btn secondary" id="addStrand">Add strand</button>
+    </div>
+    <div id="grid"></div>`;
+  $('#addStrand').onclick = async ()=>{
+    const subject=prompt('Subject?'); if(!subject) return;
+    const strand=prompt('Strand?'); if(!strand) return;
+    const sub_strand=prompt('Sub-strand (optional)?')||null;
+    const grade=$('#g').value;
+    const { error } = await sb.from('cbc_strands').insert({ school_id:sid, grade, subject, strand, sub_strand });
+    if(error) toast(error.message,true); else { toast('Strand added'); modules.grading(m); }
+  };
+  $('#load').onclick = async ()=>{
+    const grade=$('#g').value, stream=$('#s').value, strand_id=$('#strand').value, term=+$('#t').value, year=+$('#y').value;
+    if(!strand_id){ toast('Add a strand first',true); return; }
+    let q = sb.from('students').select('id,full_name,admission_number').eq('school_id',sid).eq('grade',grade).order('full_name');
+    if(stream) q=q.eq('stream',stream);
+    const { data:students=[] } = await q;
+    const { data:existing=[] } = await sb.from('assessments').select('student_id,score,remarks').eq('strand_id',strand_id).eq('term',term).eq('year',year);
+    const map = Object.fromEntries(existing.map(e=>[e.student_id, e]));
+    const grid=$('#grid');
+    grid.innerHTML = `<div class="card">${students.length?`
+      <table class="grading"><thead><tr><th>Learner</th><th style="width:240px">Score</th><th>Remarks</th></tr></thead>
+      <tbody>${students.map(s=>{
+        const cur = map[s.id]?.score || 'ME';
+        return `<tr data-id="${s.id}">
+          <td>${esc(s.full_name)}</td>
+          <td><div class="score-cell">
+            ${['EE','ME','AE','BE'].map(sc=>`<button class="score-btn ${cur===sc?'active':''} ${sc==='BE'?'be':sc==='AE'?'ae':''}" data-sc="${sc}">${sc}</button>`).join('')}
+          </div></td>
+          <td><input class="rmk" value="${esc(map[s.id]?.remarks||'')}"></td>
+        </tr>`;
+      }).join('')}</tbody></table>
+      <div class="small muted" style="margin-top:.5rem">Default score is ME &mdash; only tap to change the exceptions.</div>
+      <div style="margin-top:1rem"><button class="btn primary" id="save">Save all scores</button></div>
+      `:'<div class="empty"><i class="ti ti-clipboard-check"></i><div>No learners in this class.</div></div>'}</div>`;
+    grid.querySelectorAll('.score-btn').forEach(b=>b.onclick=()=>{
+      b.parentNode.querySelectorAll('.score-btn').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+    });
+    if($('#save')) $('#save').onclick = async ()=>{
+      const rows = $$('#grid tbody tr').map(tr=>({
+        student_id: tr.dataset.id,
+        strand_id, term, year,
+        score: tr.querySelector('.score-btn.active')?.dataset.sc || 'ME',
+        remarks: tr.querySelector('.rmk').value || null,
+      }));
+      // delete existing for this strand+term+year+student set, then insert (simple upsert)
+      await sb.from('assessments').delete().eq('strand_id',strand_id).eq('term',term).eq('year',year).in('student_id', rows.map(r=>r.student_id));
+      const { error } = await sb.from('assessments').insert(rows);
+      if(error) toast(error.message,true); else toast('Scores saved');
+    };
+  };
+};
+
+/* --- ASSIGNMENTS --- */
+modules.assignments = async (m)=>{
+  const sid = state.profile.school_id;
+  const { data:rows=[] } = await sb.from('assignments').select('*').order('due_date',{ascending:false});
+  m.innerHTML = `<div class="section-title"><h1 style="margin:0">Assignments</h1>
+    ${['admin','headteacher','teacher'].includes(state.profile.role)?`<button class="btn primary" id="add">New assignment</button>`:''}</div>
+    <div class="card">${rows.length?`
+      <table><thead><tr><th>Title</th><th>Grade</th><th>Stream</th><th>Due</th></tr></thead>
+      <tbody>${rows.map(r=>`<tr><td>${esc(r.title)}<div class="small muted">${esc((r.description||'').slice(0,80))}</div></td><td>${esc(r.grade||'')}</td><td>${esc(r.stream||'')}</td><td>${esc(r.due_date||'')}</td></tr>`).join('')}</tbody></table>
+      `:`<div class="empty"><i class="ti ti-notebook"></i><div>No assignments posted.</div></div>`}</div>`;
+  if($('#add')) $('#add').onclick = ()=>{
+    m.innerHTML = `<div class="card" style="max-width:560px"><h2>New assignment</h2>
+      <form id="f" class="stack">
+        <div class="field"><label>Title</label><input name="title" required></div>
+        <div class="field"><label>Description</label><textarea name="description"></textarea></div>
+        <div class="row"><div class="col field"><label>Grade</label><input name="grade"></div>
+          <div class="col field"><label>Stream</label><input name="stream"></div>
+          <div class="col field"><label>Due date</label><input name="due_date" type="date"></div></div>
+        <div><button class="btn primary">Post</button> <button type="button" class="btn secondary" id="c">Cancel</button></div>
+      </form></div>`;
+    $('#c').onclick=()=>navigate('assignments');
+    $('#f').onsubmit = async (e)=>{
+      e.preventDefault();
+      const f=Object.fromEntries(new FormData(e.target));
+      // teacher_id from teachers table by user_id
+      const { data:tch } = await sb.from('teachers').select('id').eq('user_id',state.profile.id).maybeSingle();
+      if(!tch){ toast('Your teacher record is not linked yet.',true); return; }
+      f.teacher_id = tch.id;
+      if(!f.due_date) delete f.due_date;
+      const { error } = await sb.from('assignments').insert(f);
+      if(error) toast(error.message,true); else { toast('Posted'); navigate('assignments'); }
+    };
+  };
+};
+
+/* --- LESSON PLANS --- */
+modules.lessons = async (m)=>{
+  const { data:rows=[] } = await sb.from('lesson_plans').select('*, cbc_strands(subject,strand)').order('delivery_date',{ascending:false});
+  m.innerHTML = `<div class="section-title"><h1 style="margin:0">Lesson plans</h1>
+    <button class="btn primary" id="add">Log a plan</button></div>
+    <div class="card">${rows.length?`
+      <table><thead><tr><th>Date</th><th>Grade</th><th>Subject / Strand</th><th>Planned</th><th>Delivered</th><th>Status</th></tr></thead>
+      <tbody>${rows.map(r=>`<tr><td>${esc(r.delivery_date||'')}</td><td>${esc(r.grade||'')}</td><td>${esc(r.cbc_strands?.subject||'')} \u2014 ${esc(r.cbc_strands?.strand||'')}</td><td>${esc(r.planned_topic||'')}</td><td>${esc(r.delivered_topic||'')}</td><td><span class="badge ${r.status==='skipped'?'terra':r.status==='delivered'?'':'amber'}">${esc(r.status)}</span></td></tr>`).join('')}</tbody></table>
+      `:`<div class="empty"><i class="ti ti-book-2"></i><div>No lesson plans yet.</div></div>`}</div>`;
+  $('#add').onclick = async ()=>{
+    const { data:strands=[] } = await sb.from('cbc_strands').select('id,subject,strand').eq('school_id',state.profile.school_id);
+    m.innerHTML = `<div class="card" style="max-width:560px"><h2>Log a lesson plan</h2>
+      <form id="f" class="stack">
+        <div class="row"><div class="col field"><label>Grade</label><input name="grade" required></div>
+          <div class="col field"><label>Term</label><select name="term"><option>1</option><option>2</option><option>3</option></select></div>
+          <div class="col field"><label>Week</label><input type="number" name="week_number"></div></div>
+        <div class="field"><label>Strand</label><select name="strand_id">${strands.map(s=>`<option value="${s.id}">${esc(s.subject)} \u2014 ${esc(s.strand)}</option>`).join('')}</select></div>
+        <div class="field"><label>Planned topic</label><input name="planned_topic" required></div>
+        <div class="field"><label>Delivery date</label><input type="date" name="delivery_date"></div>
+        <div class="field"><label>Status</label><select name="status"><option>planned</option><option>delivered</option><option>skipped</option></select></div>
+        <div class="field"><label>Delivered topic (if different)</label><input name="delivered_topic"></div>
+        <div><button class="btn primary">Save</button> <button type="button" class="btn secondary" id="c">Cancel</button></div>
+      </form></div>`;
+    $('#c').onclick=()=>navigate('lessons');
+    $('#f').onsubmit = async (e)=>{
+      e.preventDefault();
+      const f=Object.fromEntries(new FormData(e.target));
+      const { data:tch } = await sb.from('teachers').select('id').eq('user_id',state.profile.id).maybeSingle();
+      if(!tch){ toast('No linked teacher record.',true); return; }
+      f.teacher_id = tch.id; f.term=+f.term; f.week_number=+f.week_number||null;
+      if(!f.delivery_date) delete f.delivery_date;
+      const { error } = await sb.from('lesson_plans').insert(f);
+      if(error) toast(error.message,true); else { toast('Saved'); navigate('lessons'); }
+    };
+  };
+};
+
+/* --- TIMETABLE --- */
+modules.timetable = async (m)=>{
+  const sid = state.profile.school_id;
+  const { data:rows=[] } = await sb.from('timetables').select('*, teachers(full_name)').eq('school_id',sid);
+  const DAYS=['Mon','Tue','Wed','Thu','Fri'];
+  m.innerHTML = `<div class="section-title"><h1 style="margin:0">Timetable</h1>
+    ${['admin','headteacher'].includes(state.profile.role)?`<button class="btn primary" id="add">Add slot</button>`:''}</div>
+    <div class="card">${rows.length?`
+      <table><thead><tr><th>Day</th><th>Time</th><th>Grade</th><th>Stream</th><th>Subject</th><th>Teacher</th></tr></thead>
+      <tbody>${rows.sort((a,b)=>DAYS.indexOf(a.day_of_week)-DAYS.indexOf(b.day_of_week) || (a.start_time||'').localeCompare(b.start_time||'')).map(r=>`
+        <tr><td>${esc(r.day_of_week)}</td><td>${esc(r.start_time||'')} \u2013 ${esc(r.end_time||'')}</td><td>${esc(r.grade)}</td><td>${esc(r.stream||'')}</td><td>${esc(r.subject)}</td><td>${esc(r.teachers?.full_name||'')}</td></tr>`).join('')}</tbody></table>
+      `:`<div class="empty"><i class="ti ti-calendar-time"></i><div>No timetable entries yet.</div></div>`}</div>`;
+  if($('#add')) $('#add').onclick = async ()=>{
+    const { data:teachers=[] } = await sb.from('teachers').select('id,full_name').eq('school_id',sid);
+    m.innerHTML = `<div class="card" style="max-width:560px"><h2>Add timetable slot</h2>
+      <form id="f" class="stack">
+        <div class="row">
+          <div class="col field"><label>Day</label><select name="day_of_week">${DAYS.map(d=>`<option>${d}</option>`).join('')}</select></div>
+          <div class="col field"><label>Start</label><input name="start_time" type="time" required></div>
+          <div class="col field"><label>End</label><input name="end_time" type="time" required></div>
+        </div>
+        <div class="row">
+          <div class="col field"><label>Grade</label><input name="grade" required></div>
+          <div class="col field"><label>Stream</label><input name="stream"></div>
+          <div class="col field"><label>Subject</label><input name="subject" required></div>
+        </div>
+        <div class="field"><label>Teacher</label><select name="teacher_id">${teachers.map(t=>`<option value="${t.id}">${esc(t.full_name)}</option>`).join('')}</select></div>
+        <div><button class="btn primary">Save</button> <button type="button" class="btn secondary" id="c">Cancel</button></div>
+      </form></div>`;
+    $('#c').onclick=()=>navigate('timetable');
+    $('#f').onsubmit = async (e)=>{
+      e.preventDefault();
+      const f=Object.fromEntries(new FormData(e.target));
+      // clash detection
+      const { data:clash=[] } = await sb.from('timetables').select('id').eq('teacher_id',f.teacher_id).eq('day_of_week',f.day_of_week);
+      const conflict = clash.length ? (await sb.from('timetables').select('start_time,end_time').eq('teacher_id',f.teacher_id).eq('day_of_week',f.day_of_week)).data.some(x=>!(f.end_time<=x.start_time||f.start_time>=x.end_time)) : false;
+      if(conflict){ toast('Conflict: this teacher already has a class at that time.', true); return; }
+      f.school_id = sid;
+      const { error } = await sb.from('timetables').insert(f);
+      if(error) toast(error.message,true); else { toast('Saved'); navigate('timetable'); }
+    };
+  };
+};
+
+/* --- TEACHERS --- */
+modules.teachers = async (m)=>{
+  const sid = state.profile.school_id;
+  const { data:rows=[] } = await sb.from('teachers').select('*').eq('school_id',sid).order('full_name');
+  m.innerHTML = `<div class="section-title"><h1 style="margin:0">Teachers</h1>
+    <button class="btn primary" id="add">Add teacher</button></div>
+    <div class="card">${rows.length?`
+      <table><thead><tr><th>Name</th><th>TSC No.</th><th>Specialisation</th><th>Status</th><th>Phone</th></tr></thead>
+      <tbody>${rows.map(r=>`<tr><td>${esc(r.full_name)}</td><td>${esc(r.tsc_number||'')}</td><td>${esc(r.specialisation||'')}</td><td><span class="badge ${r.employment_status==='terminated'?'terra':r.employment_status==='on_leave'?'amber':''}">${esc(r.employment_status||'')}</span></td><td>${esc(r.phone||'')}</td></tr>`).join('')}</tbody></table>
+      `:`<div class="empty"><i class="ti ti-school"></i><div>No teachers yet.</div></div>`}</div>`;
+  $('#add').onclick = ()=>{
+    m.innerHTML = `<div class="card" style="max-width:640px"><h2>Add a teacher</h2>
+      <form id="f" class="stack">
+        <div class="row"><div class="col field"><label>Full name</label><input name="full_name" required></div>
+          <div class="col field"><label>TSC number</label><input name="tsc_number"></div></div>
+        <div class="row"><div class="col field"><label>Phone</label><input name="phone"></div>
+          <div class="col field"><label>Email</label><input name="email" type="email"></div></div>
+        <div class="row"><div class="col field"><label>Qualification</label><input name="qualification"></div>
+          <div class="col field"><label>Specialisation</label><input name="specialisation"></div></div>
+        <div class="row"><div class="col field"><label>Date joined</label><input name="date_joined" type="date"></div>
+          <div class="col field"><label>Employment status</label><select name="employment_status"><option>active</option><option>on_leave</option><option>terminated</option></select></div></div>
+        <div><button class="btn primary">Save</button> <button type="button" class="btn secondary" id="c">Cancel</button></div>
+      </form></div>`;
+    $('#c').onclick=()=>navigate('teachers');
+    $('#f').onsubmit = async (e)=>{
+      e.preventDefault();
+      const f=Object.fromEntries(new FormData(e.target));
+      Object.keys(f).forEach(k=>{ if(f[k]==='') delete f[k]; });
+      f.school_id = sid;
+      const { error } = await sb.from('teachers').insert(f);
+      if(error) toast(error.message,true); else { toast('Saved'); navigate('teachers'); }
+    };
+  };
+};
+
+/* --- LEAVE --- */
+modules.leave = async (m)=>{
+  const sid = state.profile.school_id;
+  const { data:rows=[] } = await sb.from('leave_requests').select('*, teachers(full_name)').eq('school_id',sid).order('created_at',{ascending:false});
+  const canApprove = ['admin','headteacher'].includes(state.profile.role);
+  m.innerHTML = `<div class="section-title"><h1 style="margin:0">Leave &amp; cover</h1>
+    ${state.profile.role==='teacher'?`<button class="btn primary" id="apply">Apply for leave</button>`:''}</div>
+    <div class="card">${rows.length?`
+      <table><thead><tr><th>Teacher</th><th>From</th><th>To</th><th>Reason</th><th>Status</th>${canApprove?'<th></th>':''}</tr></thead>
+      <tbody>${rows.map(r=>`<tr><td>${esc(r.teachers?.full_name||'')}</td><td>${esc(r.start_date)}</td><td>${esc(r.end_date)}</td><td>${esc(r.reason||'')}</td><td><span class="badge ${r.status==='rejected'?'terra':r.status==='approved'?'':'amber'}">${esc(r.status)}</span></td>${canApprove&&r.status==='pending'?`<td><a href="#" data-id="${r.id}" data-act="approved">Approve</a> &middot; <a href="#" data-id="${r.id}" data-act="rejected">Reject</a></td>`:canApprove?'<td></td>':''}</tr>`).join('')}</tbody></table>
+      `:`<div class="empty"><i class="ti ti-calendar-off"></i><div>No leave requests.</div></div>`}</div>`;
+  m.querySelectorAll('[data-act]').forEach(a=>a.onclick=async(e)=>{
+    e.preventDefault();
+    await sb.from('leave_requests').update({ status:a.dataset.act, approved_by:state.profile.id }).eq('id',a.dataset.id);
+    toast('Updated'); navigate('leave');
+  });
+  if($('#apply')) $('#apply').onclick = async ()=>{
+    const { data:tch } = await sb.from('teachers').select('id').eq('user_id',state.profile.id).maybeSingle();
+    if(!tch){ toast('No linked teacher record.',true); return; }
+    m.innerHTML = `<div class="card" style="max-width:520px"><h2>Apply for leave</h2>
+      <form id="f" class="stack">
+        <div class="row"><div class="col field"><label>Start</label><input type="date" name="start_date" required></div>
+          <div class="col field"><label>End</label><input type="date" name="end_date" required></div></div>
+        <div class="field"><label>Reason</label><textarea name="reason"></textarea></div>
+        <div><button class="btn primary">Submit</button> <button type="button" class="btn secondary" id="c">Cancel</button></div>
+      </form></div>`;
+    $('#c').onclick=()=>navigate('leave');
+    $('#f').onsubmit = async (e)=>{
+      e.preventDefault();
+      const f=Object.fromEntries(new FormData(e.target));
+      f.school_id=sid; f.teacher_id=tch.id;
+      const { error } = await sb.from('leave_requests').insert(f);
+      if(error) toast(error.message,true); else { toast('Submitted'); navigate('leave'); }
+    };
+  };
+};
+
+/* --- FEES --- */
+modules.fees = async (m)=>{
+  const sid = state.profile.school_id;
+  const role = state.profile.role;
+  if(role==='parent'){
+    const { data:kids=[] } = await sb.from('students').select('id,full_name,grade').eq('parent_id',state.profile.id);
+    const ids = kids.map(k=>k.id);
+    const { data:bals=[] } = ids.length? await sb.from('fee_balances').select('*').in('student_id',ids) : {data:[]};
+    m.innerHTML = `<h1>School fees</h1>
+      ${kids.length? kids.map(k=>{
+        const b = bals.filter(x=>x.student_id===k.id);
+        return `<div class="card"><h3>${esc(k.full_name)} <span class="small muted">${esc(k.grade||'')}</span></h3>
+          ${b.length?`<table><thead><tr><th>Term</th><th>Year</th><th>Due</th><th>Paid</th><th>Balance</th><th></th></tr></thead>
+          <tbody>${b.map(x=>`<tr><td>${esc(x.term)}</td><td>${esc(x.year)}</td><td>KSh ${esc(x.amount_due)}</td><td>KSh ${esc(x.amount_paid)}</td><td>KSh ${esc(x.balance)}</td><td>${+x.balance>0?'<button class="btn primary" data-pay="'+x.id+'">Pay via M-Pesa</button>':'<span class="badge">Cleared</span>'}</td></tr>`).join('')}</tbody></table>`:'<div class="muted small">No balances yet.</div>'}
+        </div>`;
+      }).join('') : `<div class="card empty"><i class="ti ti-user-question"></i><div>No learners linked to your account yet. Ask the school admin to link your children.</div></div>`}`;
+    m.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>toast('M-Pesa STK push will be triggered once Daraja keys are configured.'));
+    return;
+  }
+  const [{data:structs=[]},{data:bals=[]}] = await Promise.all([
+    sb.from('fee_structures').select('*').eq('school_id',sid),
+    sb.from('fee_balances').select('*, students(full_name,grade)').eq('school_id',sid),
+  ]);
+  const due = bals.reduce((a,b)=>a+(+b.amount_due||0),0);
+  const paid= bals.reduce((a,b)=>a+(+b.amount_paid||0),0);
+  m.innerHTML = `<h1>Fees</h1>
+    <div class="metrics" style="margin-bottom:1.5rem">
+      <div class="metric lg"><div class="num">KSh ${paid.toLocaleString()}</div><div class="lbl">Collected this term</div></div>
+      <div class="metric"><div class="num">KSh ${(due-paid).toLocaleString()}</div><div class="lbl">Outstanding</div></div>
+      <div class="metric"><div class="num">${bals.filter(b=>+b.balance>0).length}</div><div class="lbl">Defaulters</div></div>
+    </div>
+    <div class="card"><div class="section-title"><h3>Fee structures</h3><button class="btn secondary" id="addS">Add structure</button></div>
+      ${structs.length?`<table><thead><tr><th>Grade</th><th>Term</th><th>Year</th><th>Amount</th><th>Description</th></tr></thead><tbody>${structs.map(s=>`<tr><td>${esc(s.grade)}</td><td>${esc(s.term)}</td><td>${esc(s.year)}</td><td>KSh ${esc(s.amount)}</td><td>${esc(s.description||'')}</td></tr>`).join('')}</tbody></table>`:'<div class="muted small">No fee structures yet.</div>'}</div>
+    <div class="card"><h3>Balances</h3>
+      ${bals.length?`<table><thead><tr><th>Learner</th><th>Grade</th><th>Term</th><th>Year</th><th>Due</th><th>Paid</th><th>Balance</th></tr></thead><tbody>${bals.map(b=>`<tr><td>${esc(b.students?.full_name||'')}</td><td>${esc(b.students?.grade||'')}</td><td>${esc(b.term)}</td><td>${esc(b.year)}</td><td>KSh ${esc(b.amount_due)}</td><td>KSh ${esc(b.amount_paid)}</td><td>${+b.balance>0?'<span class="badge terra">KSh '+esc(b.balance)+'</span>':'<span class="badge">Cleared</span>'}</td></tr>`).join('')}</tbody></table>`:'<div class="empty"><i class="ti ti-wallet"></i><div>No balances logged.</div></div>'}</div>`;
+  $('#addS').onclick = ()=>{
+    m.innerHTML = `<div class="card" style="max-width:520px"><h2>Add fee structure</h2>
+      <form id="f" class="stack">
+        <div class="row"><div class="col field"><label>Grade</label><input name="grade" required></div>
+          <div class="col field"><label>Term</label><select name="term"><option>1</option><option>2</option><option>3</option></select></div>
+          <div class="col field"><label>Year</label><input type="number" name="year" value="${new Date().getFullYear()}"></div></div>
+        <div class="field"><label>Amount (KSh)</label><input type="number" name="amount" required></div>
+        <div class="field"><label>Description</label><input name="description"></div>
+        <div><button class="btn primary">Save</button> <button type="button" class="btn secondary" id="c">Cancel</button></div>
+      </form></div>`;
+    $('#c').onclick=()=>navigate('fees');
+    $('#f').onsubmit = async (e)=>{
+      e.preventDefault();
+      const f=Object.fromEntries(new FormData(e.target));
+      f.school_id=sid; f.term=+f.term; f.year=+f.year; f.amount=+f.amount;
+      const { error } = await sb.from('fee_structures').insert(f);
+      if(error) toast(error.message,true); else { toast('Saved'); navigate('fees'); }
+    };
+  };
+};
+
+/* --- REPORTS --- */
+modules.reports = async (m)=>{
+  const sid = state.profile.school_id;
+  const role = state.profile.role;
+  let students = [];
+  if(role==='parent'){
+    ({ data:students=[] } = await sb.from('students').select('id,full_name,grade,stream').eq('parent_id',state.profile.id));
+  } else {
+    ({ data:students=[] } = await sb.from('students').select('id,full_name,grade,stream').eq('school_id',sid).order('full_name'));
+  }
+  m.innerHTML = `<h1>Report cards</h1>
+    <div class="toolbar">
+      <div class="field"><label>Learner</label><select id="stu">${students.map(s=>`<option value="${s.id}">${esc(s.full_name)} \u2014 ${esc(s.grade||'')}</option>`).join('')}</select></div>
+      <div class="field"><label>Term</label><select id="t"><option>1</option><option>2</option><option>3</option></select></div>
+      <div class="field"><label>Year</label><input id="y" type="number" value="${new Date().getFullYear()}"></div>
+      <button class="btn primary" id="gen">Generate</button>
+      <button class="btn secondary" id="prn">Print</button>
+    </div>
+    <div id="rep"></div>`;
+  $('#gen').onclick = async ()=>{
+    const sidu=$('#stu').value, term=+$('#t').value, year=+$('#y').value;
+    const [{data:s},{data:a=[]},{data:att=[]}] = await Promise.all([
+      sb.from('students').select('*').eq('id',sidu).single(),
+      sb.from('assessments').select('score,remarks, cbc_strands(subject,strand,sub_strand)').eq('student_id',sidu).eq('term',term).eq('year',year),
+      sb.from('student_attendance').select('status').eq('student_id',sidu),
+    ]);
+    const attRate = att.length? Math.round(att.filter(x=>x.status==='present').length/att.length*100):null;
+    $('#rep').innerHTML = `<div class="card" id="report">
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1px solid var(--stone);padding-bottom:1rem;margin-bottom:1rem">
+        <div><div class="brand-mark" style="color:var(--green)">${esc(state.school?.name||APP_NAME)}</div>
+          <div class="muted small">${esc(state.school?.county||'')} ${state.school?.sub_county?'\u2014 '+esc(state.school?.sub_county):''}</div></div>
+        <div class="small muted">Term ${esc(term)} \u2014 ${esc(year)}</div>
+      </div>
+      <h2 style="margin-bottom:.2rem">${esc(s.full_name)}</h2>
+      <div class="muted">${esc(s.grade||'')} ${esc(s.stream||'')} &middot; Adm. ${esc(s.admission_number||'')}</div>
+      <h3 style="margin-top:1.25rem">CBC competency scores</h3>
+      ${a.length?`<table><thead><tr><th>Subject</th><th>Strand</th><th>Sub-strand</th><th>Score</th><th>Remarks</th></tr></thead><tbody>${a.map(x=>`<tr><td>${esc(x.cbc_strands?.subject||'')}</td><td>${esc(x.cbc_strands?.strand||'')}</td><td>${esc(x.cbc_strands?.sub_strand||'')}</td><td><b>${esc(x.score)}</b></td><td>${esc(x.remarks||'')}</td></tr>`).join('')}</tbody></table>`:'<div class="muted small">No assessments captured for this term yet.</div>'}
+      <p style="margin-top:1.25rem"><b>Attendance rate:</b> ${attRate===null?'\u2014':attRate+'%'}</p>
+      <p class="muted small">EE Exceeding &middot; ME Meeting &middot; AE Approaching &middot; BE Below Expectations</p>
+    </div>`;
+  };
+  $('#prn').onclick=()=>window.print();
+};
+
+/* --- INCIDENTS --- */
+modules.incidents = async (m)=>{
+  const sid = state.profile.school_id;
+  const { data:rows=[] } = await sb.from('incidents').select('*, students(full_name,grade)').eq('school_id',sid).order('incident_date',{ascending:false});
+  m.innerHTML = `<div class="section-title"><h1 style="margin:0">Incidents</h1><button class="btn primary" id="add">Log incident</button></div>
+    <div class="card">${rows.length?`<table><thead><tr><th>Date</th><th>Learner</th><th>Type</th><th>Description</th><th>Action</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.incident_date||'')}</td><td>${esc(r.students?.full_name||'')}</td><td><span class="badge ${r.incident_type==='discipline'?'terra':r.incident_type==='commendation'?'':'amber'}">${esc(r.incident_type)}</span></td><td>${esc(r.description||'')}</td><td>${esc(r.action_taken||'')}</td></tr>`).join('')}</tbody></table>`:'<div class="empty"><i class="ti ti-shield"></i><div>No incidents logged.</div></div>'}</div>`;
+  $('#add').onclick = async ()=>{
+    const { data:students=[] } = await sb.from('students').select('id,full_name,grade').eq('school_id',sid).order('full_name');
+    m.innerHTML = `<div class="card" style="max-width:560px"><h2>Log incident</h2>
+      <form id="f" class="stack">
+        <div class="field"><label>Learner</label><select name="student_id">${students.map(s=>`<option value="${s.id}">${esc(s.full_name)} \u2014 ${esc(s.grade||'')}</option>`).join('')}</select></div>
+        <div class="field"><label>Type</label><select name="incident_type"><option>discipline</option><option>counseling</option><option>commendation</option><option>medical</option></select></div>
+        <div class="field"><label>Date</label><input type="date" name="incident_date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>Description</label><textarea name="description"></textarea></div>
+        <div class="field"><label>Action taken</label><textarea name="action_taken"></textarea></div>
+        <div><button class="btn primary">Save</button> <button type="button" class="btn secondary" id="c">Cancel</button></div>
+      </form></div>`;
+    $('#c').onclick=()=>navigate('incidents');
+    $('#f').onsubmit = async (e)=>{
+      e.preventDefault();
+      const f=Object.fromEntries(new FormData(e.target));
+      f.school_id=sid; f.reported_by=state.profile.id;
+      const { error } = await sb.from('incidents').insert(f);
+      if(error) toast(error.message,true); else { toast('Saved'); navigate('incidents'); }
+    };
+  };
+};
+
+/* --- NOTICES --- */
+modules.notices = async (m)=>{
+  const sid = state.profile.school_id;
+  const { data:rows=[] } = await sb.from('notices').select('*').eq('school_id',sid).order('created_at',{ascending:false});
+  const canPost = ['admin','headteacher','teacher'].includes(state.profile.role);
+  m.innerHTML = `<div class="section-title"><h1 style="margin:0">Notice board</h1>${canPost?`<button class="btn primary" id="add">Post a notice</button>`:''}</div>
+    ${rows.length? rows.map(n=>`<div class="card"><h3>${esc(n.title)} <span class="badge muted small">${esc(n.audience)}</span></h3><div class="small muted">${new Date(n.created_at).toLocaleString()}</div><p>${esc(n.body||'')}</p></div>`).join('') : `<div class="card empty"><i class="ti ti-megaphone"></i><div>No notices yet.</div></div>`}`;
+  if($('#add')) $('#add').onclick = ()=>{
+    m.innerHTML = `<div class="card" style="max-width:560px"><h2>Post a notice</h2>
+      <form id="f" class="stack">
+        <div class="field"><label>Title</label><input name="title" required></div>
+        <div class="field"><label>Audience</label><select name="audience"><option>all</option><option>teachers</option><option>parents</option></select></div>
+        <div class="field"><label>Body</label><textarea name="body" rows="5"></textarea></div>
+        <div><button class="btn primary">Post</button> <button type="button" class="btn secondary" id="c">Cancel</button></div>
+      </form></div>`;
+    $('#c').onclick=()=>navigate('notices');
+    $('#f').onsubmit = async (e)=>{
+      e.preventDefault();
+      const f=Object.fromEntries(new FormData(e.target));
+      f.school_id=sid; f.posted_by=state.profile.id;
+      const { error } = await sb.from('notices').insert(f);
+      if(error) toast(error.message,true); else { toast('Posted'); navigate('notices'); }
+    };
+  };
+};
+
+/* --- KNEC SBA EXPORT --- */
+modules.knec = async (m)=>{
+  const sid = state.profile.school_id;
+  m.innerHTML = `<h1>KNEC SBA export</h1>
+    <div class="card" style="max-width:640px">
+      <p class="muted">Export learner CBC scores in the format expected by the KNEC SBA portal.</p>
+      <div class="toolbar">
+        <div class="field"><label>Grade</label><input id="g" required></div>
+        <div class="field"><label>Term</label><select id="t"><option>1</option><option>2</option><option>3</option></select></div>
+        <div class="field"><label>Year</label><input id="y" type="number" value="${new Date().getFullYear()}"></div>
+        <button class="btn primary" id="dl">Download CSV</button>
+      </div>
+    </div>`;
+  $('#dl').onclick = async ()=>{
+    const grade=$('#g').value, term=+$('#t').value, year=+$('#y').value;
+    const { data:students=[] } = await sb.from('students').select('id,full_name,admission_number,gender,grade').eq('school_id',sid).eq('grade',grade);
+    const ids = students.map(s=>s.id); if(!ids.length){ toast('No learners in that grade',true); return; }
+    const { data:a=[] } = await sb.from('assessments').select('student_id,score, cbc_strands(subject,strand,sub_strand)').in('student_id',ids).eq('term',term).eq('year',year);
+    const rows = [['KNEC_Code','Admission_No','Learner_Name','Gender','Grade','Subject','Strand','Sub_Strand','Term','Year','Performance_Level']];
+    a.forEach(x=>{
+      const s = students.find(st=>st.id===x.student_id);
+      rows.push([state.school?.knec_code||'',s.admission_number||'',s.full_name,s.gender||'',s.grade,x.cbc_strands?.subject||'',x.cbc_strands?.strand||'',x.cbc_strands?.sub_strand||'',term,year,x.score]);
+    });
+    const csv = rows.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], {type:'text/csv'});
+    const a2=document.createElement('a'); a2.href=URL.createObjectURL(blob); a2.download=`knec-sba-${grade}-T${term}-${year}.csv`; a2.click();
+  };
+};
+
+/* --- SETTINGS --- */
+modules.settings = async (m)=>{
+  m.innerHTML = `<h1>Settings</h1>
+    <div class="card" style="max-width:560px">
+      <h3>Your profile</h3>
+      <form id="p" class="stack">
+        <div class="field"><label>Full name</label><input name="full_name" value="${esc(state.profile.full_name||'')}"></div>
+        <div class="field"><label>Phone</label><input name="phone" value="${esc(state.profile.phone||'')}"></div>
+        <div><button class="btn primary">Save</button></div>
+      </form>
+    </div>
+    <div class="card" style="max-width:560px">
+      <h3>Your school</h3>
+      <p class="small muted">${esc(state.school?.name||'No school linked.')}</p>
+      ${state.school?`<p class="small">School code: <b>${esc(state.school.school_code)}</b> &mdash; share this with teachers and parents joining your school.</p>`:''}
+    </div>`;
+  $('#p').onsubmit = async (e)=>{
+    e.preventDefault();
+    const f=Object.fromEntries(new FormData(e.target));
+    const { error } = await sb.from('users').update(f).eq('id',state.profile.id);
+    if(error) toast(error.message,true); else { toast('Saved'); Object.assign(state.profile, f); }
+  };
+};
+
+/* ============================================================================
+ * BOOT
+ * ==========================================================================*/
+async function loadProfile(){
+  const { data:{ user } } = await sb.auth.getUser();
+  if(!user) return null;
+  let { data:profile } = await sb.from('users').select('*').eq('id', user.id).maybeSingle();
+  if(!profile){
+    // backfill in case trigger did not run
+    const md = user.user_metadata||{};
+    let school_id = null;
+    if(md.school_code){
+      const { data:s } = await sb.from('schools').select('id').eq('school_code',md.school_code).maybeSingle();
+      school_id = s?.id||null;
+    }
+    await sb.from('users').insert({ id:user.id, email:user.email, full_name:md.full_name, phone:md.phone, school_id, role:md.role||'parent' });
+    ({ data:profile } = await sb.from('users').select('*').eq('id',user.id).maybeSingle());
+  }
+  return profile;
+}
+
+async function boot(){
+  // password recovery flow lands here with type=recovery in the hash
+  if(location.hash.includes('type=recovery') || location.hash==='#reset'){
+    viewSetPassword(); return;
+  }
+  const { data:{ session } } = await sb.auth.getSession();
+  if(!session){ viewLogin(); return; }
+  state.session = session;
+  state.profile = await loadProfile();
+  if(state.profile?.school_id){
+    const { data:school } = await sb.from('schools').select('*').eq('id',state.profile.school_id).maybeSingle();
+    state.school = school;
+  }
+  // initial route from hash
+  const h = location.hash.replace('#','');
+  if(h && NAV.find(n=>n.id===h)) state.route = h;
+  viewShell();
+}
+
+window.addEventListener('hashchange', ()=>{
+  const h = location.hash.replace('#','');
+  if(h && NAV.find(n=>n.id===h) && state.profile){ state.route=h; render(); }
+});
+
+sb.auth.onAuthStateChange((event)=>{
+  if(event==='SIGNED_OUT'){ viewLogin(); }
+  if(event==='PASSWORD_RECOVERY'){ viewSetPassword(); }
+});
+
+boot();
+</script>
+</body>
+</html>
