@@ -439,31 +439,81 @@ on conflict (school_code) do nothing;
     .form-link{font-size:.82rem;text-align:right;display:block;margin-top:-.4rem;margin-bottom:1rem}
 
     /* APP SHELL */
-    .shell{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
-    @media (max-width:860px){.shell{grid-template-columns:1fr}}
-    .sidebar{background:var(--surface);border-right:1px solid var(--stone);padding:1.5rem 1rem;display:flex;flex-direction:column;gap:1rem}
-    .sidebar .brand{font-family:'Fraunces',serif;font-size:1.4rem;color:var(--green);padding:0 .5rem}
-    .nav{display:flex;flex-direction:column;gap:.1rem}
-    .nav a{padding:.55rem .75rem;border-radius:var(--radius);color:var(--ink-2);font-size:.92rem}
+    .shell{display:flex;min-height:100vh;align-items:stretch}
+
+    /* SIDEBAR — fixed width, full height, never scrolls with content */
+    .sidebar{
+      width:232px;flex-shrink:0;
+      background:var(--surface);border-right:1px solid var(--stone);
+      display:flex;flex-direction:column;
+      position:sticky;top:0;height:100vh;overflow-y:auto;
+    }
+    .sidebar-inner{padding:1.5rem 1rem;display:flex;flex-direction:column;gap:.75rem;flex:1}
+    .sidebar .brand{font-family:'Fraunces',serif;font-size:1.35rem;color:var(--green);padding:0 .5rem;margin-bottom:.25rem;line-height:1.2}
+    .sidebar .school-name{font-size:.78rem;color:var(--muted);padding:0 .5rem;margin-top:-.2rem;margin-bottom:.5rem;font-weight:400}
+
+    /* NAV GROUPS */
+    .nav-group{margin-bottom:.5rem}
+    .nav-group-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:.25rem .75rem;margin-bottom:.15rem;font-weight:600}
+    .nav{display:flex;flex-direction:column;gap:.05rem}
+    .nav a{
+      display:flex;align-items:center;gap:.55rem;
+      padding:.52rem .75rem;border-radius:var(--radius);
+      color:var(--ink-2);font-size:.875rem;line-height:1.3;
+      transition:background .12s,color .12s;
+    }
     .nav a:hover{background:var(--green-50);color:var(--green);text-decoration:none}
     .nav a.active{background:var(--green-50);color:var(--green);font-weight:500}
-    .sidebar .footer{margin-top:auto;font-size:.8rem;color:var(--muted);padding:0 .5rem}
+    .nav a .ti{font-size:1rem;opacity:.75;flex-shrink:0}
+    .nav a.active .ti{opacity:1}
 
-    .topbar{display:none;padding:.75rem 1rem;background:var(--surface);border-bottom:1px solid var(--stone);
-      align-items:center;gap:.75rem;position:sticky;top:0;z-index:50}
-    .topbar .menu{background:none;border:none;font-size:1.4rem;color:var(--ink);cursor:pointer}
-    .topbar .school{font-weight:500}
-    .topbar .mod{margin-left:auto;color:var(--muted);font-size:.9rem}
+    .sidebar .footer{
+      padding:1rem;border-top:1px solid var(--stone);
+      font-size:.78rem;color:var(--muted);
+    }
+    .sidebar .footer strong{display:block;color:var(--ink);font-size:.82rem;margin-bottom:.15rem}
+
+    /* TOPBAR — mobile only */
+    .topbar{
+      display:none;padding:.7rem 1rem;
+      background:var(--surface);border-bottom:1px solid var(--stone);
+      align-items:center;gap:.75rem;
+      position:sticky;top:0;z-index:50;
+    }
+    .topbar .menu{background:none;border:none;padding:.25rem;color:var(--ink);cursor:pointer;font-size:1.25rem;line-height:1;display:flex;align-items:center}
+    .topbar .school{font-weight:600;font-size:.95rem}
+    .topbar .mod{margin-left:auto;color:var(--muted);font-size:.82rem}
+
     @media (max-width:860px){
+      .shell{flex-direction:column}
       .topbar{display:flex}
-      .sidebar{position:fixed;left:0;top:0;bottom:0;width:260px;transform:translateX(-100%);transition:transform .2s;z-index:60}
-      .sidebar.open{transform:translateX(0)}
-      .scrim{display:none;position:fixed;inset:0;background:rgba(28,29,26,.4);z-index:55}
+      .sidebar{
+        position:fixed;left:0;top:0;bottom:0;height:100vh;
+        width:260px;transform:translateX(-100%);
+        transition:transform .22s cubic-bezier(.4,0,.2,1);z-index:60;
+      }
+      .sidebar.open{transform:translateX(0);box-shadow:4px 0 24px rgba(28,29,26,.12)}
+      .scrim{display:none;position:fixed;inset:0;background:rgba(28,29,26,.35);z-index:55}
       .scrim.show{display:block}
     }
 
-    main{padding:2rem;min-width:0}
+    /* MAIN CONTENT */
+    .content-wrap{flex:1;min-width:0;display:flex;flex-direction:column}
+    main{
+      flex:1;padding:2rem 2.25rem;
+      max-width:1080px;          /* cap width so content never sprawls on wide screens */
+      width:100%;
+    }
     @media (max-width:860px){main{padding:1.25rem}}
+
+    /* PAGE HEADER — consistent across all modules */
+    .page-header{margin-bottom:1.75rem;padding-bottom:1rem;border-bottom:1px solid var(--stone)}
+    .page-header h1{margin-bottom:.2rem;font-size:1.65rem}
+    .page-header .sub{color:var(--muted);font-size:.88rem}
+    .page-header-row{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+
+    /* MODULE CONTENT WRAPPER — keeps sections from floating loose */
+    .module-body{display:flex;flex-direction:column;gap:1.25rem}
     .card{background:var(--surface);padding:1.25rem 1.25rem;border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:1.25rem}
     .section-title{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:1rem}
     .section-title .sub{color:var(--muted);font-size:.88rem}
@@ -761,43 +811,72 @@ function viewSetPassword(){
 /* ============================================================================
  * APP SHELL
  * ==========================================================================*/
-const NAV = [
-  { id:'dashboard', label:'Dashboard', roles:['admin','headteacher','teacher','parent'] },
-  { id:'students',  label:'Students',  roles:['admin','headteacher','teacher'] },
-  { id:'attendance',label:'Attendance',roles:['admin','headteacher','teacher'] },
-  { id:'grading',   label:'CBC grading',roles:['admin','headteacher','teacher'] },
-  { id:'assignments',label:'Assignments',roles:['admin','headteacher','teacher','parent'] },
-  { id:'lessons',   label:'Lesson plans',roles:['admin','headteacher','teacher'] },
-  { id:'timetable', label:'Timetable', roles:['admin','headteacher','teacher','parent'] },
-  { id:'teachers',  label:'Teachers',  roles:['admin','headteacher'] },
-  { id:'leave',     label:'Leave & cover',roles:['admin','headteacher','teacher'] },
-  { id:'fees',      label:'Fees',      roles:['admin','headteacher','parent'] },
-  { id:'reports',   label:'Report cards',roles:['admin','headteacher','parent'] },
-  { id:'incidents', label:'Incidents', roles:['admin','headteacher','teacher'] },
-  { id:'notices',   label:'Notices',   roles:['admin','headteacher','teacher','parent'] },
-  { id:'knec',      label:'KNEC SBA export',roles:['admin','headteacher'] },
-  { id:'settings',  label:'Settings',  roles:['admin','headteacher','teacher','parent'] },
+const NAV_GROUPS = [
+  { label:'Overview', items:[
+    { id:'dashboard',  label:'Dashboard',      icon:'ti-layout-dashboard', roles:['admin','headteacher','teacher','parent'] },
+    { id:'notices',    label:'Notices',         icon:'ti-speakerphone',     roles:['admin','headteacher','teacher','parent'] },
+  ]},
+  { label:'Learners', items:[
+    { id:'students',   label:'Students',        icon:'ti-users',            roles:['admin','headteacher','teacher'] },
+    { id:'attendance', label:'Attendance',      icon:'ti-calendar-check',   roles:['admin','headteacher','teacher'] },
+    { id:'grading',    label:'CBC Grading',     icon:'ti-clipboard-check',  roles:['admin','headteacher','teacher'] },
+    { id:'incidents',  label:'Incidents',       icon:'ti-shield-exclamation',roles:['admin','headteacher','teacher'] },
+  ]},
+  { label:'Teaching', items:[
+    { id:'timetable',  label:'Timetable',       icon:'ti-calendar',         roles:['admin','headteacher','teacher','parent'] },
+    { id:'lessons',    label:'Lesson Plans',    icon:'ti-book-2',            roles:['admin','headteacher','teacher'] },
+    { id:'assignments',label:'Assignments',     icon:'ti-notebook',          roles:['admin','headteacher','teacher','parent'] },
+  ]},
+  { label:'Staff', items:[
+    { id:'teachers',   label:'Teachers',        icon:'ti-school',            roles:['admin','headteacher'] },
+    { id:'leave',      label:'Leave & Cover',   icon:'ti-calendar-off',      roles:['admin','headteacher','teacher'] },
+  ]},
+  { label:'Finance', items:[
+    { id:'fees',       label:'Fees',            icon:'ti-wallet',            roles:['admin','headteacher','parent'] },
+    { id:'reports',    label:'Report Cards',    icon:'ti-file-text',         roles:['admin','headteacher','parent'] },
+    { id:'knec',       label:'KNEC SBA Export', icon:'ti-table-export',      roles:['admin','headteacher'] },
+  ]},
+  { label:'Account', items:[
+    { id:'settings',   label:'Settings',        icon:'ti-settings',          roles:['admin','headteacher','teacher','parent'] },
+  ]},
 ];
+
+function buildNav(role, currentRoute){
+  return NAV_GROUPS.map(group=>{
+    const visible = group.items.filter(n=>n.roles.includes(role));
+    if(!visible.length) return '';
+    return `<div class="nav-group">
+      <div class="nav-group-label">${group.label}</div>
+      <nav class="nav">${visible.map(n=>
+        `<a href="#${n.id}" data-route="${n.id}" class="${currentRoute===n.id?'active':''}">
+          <i class="ti ${n.icon}"></i>${n.label}
+        </a>`).join('')}
+      </nav>
+    </div>`;
+  }).join('');
+}
 
 function viewShell(){
   const role = state.profile?.role || 'parent';
-  const links = NAV.filter(n=>n.roles.includes(role)).map(n=>
-    `<a href="#${n.id}" data-route="${n.id}" class="${state.route===n.id?'active':''}">${n.label}</a>`).join('');
   document.body.innerHTML = `
   <div id="progress"></div><div id="toast" class="toast"></div>
   <div class="shell">
     <div class="scrim" id="scrim"></div>
     <aside class="sidebar" id="sidebar">
-      <div class="brand">${APP_NAME}</div>
-      <div class="small muted" style="padding:0 .5rem">${esc(state.school?.name||'')}</div>
-      <nav class="nav">${links}</nav>
+      <div class="sidebar-inner">
+        <div>
+          <div class="brand">${APP_NAME}</div>
+          <div class="school-name">${esc(state.school?.name||'')}</div>
+        </div>
+        <div id="navHolder">${buildNav(role, state.route)}</div>
+      </div>
       <div class="footer">
-        <div>${esc(state.profile?.full_name||'')}</div>
-        <div style="text-transform:capitalize">${esc(role)}</div>
-        <a href="#" id="signOut" style="display:inline-block;margin-top:.5rem">Sign out</a>
+        <strong>${esc(state.profile?.full_name||'')}</strong>
+        <span style="text-transform:capitalize">${esc(role)}</span><br>
+        <a href="#" id="signOut" style="display:inline-block;margin-top:.4rem;font-size:.8rem">Sign out</a>
       </div>
     </aside>
-    <div>
+    <div class="content-wrap">
       <div class="topbar">
         <button class="menu" id="menuBtn" aria-label="Menu"><i class="ti ti-menu-2"></i></button>
         <div class="school">${esc(state.school?.name||APP_NAME)}</div>
@@ -821,10 +900,16 @@ function navigate(route){
   render();
 }
 
+function findNavItem(id){
+  for(const g of NAV_GROUPS){ const f=g.items.find(n=>n.id===id); if(f) return f; }
+  return null;
+}
+
 async function render(){
   const main = $('#main'); if(!main) return;
-  const mod  = NAV.find(n=>n.id===state.route); $('#modName').textContent = mod?.label||'';
-  main.innerHTML = `<div class="muted">Loading\u2026</div>`;
+  const mod = findNavItem(state.route);
+  if($('#modName')) $('#modName').textContent = mod?.label||'';
+  main.innerHTML = `<div class="muted" style="padding:1rem">Loading\u2026</div>`;
   progress.start();
   try { await (modules[state.route]||modules.dashboard)(main); }
   catch(e){ console.error(e); main.innerHTML = `<div class="card"><h3>Something went wrong</h3><p class="muted small">${esc(e.message||e)}</p></div>`; }
