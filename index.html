@@ -613,6 +613,13 @@ const TAGLINE  = 'A school management system built for Kenya\u2019s CBC classroo
 /*
   ADDITIONAL SQL — run these in Supabase SQL editor if upgrading from an earlier version:
 
+  alter table public.assessments add column if not exists learning_area text;
+  alter table public.assessments add column if not exists cat1 numeric;
+  alter table public.assessments add column if not exists cat2 numeric;
+  alter table public.assessments add column if not exists project_score numeric;
+  alter table public.assessments add column if not exists endterm_score numeric;
+  alter table public.assessments add column if not exists weighted_score numeric;
+
   alter table public.lesson_plans add column if not exists learning_outcomes text;
   alter table public.lesson_plans add column if not exists key_inquiry text;
   alter table public.lesson_plans add column if not exists learning_experiences text;
@@ -1506,21 +1513,303 @@ modules.attendance = async (m)=>{
   };
 };
 
-/* --- CBC GRADING GRID --- */
-// KNEC 8-point scale for Junior Secondary (Grades 7-9)
-function pctToKnec(pct){
-  const p = +pct;
+/* --- CBC GRADING ENGINE --- */
+
+// Correct KNEC performance bands (Primary: rubric-based, JS: percentage bands)
+function pctToLevel(pct){
+  const p=+pct;
   if(isNaN(p)||p<0||p>100) return null;
-  if(p>=90) return {code:'EE',label:'Exceeding Expectation',points:8};
-  if(p>=80) return {code:'ME',label:'Meeting Expectation',points:7};
-  if(p>=70) return {code:'ME',label:'Meeting Expectation',points:6};
-  if(p>=60) return {code:'AE',label:'Approaching Expectation',points:5};
-  if(p>=50) return {code:'AE',label:'Approaching Expectation',points:4};
-  if(p>=40) return {code:'BE',label:'Below Expectation',points:3};
-  if(p>=30) return {code:'BE',label:'Below Expectation',points:2};
-  return {code:'BE',label:'Below Expectation',points:1};
+  if(p>=90) return {code:'EE',label:'Exceeding Expectations',points:8,color:'var(--green)'};
+  if(p>=75) return {code:'ME',label:'Meeting Expectations',points:7,color:'var(--green)'};
+  if(p>=58) return {code:'ME',label:'Meeting Expectations',points:6,color:'var(--green)'};
+  if(p>=46) return {code:'AE',label:'Approaching Expectations',points:5,color:'#b45309'};
+  if(p>=31) return {code:'AE',label:'Approaching Expectations',points:4,color:'#b45309'};
+  if(p>=16) return {code:'BE',label:'Below Expectations',points:3,color:'var(--terracotta)'};
+  if(p>=1)  return {code:'BE',label:'Below Expectations',points:2,color:'var(--terracotta)'};
+  return {code:'BE',label:'Below Expectations',points:1,color:'var(--terracotta)'};
 }
+function levelColor(code){ return code==='EE'?'var(--green)':code==='ME'?'#2d6a4f':code==='AE'?'#b45309':'var(--terracotta)'; }
 function isJuniorSecondary(grade){ return ['Grade 7','Grade 8','Grade 9'].includes(grade); }
+function isLowerPrimary(grade){ return ['PP1','PP2','Grade 1','Grade 2','Grade 3'].includes(grade); }
+
+// Official CBC Learning Areas per tier
+const CBC_LEARNING_AREAS = {
+  'PP1':    ['Language Activities','Mathematical Activities','Environmental Activities','Psychomotor and Creative Activities','Religious Education Activities'],
+  'PP2':    ['Language Activities','Mathematical Activities','Environmental Activities','Psychomotor and Creative Activities','Religious Education Activities'],
+  'Grade 1':['Indigenous Language / Literacy','English Language Activities','Kiswahili Language Activities','Mathematical Activities','Environmental Activities','Creative Activities','Religious Education'],
+  'Grade 2':['Indigenous Language / Literacy','English Language Activities','Kiswahili Language Activities','Mathematical Activities','Environmental Activities','Creative Activities','Religious Education'],
+  'Grade 3':['Indigenous Language / Literacy','English Language Activities','Kiswahili Language Activities','Mathematical Activities','Environmental Activities','Creative Activities','Religious Education'],
+  'Grade 4':['English','Kiswahili / KSL','Mathematics','Science and Technology','Agriculture and Nutrition','Social Studies','Creative Arts and Sports','Religious Education'],
+  'Grade 5':['English','Kiswahili / KSL','Mathematics','Science and Technology','Agriculture and Nutrition','Social Studies','Creative Arts and Sports','Religious Education'],
+  'Grade 6':['English','Kiswahili / KSL','Mathematics','Science and Technology','Agriculture and Nutrition','Social Studies','Creative Arts and Sports','Religious Education'],
+  'Grade 7':['English','Kiswahili / KSL','Mathematics','Integrated Science','Pre-Technical Studies','Agriculture and Nutrition','Social Studies','Creative Arts and Sports','Religious Education'],
+  'Grade 8':['English','Kiswahili / KSL','Mathematics','Integrated Science','Pre-Technical Studies','Agriculture and Nutrition','Social Studies','Creative Arts and Sports','Religious Education'],
+  'Grade 9':['English','Kiswahili / KSL','Mathematics','Integrated Science','Pre-Technical Studies','Agriculture and Nutrition','Social Studies','Creative Arts and Sports','Religious Education'],
+};
+
+// CBC Core Competencies (tracked on every report)
+const CORE_COMPETENCIES = [
+  'Communication and Collaboration',
+  'Critical Thinking and Problem Solving',
+  'Creativity and Imagination',
+  'Citizenship',
+  'Digital Literacy',
+  'Learning to Learn',
+  'Self-Efficacy',
+];
+
+// CBC Values
+const CBC_VALUES = [
+  'Love','Responsibility','Respect','Unity','Peace','Patriotism','Social Justice','Integrity',
+];
+
+// Assessment weighting: CAT1 15% + CAT2 15% + Project 20% + End-Term 50% = 100%
+// (Schools can customise but this is the standard SBA formative/summative split)
+const WEIGHTS = { cat1:15, cat2:15, project:20, endterm:50 };
+
+function weightedScore(scores){
+  if(!scores) return null;
+  const {cat1,cat2,project,endterm} = scores;
+  const parts=[];
+  if(cat1!==''&&cat1!=null)    parts.push({v:+cat1,w:WEIGHTS.cat1});
+  if(cat2!==''&&cat2!=null)    parts.push({v:+cat2,w:WEIGHTS.cat2});
+  if(project!==''&&project!=null) parts.push({v:+project,w:WEIGHTS.project});
+  if(endterm!==''&&endterm!=null) parts.push({v:+endterm,w:WEIGHTS.endterm});
+  if(!parts.length) return null;
+  const totalW=parts.reduce((a,p)=>a+p.w,0);
+  const sum=parts.reduce((a,p)=>a+p.v*(p.w/totalW),0);
+  return Math.round(sum*10)/10;
+}
+
+/* --- CBC GRADING MODULE --- */
+modules.grading = async (m)=>{
+  const sid=state.profile.school_id;
+  const role=state.profile.role;
+  const GRADES=['PP1','PP2','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6','Grade 7','Grade 8','Grade 9'];
+
+  m.innerHTML=`
+    <div class="section-title" style="margin-bottom:1.25rem">
+      <div>
+        <h1 style="margin:0">CBC Grading</h1>
+        <p class="muted small" style="margin-top:.2rem">Assessments are recorded per learning area and strand. Weighted score: CAT 1 (15%) + CAT 2 (15%) + Project (20%) + End-Term (50%).</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:1.25rem">
+      <h3>Step 1 — Select class and learning area</h3>
+      <div class="toolbar" style="margin-bottom:0">
+        <div class="field"><label>Grade *</label>
+          <select id="g">${GRADES.map(g=>`<option>${g}</option>`).join('')}</select></div>
+        <div class="field"><label>Stream</label><input id="s" placeholder="e.g. A, B or leave blank"></div>
+        <div class="field"><label>Learning area *</label>
+          <select id="la"><option value="">Select grade first</option></select></div>
+        <div class="field"><label>Term *</label>
+          <select id="t"><option value="1">Term 1</option><option value="2">Term 2</option><option value="3">Term 3</option></select></div>
+        <div class="field"><label>Year *</label>
+          <input id="y" type="number" value="${new Date().getFullYear()}" style="width:90px"></div>
+        <button class="btn primary" id="load" style="align-self:flex-end">Load class</button>
+      </div>
+    </div>
+
+    <div id="gradingBody"></div>`;
+
+  // Populate learning areas when grade changes
+  const populateLA=()=>{
+    const g=$('#g').value;
+    const areas=CBC_LEARNING_AREAS[g]||[];
+    $('#la').innerHTML=areas.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join('');
+  };
+  $('#g').onchange=populateLA; populateLA();
+
+  $('#load').onclick=async()=>{
+    const grade=$('#g').value, stream=$('#s').value.trim(),
+          learning_area=$('#la').value, term=+$('#t').value, year=+$('#y').value;
+    if(!learning_area){ toast('Select a learning area.',true); return; }
+    const js=isJuniorSecondary(grade);
+    const lp=isLowerPrimary(grade);
+
+    // Load students
+    let sq=sb.from('students').select('id,full_name,admission_number').eq('school_id',sid).eq('grade',grade).order('full_name');
+    if(stream) sq=sq.eq('stream',stream);
+    const {data:students=[]}=await sq;
+
+    // Load strands for this learning area and grade
+    const {data:strands=[]}=await sb.from('cbc_strands')
+      .select('*').eq('school_id',sid).eq('grade',grade)
+      .ilike('subject',`%${learning_area.split('/')[0].trim()}%`).order('strand');
+
+    // Load existing assessments for this class/term/year
+    if(!students.length){
+      $('#gradingBody').innerHTML=`<div class="card"><div class="empty"><i class="ti ti-users"></i><div>No learners found in ${grade}${stream?' '+stream:''}.</div></div></div>`;
+      return;
+    }
+
+    const stuIds=students.map(s=>s.id);
+    const {data:existing=[]}=await sb.from('assessments')
+      .select('*').in('student_id',stuIds).eq('term',term).eq('year',year)
+      .ilike('learning_area',`%${learning_area.split('/')[0].trim()}%`);
+
+    // Build a map: student_id -> {strand_id -> assessment row}
+    const amap={};
+    existing.forEach(a=>{
+      if(!amap[a.student_id]) amap[a.student_id]={};
+      amap[a.student_id][a.strand_id||'overall']=a;
+    });
+
+    if(js){
+      // Junior Secondary: percentage inputs per strand with weighted CAT1/CAT2/Project/End-Term
+      $('#gradingBody').innerHTML=`
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
+            <div>
+              <h3 style="margin:0">${esc(grade)}${stream?' — '+esc(stream):''} &nbsp; ${esc(learning_area)} &nbsp; <span class="badge amber">Term ${term} ${year}</span></h3>
+              <div class="small muted" style="margin-top:.2rem">Enter percentage scores (0–100) for each assessment. Weighted final score and KNEC performance level calculated automatically.</div>
+            </div>
+            <button class="btn primary" id="saveGrades"><i class="ti ti-device-floppy"></i> Save all</button>
+          </div>
+          ${strands.length?`
+          <div style="overflow-x:auto">
+          <table class="grading" id="gradeTable">
+            <thead>
+              <tr>
+                <th rowspan="2" style="min-width:160px">Learner</th>
+                ${strands.map(str=>`<th colspan="5" style="text-align:center;border-left:2px solid var(--stone)">${esc(str.strand)}${str.sub_strand?'<div class="strand-sub">'+esc(str.sub_strand)+'</div>':''}</th>`).join('')}
+              </tr>
+              <tr>
+                ${strands.map(()=>`
+                  <th style="border-left:2px solid var(--stone);font-size:.72rem;color:var(--muted)">CAT 1<br><span style="font-weight:400">15%</span></th>
+                  <th style="font-size:.72rem;color:var(--muted)">CAT 2<br><span style="font-weight:400">15%</span></th>
+                  <th style="font-size:.72rem;color:var(--muted)">Project<br><span style="font-weight:400">20%</span></th>
+                  <th style="font-size:.72rem;color:var(--muted)">End-Term<br><span style="font-weight:400">50%</span></th>
+                  <th style="font-size:.72rem;color:var(--muted)">Final</th>
+                `).join('')}
+              </tr>
+            </thead>
+            <tbody>
+              ${students.map(s=>`
+                <tr data-sid="${s.id}">
+                  <td style="font-weight:500">${esc(s.full_name)}<div class="small muted">${esc(s.admission_number||'')}</div></td>
+                  ${strands.map(str=>{
+                    const ex=amap[s.id]?.[str.id]||{};
+                    const scores={cat1:ex.cat1??'',cat2:ex.cat2??'',project:ex.project_score??'',endterm:ex.endterm_score??''};
+                    const final=weightedScore(scores);
+                    const lv=final!==null?pctToLevel(final):null;
+                    return `<td style="border-left:2px solid var(--stone)"><input type="number" class="score-inp" min="0" max="100" data-strand="${str.id}" data-type="cat1" value="${scores.cat1}" style="width:46px;font-size:.82rem;padding:.25rem .3rem"></td>
+                    <td><input type="number" class="score-inp" min="0" max="100" data-strand="${str.id}" data-type="cat2" value="${scores.cat2}" style="width:46px;font-size:.82rem;padding:.25rem .3rem"></td>
+                    <td><input type="number" class="score-inp" min="0" max="100" data-strand="${str.id}" data-type="project" value="${scores.project}" style="width:46px;font-size:.82rem;padding:.25rem .3rem"></td>
+                    <td><input type="number" class="score-inp" min="0" max="100" data-strand="${str.id}" data-type="endterm" value="${scores.endterm}" style="width:46px;font-size:.82rem;padding:.25rem .3rem"></td>
+                    <td class="final-cell" data-strand="${str.id}" style="font-weight:600;font-size:.85rem;color:${lv?levelColor(lv.code):'var(--muted)'}">
+                      ${lv?`${final}%<br><span style="font-size:.72rem">${lv.code}</span>`:'—'}</td>`;
+                  }).join('')}
+                </tr>`).join('')}
+            </tbody>
+          </table></div>
+          <div class="small muted" style="margin-top:.75rem">EE = Exceeding (90–100%) &nbsp;&middot;&nbsp; ME = Meeting (58–89%) &nbsp;&middot;&nbsp; AE = Approaching (31–57%) &nbsp;&middot;&nbsp; BE = Below (0–30%)</div>
+          `:`<div class="empty"><i class="ti ti-book-2"></i><div>No strands found for ${esc(learning_area)} in ${esc(grade)}. Add strands first.</div></div>`}
+        </div>`;
+
+      // Live calculation
+      document.querySelectorAll('.score-inp').forEach(inp=>inp.oninput=()=>{
+        const row=inp.closest('tr');
+        const strandId=inp.dataset.strand;
+        const inps=row.querySelectorAll(`.score-inp[data-strand="${strandId}"]`);
+        const scores={cat1:'',cat2:'',project:'',endterm:''};
+        inps.forEach(i=>{ scores[i.dataset.type]=i.value; });
+        const final=weightedScore(scores);
+        const lv=final!==null?pctToLevel(final):null;
+        const cell=row.querySelector(`.final-cell[data-strand="${strandId}"]`);
+        cell.style.color=lv?levelColor(lv.code):'var(--muted)';
+        cell.innerHTML=lv?`${final}%<br><span style="font-size:.72rem">${lv.code}</span>`:'—';
+      });
+
+    } else {
+      // Primary / Pre-Primary: EE/ME/AE/BE buttons, default ME, optional remarks
+      $('#gradingBody').innerHTML=`
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
+            <div>
+              <h3 style="margin:0">${esc(grade)}${stream?' — '+esc(stream):''} &nbsp; ${esc(learning_area)} &nbsp; <span class="badge amber">Term ${term} ${year}</span></h3>
+              <div class="small muted" style="margin-top:.2rem">Default is <b>ME</b>. Tap only to change exceptions. ${lp?'Pre-primary uses observation-based rubrics.':''}</div>
+            </div>
+            <button class="btn primary" id="saveGrades"><i class="ti ti-device-floppy"></i> Save all</button>
+          </div>
+          ${strands.length?`
+          <table class="grading" id="gradeTable">
+            <thead><tr><th>Learner</th>${strands.map(str=>`<th style="min-width:140px">${esc(str.strand)}${str.sub_strand?`<div class="strand-sub">${esc(str.sub_strand)}</div>`:''}</th>`).join('')}<th>Remarks</th></tr></thead>
+            <tbody>${students.map(s=>`
+              <tr data-sid="${s.id}">
+                <td style="font-weight:500">${esc(s.full_name)}<div class="small muted">${esc(s.admission_number||'')}</div></td>
+                ${strands.map(str=>{
+                  const ex=amap[s.id]?.[str.id];
+                  const cur=ex?.score||'ME';
+                  return `<td><div class="score-cell">${['EE','ME','AE','BE'].map(sc=>`<button type="button" class="score-btn${cur===sc?' active':''} ${sc==='BE'?'be':sc==='AE'?'ae':''}" data-strand="${str.id}" data-sc="${sc}">${sc}</button>`).join('')}</div></td>`;
+                }).join('')}
+                <td><input class="rmk" value="${esc(amap[s.id]?.overall?.remarks||Object.values(amap[s.id]||{})[0]?.remarks||'')}" style="font-size:.85rem" placeholder="optional"></td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+          `:`
+          <div style="padding:1rem 0">
+            <div class="small muted" style="margin-bottom:.75rem">No strands found for <b>${esc(learning_area)}</b> in <b>${esc(grade)}</b>. Add the strands for this learning area first.</div>
+            <button class="btn secondary" id="quickAddStrands">Add strands for ${esc(learning_area)}</button>
+          </div>`}
+        </div>`;
+
+      document.querySelectorAll('.score-btn').forEach(b=>b.onclick=()=>{
+        b.closest('.score-cell').querySelectorAll('.score-btn').forEach(x=>x.classList.remove('active'));
+        b.classList.add('active');
+      });
+      if($('#quickAddStrands')) $('#quickAddStrands').onclick=async()=>{
+        const strand=prompt(`Enter strand name for ${learning_area}:`); if(!strand) return;
+        const sub=prompt('Sub-strand (optional):')||null;
+        await sb.from('cbc_strands').insert({school_id:sid,grade,subject:learning_area,strand,sub_strand:sub});
+        toast('Strand added. Click Load class again.'); $('#gradingBody').innerHTML='';
+      };
+    }
+
+    // Save handler — shared for both modes
+    if($('#saveGrades')) $('#saveGrades').onclick=async()=>{
+      const rows=[...document.querySelectorAll('#gradeTable tbody tr')];
+      const upserts=[];
+      const teacherRes=await sb.from('teachers').select('id').eq('school_id',sid).eq('user_id',state.profile.id).maybeSingle();
+      const teacherId=teacherRes?.data?.id||null;
+
+      rows.forEach(row=>{
+        const studentId=row.dataset.sid;
+        if(js){
+          strands.forEach(str=>{
+            const inps=row.querySelectorAll(`.score-inp[data-strand="${str.id}"]`);
+            const scores={cat1:'',cat2:'',project:'',endterm:''};
+            inps.forEach(i=>{ scores[i.dataset.type]=i.value; });
+            const final=weightedScore(scores);
+            if(final===null) return;
+            const lv=pctToLevel(final);
+            upserts.push({
+              student_id:studentId, strand_id:str.id, teacher_id:teacherId,
+              learning_area, term, year, score:lv?.code||'ME',
+              cat1:scores.cat1!==''?+scores.cat1:null,
+              cat2:scores.cat2!==''?+scores.cat2:null,
+              project_score:scores.project!==''?+scores.project:null,
+              endterm_score:scores.endterm!==''?+scores.endterm:null,
+              weighted_score:final,
+              remarks:null,
+            });
+          });
+        } else {
+          strands.forEach(str=>{
+            const sc=row.querySelector(`.score-btn.active[data-strand="${str.id}"]`)?.dataset.sc||'ME';
+            const rmk=row.querySelector('.rmk')?.value||null;
+            upserts.push({ student_id:studentId, strand_id:str.id, teacher_id:teacherId, learning_area, term, year, score:sc, remarks:rmk });
+          });
+        }
+      });
+      if(!upserts.length){ toast('Nothing to save.',true); return; }
+      const {error}=await sb.from('assessments').upsert(upserts,{onConflict:'student_id,strand_id,term,year'});
+      if(error) toast('Save failed: '+error.message,true);
+      else toast(`Saved ${upserts.length} assessment record${upserts.length>1?'s':''}.`);
+    };
+  };
+};
 
 modules.grading = async (m)=>{
   const sid = state.profile.school_id;
@@ -2284,65 +2573,95 @@ modules.fees = async (m)=>{
     m.innerHTML = `<div class="card" style="max-width:580px">
       <a href="#" id="bkPay" class="small"><i class="ti ti-arrow-left"></i> Back to fees</a>
       <h2 style="margin-top:1rem">Record fee payment</h2>
-      <p class="muted small">Use this form to record cash, bank transfer, or any manual payment. M-Pesa STK push coming soon.</p>
-      <form id="pf" class="stack">
-        <div class="field"><label>Learner *</label>
-          <select id="payStudent" name="student_id">
-            <option value="">Select learner...</option>
-            ${students.map(s=>`<option value="${s.id}">${esc(s.full_name)} — ${esc(s.grade||'')} (${esc(s.admission_number||'')})</option>`).join('')}
-          </select>
+      <p class="muted small">Search for the learner, select their fee period, then enter the payment details.</p>
+      <div class="stack">
+        <div class="field">
+          <label>Search learner *</label>
+          <input id="paySearch" placeholder="Type name or admission number..." autocomplete="off">
+          <div id="payResults"></div>
+          <div id="paySelected" style="display:none;margin-top:.4rem;padding:.5rem .75rem;background:var(--green-50);border-radius:var(--radius);display:flex;justify-content:space-between;align-items:center">
+            <span id="paySelName" style="font-weight:500;font-size:.88rem"></span>
+            <button type="button" class="btn secondary" style="height:26px;font-size:.75rem" id="clearPayStu">Change</button>
+          </div>
         </div>
-        <div class="field"><label>Fee period *</label>
-          <select id="payBal" name="balance_id">
-            <option value="">Select learner first</option>
-          </select>
+        <div class="field" id="periodField" style="display:none">
+          <label>Fee period *</label>
+          <select id="payBal"><option value="">Select period...</option></select>
         </div>
-        <div id="balSummary" style="display:none;padding:.75rem;background:var(--green-50);border-radius:var(--radius);margin-bottom:.25rem">
+        <div id="balSummary" style="display:none;padding:.75rem;background:var(--green-50);border-radius:var(--radius)">
           <div class="small muted">Current balance</div>
           <div id="balAmt" style="font-size:1.3rem;font-weight:600;color:var(--green)"></div>
         </div>
-        <div class="row">
-          <div class="col field"><label>Amount paid (KSh) *</label>
-            <input type="number" name="amount" id="payAmt" min="1" required placeholder="0"></div>
-          <div class="col field"><label>Payment method</label>
-            <select name="payment_method">
-              <option>Cash</option>
-              <option>M-Pesa</option>
-              <option>Bank transfer</option>
-              <option>Cheque</option>
-            </select>
-          </div>
+        <div id="payFormFields" style="display:none">
+          <form id="pf" class="stack">
+            <div class="row">
+              <div class="col field"><label>Amount paid (KSh) *</label>
+                <input type="number" name="amount" id="payAmt" min="1" required placeholder="0"></div>
+              <div class="col field"><label>Payment method</label>
+                <select name="payment_method">
+                  <option>Cash</option><option>M-Pesa</option>
+                  <option>Bank transfer</option><option>Cheque</option>
+                </select></div>
+            </div>
+            <div class="row">
+              <div class="col field"><label>Reference / Receipt no.</label>
+                <input name="reference" placeholder="e.g. QJK2345"></div>
+              <div class="col field"><label>Payment date *</label>
+                <input type="date" name="payment_date" value="${new Date().toISOString().slice(0,10)}" required></div>
+            </div>
+            <div class="field"><label>Notes (optional)</label>
+              <input name="notes" placeholder="Any additional notes"></div>
+            <div style="display:flex;gap:.5rem">
+              <button type="submit" class="btn primary"><i class="ti ti-check"></i> Save payment</button>
+              <button type="button" class="btn secondary" id="payCancel">Cancel</button>
+            </div>
+          </form>
         </div>
-        <div class="row">
-          <div class="col field"><label>Reference / Receipt no.</label>
-            <input name="reference" placeholder="e.g. QJK2345 or RCP-001"></div>
-          <div class="col field"><label>Payment date *</label>
-            <input type="date" name="payment_date" value="${new Date().toISOString().slice(0,10)}" required></div>
-        </div>
-        <div class="field"><label>Notes (optional)</label>
-          <input name="notes" placeholder="Any additional notes"></div>
-        <div style="display:flex;gap:.5rem">
-          <button type="submit" class="btn primary"><i class="ti ti-check"></i> Save payment</button>
-          <button type="button" class="btn secondary" id="payCancel">Cancel</button>
-        </div>
-      </form>
+      </div>
     </div>`;
 
     $('#bkPay').onclick=(e)=>{e.preventDefault();navigate('fees');};
     $('#payCancel').onclick=()=>navigate('fees');
 
-    // When learner is selected, populate their fee periods
-    $('#payStudent').onchange = ()=>{
-      const stuId = $('#payStudent').value;
-      const bals = balMap[stuId]||[];
-      const sel = $('#payBal');
-      if(!bals.length){
-        sel.innerHTML='<option value="">No fee records for this learner</option>';
-        $('#balSummary').style.display='none';
-        return;
-      }
-      sel.innerHTML = bals.map(b=>`<option value="${b.id}" data-balance="${b.balance}" data-due="${b.amount_due}" data-paid="${b.amount_paid}">Term ${b.term} ${b.year} — Balance: KSh ${(+b.balance).toLocaleString()}</option>`).join('');
-      showBalSummary(bals[0]);
+    let payStudentId=null;
+
+    function renderPayResults(q){
+      const filtered=students.filter(s=>
+        (s.full_name||'').toLowerCase().includes(q.toLowerCase())||
+        (s.admission_number||'').toLowerCase().includes(q.toLowerCase())
+      ).slice(0,8);
+      $('#payResults').innerHTML=filtered.length?`<div style="border:1px solid var(--stone);border-radius:var(--radius);overflow:hidden;margin-top:.25rem">
+        ${filtered.map(s=>`<div class="strand-opt" data-id="${s.id}" style="cursor:pointer">
+          <b>${esc(s.full_name)}</b>
+          <span class="small muted" style="margin-left:.5rem">${esc(s.grade||'')} &middot; ${esc(s.admission_number||'')}</span>
+        </div>`).join('')}
+      </div>`:'';
+      $('#payResults').querySelectorAll('.strand-opt[data-id]').forEach(el=>el.onclick=async()=>{
+        payStudentId=el.dataset.id;
+        $('#paySelName').textContent=el.querySelector('b').textContent+' — '+el.querySelector('.small').textContent;
+        $('#paySelected').style.display='flex';
+        $('#paySearch').style.display='none';
+        $('#payResults').innerHTML='';
+        // load their balances
+        const bals=balMap[payStudentId]||[];
+        const sel=$('#payBal');
+        sel.innerHTML=bals.length
+          ? bals.map(b=>`<option value="${b.id}" data-balance="${b.balance}" data-due="${b.amount_due}" data-paid="${b.amount_paid}">Term ${b.term} ${b.year} — Balance: KSh ${(+b.balance).toLocaleString()}</option>`).join('')
+          : `<option value="">No fee records for this learner</option>`;
+        $('#periodField').style.display='';
+        showBalSummary(bals[0]);
+        $('#payFormFields').style.display='';
+      });
+    }
+
+    $('#paySearch').oninput=e=>{ if(e.target.value.trim().length>1) renderPayResults(e.target.value); else $('#payResults').innerHTML=''; };
+    $('#clearPayStu').onclick=()=>{
+      payStudentId=null;
+      $('#paySelected').style.display='none';
+      $('#paySearch').style.display=''; $('#paySearch').value=''; $('#paySearch').focus();
+      $('#periodField').style.display='none';
+      $('#balSummary').style.display='none';
+      $('#payFormFields').style.display='none';
     };
 
     $('#payBal').onchange = ()=>{
@@ -2364,6 +2683,7 @@ modules.fees = async (m)=>{
       const f = Object.fromEntries(new FormData(e.target));
       const balId = $('#payBal').value;
       if(!balId){ toast('Select a fee period.',true); return; }
+      if(!payStudentId){ toast('Select a learner.',true); return; }
       const amount = +f.amount;
       if(!amount||amount<=0){ toast('Enter a valid amount.',true); return; }
 
@@ -2375,7 +2695,7 @@ modules.fees = async (m)=>{
 
       // Record in mpesa_payments table as a general payment log
       const { error:pErr } = await sb.from('mpesa_payments').insert({
-        student_id: f.student_id,
+        student_id: payStudentId,
         school_id: sid,
         mpesa_ref: f.reference||`RCP-${Date.now()}`,
         amount,
@@ -2490,162 +2810,292 @@ function printFeeStatement(student_id, studentName, balances){
 
 /* --- REPORTS --- */
 modules.reports = async (m)=>{
-  const sid = state.profile.school_id;
-  const role = state.profile.role;
-  let students = [];
+  const sid=state.profile.school_id;
+  const role=state.profile.role;
+  let students=[];
   if(role==='parent'){
-    ({ data:students=[] } = await sb.from('students').select('id,full_name,grade,stream').eq('parent_id',state.profile.id));
+    ({data:students=[]}=await sb.from('students').select('id,full_name,grade,stream,admission_number').eq('parent_id',state.profile.id));
   } else {
-    ({ data:students=[] } = await sb.from('students').select('id,full_name,grade,stream').eq('school_id',sid).order('full_name'));
+    ({data:students=[]}=await sb.from('students').select('id,full_name,grade,stream,admission_number').eq('school_id',sid).order('grade').order('full_name'));
   }
-  m.innerHTML = `<h1>Report cards</h1>
-    <div class="toolbar">
-      <div class="field"><label>Learner</label><select id="stu">${students.map(s=>`<option value="${s.id}" data-grade="${esc(s.grade||'')}">${esc(s.full_name)} \u2014 ${esc(s.grade||'')}</option>`).join('')}</select></div>
-      <div class="field"><label>Term</label><select id="t"><option>1</option><option>2</option><option>3</option></select></div>
-      <div class="field"><label>Year</label><input id="y" type="number" value="${new Date().getFullYear()}"></div>
-      <button class="btn primary" id="gen">Generate</button>
-      <button class="btn secondary" id="prn">Print</button>
+
+  m.innerHTML=`
+    <h1>Report cards</h1>
+    <div class="card" style="max-width:720px">
+      <h3>Select learner</h3>
+      <div class="toolbar" style="margin-bottom:1rem">
+        <div class="field" style="flex:2;min-width:220px">
+          <label>Search learner</label>
+          <input id="stuSearch" placeholder="Type name or admission number..." autocomplete="off">
+        </div>
+        <div class="field"><label>Term</label>
+          <select id="t"><option value="1">Term 1</option><option value="2">Term 2</option><option value="3">Term 3</option></select></div>
+        <div class="field"><label>Year</label>
+          <input id="y" type="number" value="${new Date().getFullYear()}" style="width:90px"></div>
+      </div>
+      <div id="stuResults" style="margin-bottom:1rem"></div>
+      <div id="selectedStu" style="display:none;padding:.6rem .85rem;background:var(--green-50);border-radius:var(--radius);display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <span id="selectedName" style="font-weight:500"></span>
+        <button class="btn secondary" style="height:28px;font-size:.78rem" id="clearStu">Change</button>
+      </div>
+      <input type="hidden" id="stuId">
+      <button class="btn primary" id="gen" disabled><i class="ti ti-file-text"></i> Generate report card</button>
+      <button class="btn secondary" id="prn" style="margin-left:.5rem"><i class="ti ti-printer"></i> Print</button>
     </div>
-    <div id="rep"></div>`;
+    <div id="rep" style="margin-top:1.25rem"></div>`;
 
-  $('#gen').onclick = async ()=>{
-    const stuSel=$('#stu'), sidu=stuSel.value, term=+$('#t').value, year=+$('#y').value;
-    const selectedGrade = stuSel.options[stuSel.selectedIndex]?.dataset.grade||'';
-    const isGrade9 = selectedGrade==='Grade 9';
-    const isJS = isJuniorSecondary(selectedGrade);
+  let selectedId=null;
 
-    const [{data:s},{data:a=[]},{data:att=[]}] = await Promise.all([
+  function renderResults(query){
+    const q=(query||'').toLowerCase().trim();
+    if(!q){ $('#stuResults').innerHTML=''; return; }
+    const filtered=students.filter(s=>
+      (s.full_name||'').toLowerCase().includes(q)||
+      (s.admission_number||'').toLowerCase().includes(q)||
+      (s.grade||'').toLowerCase().includes(q)
+    ).slice(0,10);
+    if(!filtered.length){
+      $('#stuResults').innerHTML=`<div class="muted small" style="padding:.4rem 0">No learners match.</div>`;
+      return;
+    }
+    $('#stuResults').innerHTML=`<div style="border:1px solid var(--stone);border-radius:var(--radius);overflow:hidden">
+      ${filtered.map(s=>`<div class="strand-opt" data-id="${s.id}" data-name="${esc(s.full_name)} — ${esc(s.grade||'')} ${esc(s.stream||'')}">
+        <b>${esc(s.full_name)}</b>
+        <span class="small muted" style="margin-left:.5rem">${esc(s.grade||'')} ${esc(s.stream||'')} &middot; ${esc(s.admission_number||'')}</span>
+      </div>`).join('')}
+    </div>`;
+    $('#stuResults').querySelectorAll('.strand-opt[data-id]').forEach(el=>el.onclick=()=>{
+      selectedId=el.dataset.id;
+      $('#stuId').value=selectedId;
+      $('#selectedName').textContent=el.dataset.name;
+      $('#selectedStu').style.display='flex';
+      $('#stuResults').innerHTML='';
+      $('#stuSearch').style.display='none';
+      $('#gen').disabled=false;
+    });
+  }
+
+  $('#stuSearch').oninput=e=>renderResults(e.target.value);
+  $('#clearStu').onclick=()=>{
+    selectedId=null; $('#stuId').value='';
+    $('#selectedStu').style.display='none';
+    $('#stuSearch').style.display='';
+    $('#stuSearch').value=''; $('#stuSearch').focus();
+    $('#gen').disabled=true; $('#rep').innerHTML='';
+  };
+
+  // If parent with one child, auto-select
+  if(role==='parent'&&students.length===1){
+    selectedId=students[0].id;
+    $('#stuId').value=selectedId;
+    $('#selectedName').textContent=`${students[0].full_name} — ${students[0].grade||''} ${students[0].stream||''}`;
+    $('#selectedStu').style.display='flex';
+    $('#stuSearch').style.display='none';
+    $('#gen').disabled=false;
+  }
+
+  $('#gen').onclick=async()=>{
+    const sidu=$('#stuId').value, term=+$('#t').value, year=+$('#y').value;
+    if(!sidu){ toast('Select a learner first.',true); return; }
+    $('#rep').innerHTML=`<div class="muted small" style="padding:1rem">Generating report card...</div>`;
+
+    const [{data:s},{data:assessments=[]},{data:att=[]},{data:health=[]}]=await Promise.all([
       sb.from('students').select('*').eq('id',sidu).single(),
-      sb.from('assessments').select('score,remarks, cbc_strands(subject,strand,sub_strand)').eq('student_id',sidu).eq('term',term).eq('year',year),
+      sb.from('assessments').select('*, cbc_strands(subject,strand,sub_strand,grade)').eq('student_id',sidu).eq('term',term).eq('year',year),
       sb.from('student_attendance').select('status').eq('student_id',sidu),
+      sb.from('student_health').select('condition_name,severity').eq('student_id',sidu),
     ]);
-    const attRate = att.length? Math.round(att.filter(x=>x.status==='present').length/att.length*100):null;
 
-    // Build subject competency map for radar
-    const subjectMap = {};
-    a.forEach(x=>{
-      const subj = x.cbc_strands?.subject||'Unknown';
-      if(!subjectMap[subj]) subjectMap[subj]=[];
-      const numericScore = isJS && !isNaN(+x.score)
-        ? pctToKnec(+x.score)?.points||0
-        : {EE:4,ME:3,AE:2,BE:1}[x.score]||0;
-      subjectMap[subj].push(numericScore);
-    });
-    const radarLabels = Object.keys(subjectMap);
-    const radarData = radarLabels.map(k=>{
-      const arr=subjectMap[k]; return arr.length?Math.round(arr.reduce((a,b)=>a+b,0)/arr.length*10)/10:0;
-    });
-    const maxScore = isJS ? 8 : 4;
+    const isJS=isJuniorSecondary(s.grade||'');
+    const attRate=att.length?Math.round(att.filter(x=>x.status==='present').length/att.length*100):null;
+    const termAtt=att.length;
 
-    // Grade 9 transition: pull Grades 7 & 8 historical SBA data
-    let transitionHTML = '';
-    if(isGrade9){
-      const { data:hist=[] } = await sb.from('assessments')
-        .select('score, cbc_strands(subject,grade)')
-        .eq('student_id',sidu);
-      // Group by grade, subject; average scores; apply 20% SBA weight each year
-      const gradeSubj = {};
-      hist.forEach(h=>{
-        const g=h.cbc_strands?.grade||''; const subj=h.cbc_strands?.subject||'';
-        if(!['Grade 7','Grade 8','Grade 9'].includes(g)) return;
-        if(!gradeSubj[g]) gradeSubj[g]={};
-        if(!gradeSubj[g][subj]) gradeSubj[g][subj]=[];
-        const pts = !isNaN(+h.score) ? pctToKnec(+h.score)?.points||0 : {EE:8,ME:6,AE:4,BE:2}[h.score]||0;
-        gradeSubj[g][subj].push(pts);
+    // Group assessments by learning area then strand
+    const laMap={};
+    assessments.forEach(a=>{
+      const la=a.learning_area||a.cbc_strands?.subject||'Unknown';
+      if(!laMap[la]) laMap[la]=[];
+      laMap[la].push(a);
+    });
+
+    // Compute overall level per learning area
+    function overallLevel(rows){
+      const scores=rows.map(r=>{
+        if(r.weighted_score!=null) return +r.weighted_score;
+        if(!isNaN(+r.score)&&isJS) return +r.score;
+        return {EE:90,ME:72,AE:44,BE:15}[r.score]||50;
       });
-      const weightedRows = [];
-      ['Grade 7','Grade 8','Grade 9'].forEach(g=>{
-        const subjects = gradeSubj[g]||{};
-        Object.keys(subjects).forEach(subj=>{
-          const avg = subjects[subj].reduce((a,b)=>a+b,0)/subjects[subj].length;
-          const weight = g==='Grade 9'?0.6:0.2;
-          weightedRows.push({ grade:g, subject:subj, avg:Math.round(avg*10)/10, contribution:Math.round(avg*weight*10)/10 });
-        });
-      });
-      const totalContrib = weightedRows.reduce((a,r)=>a+r.contribution,0);
-      const projectedPts = weightedRows.length ? Math.round(totalContrib/weightedRows.length*10)/10 : null;
-      const projectedKnec = projectedPts ? (projectedPts>=7?'EE':projectedPts>=5?'ME':projectedPts>=3?'AE':'BE') : '\u2014';
-      transitionHTML = `
-        <div class="card" style="margin-top:1.25rem">
-          <h3>Grade 9 Transition Score (60-20-20 Model)</h3>
-          <p class="muted small">Grade 9 contributes 60%, Grades 7 and 8 each contribute 20% as School-Based Assessment weight.</p>
-          <table><thead><tr><th>Grade</th><th>Subject</th><th>Avg Score (pts)</th><th>Weighted Contribution</th></tr></thead>
-          <tbody>${weightedRows.map(r=>`<tr><td>${esc(r.grade)}</td><td>${esc(r.subject)}</td><td>${r.avg}</td><td>${r.contribution}</td></tr>`).join('')}</tbody></table>
-          <div style="margin-top:1rem;padding:1rem;background:var(--green-50);border-radius:var(--radius);display:flex;gap:2rem;align-items:center">
-            <div><div class="small muted">Projected transition points</div><div style="font-family:'Fraunces',serif;font-size:2.5rem;color:var(--green);line-height:1">${projectedPts??'\u2014'}</div></div>
-            <div><div class="small muted">Projected performance level</div><div style="font-size:1.4rem;font-weight:600;color:var(--green)">${projectedKnec}</div></div>
-          </div>
-        </div>`;
+      if(!scores.length) return null;
+      const avg=scores.reduce((a,b)=>a+b,0)/scores.length;
+      return pctToLevel(avg);
     }
 
-    $('#rep').innerHTML = `<div id="report">
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1px solid var(--stone);padding-bottom:1rem;margin-bottom:1.25rem">
-          <div><div class="brand-mark" style="color:var(--green);font-size:1.5rem">${esc(state.school?.name||APP_NAME)}</div>
-            <div class="muted small">${esc(state.school?.county||'')}${state.school?.sub_county?' \u2014 '+esc(state.school?.sub_county):''}</div></div>
-          <div class="small muted" style="text-align:right">Term ${term} \u2014 ${year}<br>${new Date().toLocaleDateString('en-KE',{day:'numeric',month:'long',year:'numeric'})}</div>
-        </div>
-        <h2 style="margin-bottom:.2rem">${esc(s.full_name)}</h2>
-        <div class="muted small">${esc(s.grade||'')} ${esc(s.stream||'')} &middot; Adm. ${esc(s.admission_number||'')} &middot; ${esc(s.gender||'')}</div>
+    // Radar chart data
+    const radarLabels=Object.keys(laMap);
+    const radarData=radarLabels.map(la=>{
+      const lv=overallLevel(laMap[la]);
+      return lv?lv.points:0;
+    });
 
-        <div class="row" style="margin-top:1.5rem;align-items:flex-start">
-          <div class="col">
-            <h3>CBC Competency Scores</h3>
-            ${a.length?`<table><thead><tr><th>Subject</th><th>Strand</th><th>Score</th>${isJS?'<th>Points</th>':''}<th>Remarks</th></tr></thead>
-            <tbody>${a.map(x=>{
-              const k = isJS && !isNaN(+x.score) ? pctToKnec(+x.score) : null;
-              return `<tr>
-                <td>${esc(x.cbc_strands?.subject||'')}</td>
-                <td>${esc(x.cbc_strands?.strand||'')}${x.cbc_strands?.sub_strand?' / '+esc(x.cbc_strands.sub_strand):''}</td>
-                <td><span class="badge ${x.score==='BE'||k?.code==='BE'?'terra':x.score==='AE'||k?.code==='AE'?'amber':''}">${isJS&&k?x.score+'%':esc(x.score)}</span></td>
-                ${isJS?`<td><b>${k?.points??'\u2014'}</b> pts \u2014 ${k?.label??''}</td>`:''}
-                <td class="small muted">${esc(x.remarks||'')}</td>
-              </tr>`;
-            }).join('')}</tbody></table>`
-            :'<div class="muted small">No assessments for this term yet.</div>'}
+    // Grade 9 transition
+    let transitionHTML='';
+    if(s.grade==='Grade 9'){
+      const {data:hist=[]}=await sb.from('assessments').select('score,weighted_score,learning_area,cbc_strands(grade)').eq('student_id',sidu);
+      const gradeLA={};
+      hist.forEach(h=>{
+        const g=h.cbc_strands?.grade||'';
+        if(!['Grade 7','Grade 8','Grade 9'].includes(g)) return;
+        const la=h.learning_area||'Unknown';
+        if(!gradeLA[g]) gradeLA[g]={};
+        if(!gradeLA[g][la]) gradeLA[g][la]=[];
+        const pts=h.weighted_score!=null?pctToLevel(+h.weighted_score)?.points||0:{EE:8,ME:6,AE:4,BE:2}[h.score]||0;
+        gradeLA[g][la].push(pts);
+      });
+      const tRows=[];
+      ['Grade 7','Grade 8','Grade 9'].forEach(g=>{
+        Object.keys(gradeLA[g]||{}).forEach(la=>{
+          const arr=gradeLA[g][la];
+          const avg=arr.reduce((a,b)=>a+b,0)/arr.length;
+          const w=g==='Grade 9'?0.6:0.2;
+          tRows.push({grade:g,la,avg:Math.round(avg*10)/10,contribution:Math.round(avg*w*10)/10});
+        });
+      });
+      const totalW=tRows.length?tRows.reduce((a,r)=>a+r.contribution,0)/tRows.length:null;
+      const projLv=totalW?pctToLevel(totalW/8*100):null;
+      transitionHTML=`<div class="card" style="margin-top:1.25rem">
+        <h3>Grade 9 Transition Score (60-20-20 SBA Model)</h3>
+        <p class="muted small">Grade 9 contributes 60%, Grades 7 and 8 each contribute 20% of the School-Based Assessment weight.</p>
+        <table><thead><tr><th>Grade</th><th>Learning area</th><th>Avg pts</th><th>Weighted</th></tr></thead>
+        <tbody>${tRows.map(r=>`<tr><td>${esc(r.grade)}</td><td>${esc(r.la)}</td><td>${r.avg}</td><td>${r.contribution}</td></tr>`).join('')}</tbody></table>
+        <div style="margin-top:1rem;padding:1rem;background:var(--green-50);border-radius:var(--radius);display:flex;gap:2rem;align-items:center">
+          <div><div class="small muted">Projected points</div><div style="font-family:'Fraunces',serif;font-size:2.5rem;color:var(--green);line-height:1">${totalW??'—'}</div></div>
+          <div><div class="small muted">Projected level</div><div style="font-size:1.4rem;font-weight:600;color:var(--green)">${projLv?.code??'—'}</div></div>
+        </div>
+      </div>`;
+    }
+
+    $('#rep').innerHTML=`<div id="report">
+      <div class="card">
+        <!-- Report header -->
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid var(--green);padding-bottom:1rem;margin-bottom:1.5rem">
+          <div>
+            <div style="font-family:'Fraunces',serif;font-size:1.6rem;color:var(--green)">${esc(state.school?.name||APP_NAME)}</div>
+            <div class="muted small">${esc(state.school?.county||'')}${state.school?.sub_county?' — '+esc(state.school.sub_county):''}</div>
+            <div class="muted small">${esc(state.school?.phone||'')} ${state.school?.email?'&middot; '+esc(state.school.email):''}</div>
           </div>
-          ${radarLabels.length>=3?`
-          <div class="col" style="max-width:280px">
-            <h3>Competency Profile</h3>
+          <div style="text-align:right">
+            <div style="font-weight:600">Learner Progress Report</div>
+            <div class="small muted">Term ${term} &mdash; ${year}</div>
+            <div class="small muted">${new Date().toLocaleDateString('en-KE',{day:'numeric',month:'long',year:'numeric'})}</div>
+          </div>
+        </div>
+
+        <!-- Learner info -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1.5rem;padding:1rem;background:var(--bg);border-radius:var(--radius)">
+          <div><div class="small muted">Full name</div><div style="font-weight:600">${esc(s.full_name)}</div></div>
+          <div><div class="small muted">Grade</div><div style="font-weight:600">${esc(s.grade||'')} ${esc(s.stream||'')}</div></div>
+          <div><div class="small muted">Admission no.</div><div style="font-weight:600">${esc(s.admission_number||'—')}</div></div>
+          <div><div class="small muted">Gender</div><div>${esc(s.gender||'—')}</div></div>
+          <div><div class="small muted">Date of birth</div><div>${esc(s.date_of_birth||'—')}</div></div>
+          <div><div class="small muted">Attendance</div><div style="font-weight:600;color:${attRate!==null&&attRate<75?'var(--terracotta)':'var(--ink)'}">${attRate===null?'—':attRate+'%'} <span class="small muted">(${termAtt} days recorded)</span></div></div>
+        </div>
+
+        ${health.length?`<div style="padding:.6rem .85rem;background:var(--amber-bg);border-radius:var(--radius);margin-bottom:1.25rem;font-size:.85rem;color:#5a3d11">
+          <b>Health note:</b> ${health.map(h=>`${esc(h.condition_name)} (${esc(h.severity)})`).join(', ')}
+        </div>`:''}
+
+        <!-- Competency scores by learning area -->
+        <h3 style="margin-bottom:.75rem">CBC Performance by Learning Area</h3>
+        ${Object.keys(laMap).length?`
+        <div class="row" style="align-items:flex-start;gap:1.5rem">
+          <div style="flex:2;min-width:0">
+            <table>
+              <thead><tr><th>Learning area</th><th>Strand</th>${isJS?'<th>Weighted %</th>':''}
+              <th>Performance level</th></tr></thead>
+              <tbody>
+              ${Object.entries(laMap).map(([la,rows])=>{
+                const overall=overallLevel(rows);
+                return rows.map((a,i)=>`<tr>
+                  ${i===0?`<td rowspan="${rows.length}" style="font-weight:600;border-right:2px solid var(--stone);vertical-align:top;padding-top:.75rem">
+                    ${esc(la)}<br>
+                    <span class="badge ${overall?.code==='BE'?'terra':overall?.code==='AE'?'amber':''}" style="margin-top:.3rem">${overall?.code||'—'}</span>
+                  </td>`:''}
+                  <td class="small">${esc(a.cbc_strands?.strand||a.strand||'—')}${a.cbc_strands?.sub_strand?'<div class="strand-sub">'+esc(a.cbc_strands.sub_strand)+'</div>':''}</td>
+                  ${isJS?`<td class="small">${a.weighted_score!=null?a.weighted_score+'%':(!isNaN(+a.score)?a.score+'%':'—')}</td>`:''}
+                  <td><span style="font-weight:600;color:${levelColor(a.score)}">${esc(a.score)}</span>${a.remarks?`<div class="small muted">${esc(a.remarks)}</div>`:''}</td>
+                </tr>`).join('');
+              }).join('')}
+              </tbody>
+            </table>
+          </div>
+          ${radarLabels.length>=3?`<div style="flex:1;min-width:220px;max-width:280px">
+            <div class="small muted" style="margin-bottom:.5rem;font-weight:500">Competency profile</div>
             <canvas id="radarChart" width="260" height="260"></canvas>
           </div>`:''}
+        </div>`:`<div class="muted small">No assessments recorded for Term ${term} ${year}.</div>`}
+
+        <!-- Core Competencies -->
+        <h3 style="margin-top:1.5rem;margin-bottom:.75rem">Core Competencies</h3>
+        <table>
+          <thead><tr><th>Competency</th><th>Performance</th></tr></thead>
+          <tbody>${CORE_COMPETENCIES.map(c=>`<tr>
+            <td>${esc(c)}</td>
+            <td><div class="score-cell" style="gap:.25rem">
+              ${['EE','ME','AE','BE'].map(sc=>`<span style="padding:.2rem .45rem;border-radius:3px;font-size:.75rem;background:var(--stone);color:var(--muted)">${sc}</span>`).join('')}
+              <span class="small muted" style="margin-left:.25rem">(teacher to circle)</span>
+            </div></td>
+          </tr>`).join('')}
+          </tbody>
+        </table>
+
+        <!-- Values and attitudes -->
+        <h3 style="margin-top:1.5rem;margin-bottom:.75rem">Values and Attitudes</h3>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem;margin-bottom:1.25rem">
+          ${CBC_VALUES.map(v=>`<div style="padding:.5rem .75rem;border:1px solid var(--stone);border-radius:var(--radius);font-size:.85rem;display:flex;align-items:center;gap:.4rem">
+            <span style="width:14px;height:14px;border:1.5px solid var(--stone);border-radius:3px;display:inline-block;flex-shrink:0"></span>
+            ${esc(v)}
+          </div>`).join('')}
         </div>
 
-        <div style="margin-top:1.25rem;display:flex;gap:2rem;flex-wrap:wrap">
-          <div><span class="small muted">Attendance rate</span><br><b>${attRate===null?'\u2014':attRate+'%'}</b>${attRate!==null&&attRate<75?` <span class="badge terra">Below threshold</span>`:''}</div>
+        <!-- Teacher remarks -->
+        <div style="border-top:1px solid var(--stone);padding-top:1rem;margin-top:.5rem">
+          <div style="font-weight:500;margin-bottom:.35rem">Class teacher's remarks</div>
+          <div style="border:1px solid var(--stone);border-radius:var(--radius);padding:.75rem;min-height:60px;font-size:.88rem;color:var(--muted)">
+            ${assessments[0]?.remarks?esc(assessments[0].remarks):'&nbsp;'}
+          </div>
         </div>
+
+        <!-- Signatures -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:2rem;margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--stone)">
+          ${['Class teacher','Head teacher','Parent / Guardian'].map(r=>`<div>
+            <div style="border-bottom:1px solid var(--ink);height:32px;margin-bottom:.3rem"></div>
+            <div class="small muted">${esc(r)}</div>
+          </div>`).join('')}
+        </div>
+
         <p class="muted small" style="margin-top:1rem;border-top:1px solid var(--stone);padding-top:.75rem">
-          ${isJS?'EE Exceeding Expectation \u00b7 ME Meeting Expectation \u00b7 AE Approaching Expectation \u00b7 BE Below Expectation \u00b7 Points scale: 1\u20138'
-          :'EE Exceeding \u00b7 ME Meeting \u00b7 AE Approaching \u00b7 BE Below Expectations'}
+          EE Exceeding Expectations &middot; ME Meeting Expectations &middot; AE Approaching Expectations &middot; BE Below Expectations${isJS?' &middot; Weighted score: CAT1 (15%) + CAT2 (15%) + Project (20%) + End-Term (50%)':''}
         </p>
       </div>
       ${transitionHTML}
     </div>`;
 
-    // Draw radar chart if we have enough subjects
-    if(radarLabels.length>=3 && window.Chart){
+    // Radar chart
+    if(radarLabels.length>=3&&window.Chart){
       const ctx=document.getElementById('radarChart')?.getContext('2d');
       if(ctx){
         if(window._radarChart) window._radarChart.destroy();
-        window._radarChart = new Chart(ctx,{
+        window._radarChart=new Chart(ctx,{
           type:'radar',
-          data:{
-            labels:radarLabels,
-            datasets:[{
-              label:'Competency',
-              data:radarData,
-              backgroundColor:'rgba(31,68,52,.12)',
-              borderColor:'rgba(31,68,52,.7)',
-              pointBackgroundColor:'rgba(31,68,52,.9)',
-              pointRadius:4,
-              borderWidth:2
-            }]
-          },
-          options:{
-            scales:{r:{min:0,max:maxScore,ticks:{stepSize:1,font:{size:9}},pointLabels:{font:{size:10}}}},
-            plugins:{legend:{display:false}},
-            animation:{duration:400}
-          }
+          data:{labels:radarLabels,datasets:[{
+            label:'Performance',data:radarData,
+            backgroundColor:'rgba(31,68,52,.12)',
+            borderColor:'rgba(31,68,52,.75)',
+            pointBackgroundColor:'rgba(31,68,52,.9)',
+            pointRadius:4,borderWidth:2
+          }]},
+          options:{scales:{r:{min:0,max:8,ticks:{stepSize:2,font:{size:9}},pointLabels:{font:{size:9}}}},
+            plugins:{legend:{display:false}},animation:{duration:300}}
         });
       }
     }
