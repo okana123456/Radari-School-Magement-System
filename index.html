@@ -562,6 +562,24 @@ on conflict (school_code) do nothing;
 
     .hide{display:none !important}
 
+    /* Searchable strand picker */
+    .strand-picker{position:relative}
+    .strand-picker input{width:100%;box-sizing:border-box}
+    .strand-dropdown{
+      position:absolute;top:100%;left:0;right:0;z-index:200;
+      background:var(--surface);border:1px solid var(--stone);
+      border-radius:var(--radius);box-shadow:0 4px 16px rgba(28,29,26,.10);
+      max-height:220px;overflow-y:auto;display:none;margin-top:2px;
+    }
+    .strand-dropdown.open{display:block}
+    .strand-opt{
+      padding:.55rem .85rem;cursor:pointer;font-size:.875rem;
+      border-bottom:1px solid var(--stone);line-height:1.3;
+    }
+    .strand-opt:last-child{border-bottom:none}
+    .strand-opt:hover,.strand-opt.selected{background:var(--green-50);color:var(--green)}
+    .strand-opt .strand-sub{font-size:.78rem;color:var(--muted);margin-top:.1rem}
+
     @media print{
       .shell,.sidebar,.topbar,nav,.nav,.toolbar,button,.btn,#progress,.toast,
       .scrim,[id="back"],[id="back2"],[id="back3"],
@@ -657,6 +675,50 @@ const toast = (msg, isErr=false) => {
 };
 
 /* ============================================================================
+ * STRAND PICKER — reusable searchable dropdown for CBC strands
+ * Usage: buildStrandPicker(containerEl, strands, selectedId, onChange)
+ * ==========================================================================*/
+function buildStrandPicker(container, strands, selectedId, onChange){
+  let current = strands.find(s=>s.id===selectedId)||null;
+  const label = s=>s?`${s.grade||''} — ${s.subject} — ${s.strand}${s.sub_strand?' / '+s.sub_strand:''}`:'' ;
+
+  container.innerHTML=`<div class="strand-picker">
+    <input type="text" class="sp-input" autocomplete="off" placeholder="Type to search strand..." value="${current?esc(label(current)):''}">
+    <input type="hidden" class="sp-val" value="${current?current.id:''}">
+    <div class="strand-dropdown sp-drop"></div>
+  </div>`;
+
+  const inp=container.querySelector('.sp-input');
+  const hid=container.querySelector('.sp-val');
+  const drop=container.querySelector('.sp-drop');
+
+  function renderDrop(q){
+    const filtered=(q||'').trim()
+      ? strands.filter(s=>label(s).toLowerCase().includes(q.toLowerCase()))
+      : strands;
+    drop.innerHTML=filtered.length
+      ? filtered.map(s=>`<div class="strand-opt${current&&s.id===current.id?' selected':''}" data-id="${s.id}">
+          <div>${esc(s.subject)} &mdash; ${esc(s.strand)}</div>
+          <div class="strand-sub">${esc(s.grade||'')}${s.sub_strand?' &middot; '+esc(s.sub_strand):''}</div>
+        </div>`).join('')
+      : `<div class="strand-opt" style="color:var(--muted)">No strands match</div>`;
+    drop.classList.add('open');
+    drop.querySelectorAll('.strand-opt[data-id]').forEach(opt=>opt.onclick=()=>{
+      current=strands.find(s=>s.id===opt.dataset.id)||null;
+      inp.value=label(current);
+      hid.value=current?.id||'';
+      drop.classList.remove('open');
+      if(onChange) onChange(current);
+    });
+  }
+  inp.onfocus=()=>renderDrop(inp.value);
+  inp.oninput=()=>renderDrop(inp.value);
+  inp.onblur=()=>setTimeout(()=>drop.classList.remove('open'),200);
+  container.getValue=()=>hid.value;
+  container.setValue=(id)=>{ current=strands.find(s=>s.id===id)||null; inp.value=label(current); hid.value=current?.id||''; };
+}
+
+/* ============================================================================
  * STATE
  * ==========================================================================*/
 const state = {
@@ -696,8 +758,13 @@ function viewLogin(){
       <div class="divider">or</div>
       <button class="btn secondary block" id="toSignup">Create an account</button>
       <div style="margin-top:1.5rem;padding:1rem;background:var(--green-50);border-radius:var(--radius);font-size:.82rem">
-        <div style="font-weight:600;margin-bottom:.35rem;color:var(--green)">Demo access</div>
-        <div class="muted">Sign up with any email using school code <b>RADARI01</b> and select role <b>Admin</b>. After signing in, go to Settings and click <b>Seed demo data</b> to populate the system.</div>
+        <div style="font-weight:600;margin-bottom:.5rem;color:var(--green)">Demo credentials</div>
+        <div style="display:flex;flex-direction:column;gap:.35rem;color:var(--ink-2)">
+          <div><b>Admin</b> &nbsp; admin@radari.ke &nbsp; / &nbsp; Radari2025!</div>
+          <div><b>Teacher</b> &nbsp; teacher@radari.ke &nbsp; / &nbsp; Radari2025!</div>
+          <div><b>Parent</b> &nbsp; parent@radari.ke &nbsp; / &nbsp; Radari2025!</div>
+        </div>
+        <div class="muted" style="margin-top:.5rem;font-size:.78rem">School code for new signups: <b>RADARI01</b></div>
       </div>
     </div></div>
   </div>`;
@@ -876,31 +943,33 @@ function viewSetPassword(){
  * ==========================================================================*/
 const NAV_GROUPS = [
   { label:'Overview', items:[
-    { id:'dashboard',  label:'Dashboard',      icon:'ti-layout-dashboard', roles:['admin','headteacher','teacher','parent'] },
-    { id:'notices',    label:'Notices',         icon:'ti-speakerphone',     roles:['admin','headteacher','teacher','parent'] },
+    { id:'dashboard',   label:'Dashboard',       icon:'ti-layout-dashboard', roles:['admin','headteacher','teacher','parent'] },
+    { id:'notices',     label:'Notices',          icon:'ti-speakerphone',     roles:['admin','headteacher','teacher','parent'] },
   ]},
   { label:'Learners', items:[
-    { id:'students',   label:'Students',        icon:'ti-users',            roles:['admin','headteacher','teacher'] },
-    { id:'attendance', label:'Attendance',      icon:'ti-calendar-check',   roles:['admin','headteacher','teacher'] },
-    { id:'grading',    label:'CBC Grading',     icon:'ti-clipboard-check',  roles:['admin','headteacher','teacher'] },
-    { id:'incidents',  label:'Incidents',       icon:'ti-shield-exclamation',roles:['admin','headteacher','teacher'] },
+    { id:'students',    label:'Students',         icon:'ti-users',            roles:['admin','headteacher','teacher'] },
+    { id:'attendance',  label:'Attendance',       icon:'ti-calendar-check',   roles:['admin','headteacher','teacher'] },
+    { id:'grading',     label:'CBC Grading',      icon:'ti-clipboard-check',  roles:['admin','headteacher','teacher'] },
+    { id:'incidents',   label:'Incidents',        icon:'ti-shield-exclamation',roles:['admin','headteacher','teacher'] },
   ]},
   { label:'Teaching', items:[
-    { id:'timetable',  label:'Timetable',       icon:'ti-calendar',         roles:['admin','headteacher','teacher','parent'] },
-    { id:'lessons',    label:'Lesson Plans',    icon:'ti-book-2',            roles:['admin','headteacher','teacher'] },
-    { id:'assignments',label:'Assignments',     icon:'ti-notebook',          roles:['admin','headteacher','teacher','parent'] },
+    { id:'timetable',   label:'Timetable',        icon:'ti-calendar',         roles:['admin','headteacher','teacher'] },
+    { id:'lessons',     label:'Lesson Plans',     icon:'ti-book-2',           roles:['admin','headteacher','teacher'] },
+    { id:'assignments', label:'Assignments',      icon:'ti-notebook',         roles:['admin','headteacher','teacher','parent'] },
   ]},
   { label:'Staff', items:[
-    { id:'teachers',   label:'Teachers',        icon:'ti-school',            roles:['admin','headteacher'] },
-    { id:'leave',      label:'Leave & Cover',   icon:'ti-calendar-off',      roles:['admin','headteacher','teacher'] },
+    { id:'teachers',    label:'Teachers',         icon:'ti-school',           roles:['admin','headteacher'] },
+    { id:'leave',       label:'Leave & Cover',    icon:'ti-calendar-off',     roles:['admin','headteacher','teacher'] },
   ]},
   { label:'Finance', items:[
-    { id:'fees',       label:'Fees',            icon:'ti-wallet',            roles:['admin','headteacher','parent'] },
-    { id:'reports',    label:'Report Cards',    icon:'ti-file-text',         roles:['admin','headteacher','parent'] },
-    { id:'knec',       label:'KNEC SBA Export', icon:'ti-table-export',      roles:['admin','headteacher'] },
+    { id:'fees',        label:'My Fees',          icon:'ti-wallet',           roles:['parent'] },
+    { id:'fees',        label:'Fees',             icon:'ti-wallet',           roles:['admin','headteacher'] },
+    { id:'reports',     label:'Report Card',      icon:'ti-file-text',        roles:['parent'] },
+    { id:'reports',     label:'Report Cards',     icon:'ti-file-text',        roles:['admin','headteacher'] },
+    { id:'knec',        label:'KNEC SBA Export',  icon:'ti-table-export',     roles:['admin','headteacher'] },
   ]},
   { label:'Account', items:[
-    { id:'settings',   label:'Settings',        icon:'ti-settings',          roles:['admin','headteacher','teacher','parent'] },
+    { id:'settings',    label:'Settings',         icon:'ti-settings',         roles:['admin','headteacher','teacher'] },
   ]},
 ];
 
@@ -988,46 +1057,199 @@ const modules = {};
 modules.dashboard = async (m)=>{
   const sid = state.profile.school_id;
   if(!sid){
-    m.innerHTML = `<div class="card"><h2>Welcome to ${APP_NAME}</h2>
-      <p class="muted">Your account is not yet linked to a school. Ask your school admin for a school code and update it under Settings.</p></div>`;
+    m.innerHTML=`<div class="card"><h2>Welcome to ${APP_NAME}</h2>
+      <p class="muted">Your account is not yet linked to a school. Ask your admin to link your account.</p></div>`;
     return;
   }
-  const [students, teachers, attToday, fees, notices, leave] = await Promise.all([
+  const role=state.profile.role;
+  if(role==='parent')  return dashboardParent(m);
+  if(role==='teacher') return dashboardTeacher(m);
+  return dashboardAdmin(m);
+};
+
+async function dashboardAdmin(m){
+  const sid=state.profile.school_id;
+  const today=new Date().toISOString().slice(0,10);
+  const [students,teachers,attToday,fees,notices,leave]=await Promise.all([
     sb.from('students').select('id',{count:'exact',head:true}).eq('school_id',sid),
     sb.from('teachers').select('id',{count:'exact',head:true}).eq('school_id',sid).eq('employment_status','active'),
-    sb.from('student_attendance').select('status').eq('school_id',sid).eq('date', new Date().toISOString().slice(0,10)),
+    sb.from('student_attendance').select('status').eq('school_id',sid).eq('date',today),
     sb.from('fee_balances').select('amount_due,amount_paid').eq('school_id',sid),
-    sb.from('notices').select('id,title,body,created_at').eq('school_id',sid).order('created_at',{ascending:false}).limit(3),
+    sb.from('notices').select('id,title,body,created_at,audience').eq('school_id',sid).order('created_at',{ascending:false}).limit(4),
     sb.from('leave_requests').select('id',{count:'exact',head:true}).eq('school_id',sid).eq('status','pending'),
   ]);
-  const present = (attToday.data||[]).filter(r=>r.status==='present').length;
-  const total   = (attToday.data||[]).length;
-  const attRate = total? Math.round(present/total*100):null;
-  const due = (fees.data||[]).reduce((a,r)=>a+(+r.amount_due||0),0);
-  const paid= (fees.data||[]).reduce((a,r)=>a+(+r.amount_paid||0),0);
-  const collection = due? Math.round(paid/due*100):0;
-
-  m.innerHTML = `
+  const present=(attToday.data||[]).filter(r=>r.status==='present').length;
+  const total=(attToday.data||[]).length;
+  const attRate=total?Math.round(present/total*100):null;
+  const due=(fees.data||[]).reduce((a,r)=>a+(+r.amount_due||0),0);
+  const paid=(fees.data||[]).reduce((a,r)=>a+(+r.amount_paid||0),0);
+  const collection=due?Math.round(paid/due*100):0;
+  const outstanding=due-paid;
+  m.innerHTML=`
     <h1>Good ${new Date().getHours()<12?'morning':'afternoon'}, ${esc((state.profile.full_name||'').split(' ')[0])}.</h1>
-    <p class="muted" style="margin-top:-.4rem;margin-bottom:1.5rem">Here is what is happening at ${esc(state.school?.name||'your school')} today.</p>
+    <p class="muted" style="margin-top:-.4rem;margin-bottom:1.75rem">${esc(state.school?.name||'')} &mdash; ${new Date().toLocaleDateString('en-KE',{weekday:'long',day:'numeric',month:'long'})}</p>
     <div class="metrics">
       <div class="metric lg"><div class="num">${students.count||0}</div><div class="lbl">Learners enrolled</div></div>
       <div class="metric"><div class="num">${teachers.count||0}</div><div class="lbl">Active teachers</div></div>
-      <div class="metric"><div class="num">${attRate===null?'\u2014':attRate+'%'}</div><div class="lbl">Attendance today</div></div>
-      <div class="metric"><div class="num">${collection}%</div><div class="lbl">Fee collection, current term</div></div>
-      <div class="metric"><div class="num">${leave.count||0}</div><div class="lbl">Leave requests pending</div></div>
+      <div class="metric"><div class="num">${attRate===null?'—':attRate+'%'}</div><div class="lbl">Attendance today</div></div>
+      <div class="metric"><div class="num">${collection}%</div><div class="lbl">Fee collection rate</div></div>
+      <div class="metric"><div class="num">KSh ${outstanding.toLocaleString()}</div><div class="lbl">Fees outstanding</div></div>
+      <div class="metric"><div class="num">${leave.count||0}</div><div class="lbl">Leave pending</div></div>
     </div>
-    <div class="card" style="margin-top:1.5rem">
-      <div class="section-title"><h3>Recent notices</h3><a href="#notices" class="sub" data-route="notices">View all</a></div>
-      ${(notices.data||[]).length? (notices.data||[]).map(n=>`
-        <div style="padding:.6rem 0;border-bottom:1px solid var(--stone)">
-          <div style="font-weight:500">${esc(n.title)}</div>
-          <div class="small muted">${new Date(n.created_at).toLocaleDateString()}</div>
-          <div class="small">${esc((n.body||'').slice(0,160))}</div>
-        </div>`).join('') : `<div class="empty"><i class="ti ti-news"></i><div>No notices yet.</div></div>`}
+    <div class="row" style="margin-top:1.5rem;align-items:flex-start;gap:1.25rem">
+      <div style="flex:2;min-width:0">
+        <div class="card">
+          <div class="section-title"><h3>Recent notices</h3><a href="#" class="sub" data-route="notices">View all</a></div>
+          ${(notices.data||[]).length?(notices.data||[]).map(n=>`
+            <div style="padding:.65rem 0;border-bottom:1px solid var(--stone)">
+              <div style="display:flex;align-items:center;gap:.5rem">
+                <span style="font-weight:500">${esc(n.title)}</span>
+                <span class="badge amber" style="font-size:.7rem">${esc(n.audience)}</span>
+              </div>
+              <div class="small muted">${new Date(n.created_at).toLocaleDateString('en-KE',{day:'numeric',month:'short'})}</div>
+              <div class="small" style="margin-top:.15rem">${esc((n.body||'').slice(0,140))}</div>
+            </div>`).join(''):`<div class="empty"><i class="ti ti-news"></i><div>No notices yet.</div></div>`}
+        </div>
+      </div>
+      <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:1rem">
+        <div class="card" style="cursor:pointer" onclick="navigate('fees')">
+          <div class="small muted">Fee collection</div>
+          <div style="font-size:2rem;font-family:'Fraunces',serif;color:var(--green);line-height:1.1">${collection}%</div>
+          <div class="small muted">KSh ${paid.toLocaleString()} of ${due.toLocaleString()}</div>
+          <div style="height:6px;background:var(--stone);border-radius:3px;margin-top:.6rem">
+            <div style="height:100%;width:${Math.min(collection,100)}%;background:var(--green);border-radius:3px"></div>
+          </div>
+        </div>
+        <div class="card" style="cursor:pointer" onclick="navigate('leave')">
+          <div class="small muted">Leave requests pending</div>
+          <div style="font-size:2rem;font-family:'Fraunces',serif;color:${(leave.count||0)>0?'var(--terracotta)':'var(--green)'};line-height:1.1">${leave.count||0}</div>
+        </div>
+      </div>
     </div>`;
   m.querySelectorAll('[data-route]').forEach(a=>a.onclick=(e)=>{e.preventDefault();navigate(a.dataset.route);});
-};
+}
+
+async function dashboardTeacher(m){
+  const sid=state.profile.school_id;
+  const {data:tch}=await sb.from('teachers').select('id,full_name,specialisation').eq('school_id',sid).eq('user_id',state.profile.id).maybeSingle();
+  const DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const todayDay=DAYS[new Date().getDay()];
+  const [myTimetable,myPlans,myAssignments,notices]=await Promise.all([
+    tch?sb.from('timetables').select('grade,stream,subject,day_of_week,start_time,end_time').eq('teacher_id',tch.id).order('start_time'):{data:[]},
+    tch?sb.from('lesson_plans').select('id,grade,planned_topic,delivery_date,status').eq('teacher_id',tch.id).order('delivery_date',{ascending:false}).limit(5):{data:[]},
+    tch?sb.from('assignments').select('id,title,grade,due_date').eq('teacher_id',tch.id).order('due_date',{ascending:false}).limit(5):{data:[]},
+    sb.from('notices').select('id,title,body,created_at').eq('school_id',sid).in('audience',['all','teachers']).order('created_at',{ascending:false}).limit(3),
+  ]);
+  const todaySlots=(myTimetable.data||[]).filter(r=>r.day_of_week===todayDay);
+  m.innerHTML=`
+    <h1>Good ${new Date().getHours()<12?'morning':'afternoon'}, ${esc((state.profile.full_name||tch?.full_name||'').split(' ')[0])}.</h1>
+    <p class="muted" style="margin-top:-.4rem;margin-bottom:1.75rem">${new Date().toLocaleDateString('en-KE',{weekday:'long',day:'numeric',month:'long'})}</p>
+    ${!tch?`<div class="card" style="border:1px solid var(--amber);margin-bottom:1rem"><p class="muted small">Your account is not yet linked to a teacher record. Ask your school admin to link your account under the Teachers tab.</p></div>`:''}
+    <div class="row" style="align-items:flex-start;gap:1.25rem">
+      <div style="flex:2;min-width:0;display:flex;flex-direction:column;gap:1.25rem">
+        <div class="card">
+          <h3>Today's lessons</h3>
+          ${todaySlots.length?`<table><thead><tr><th>Time</th><th>Grade</th><th>Stream</th><th>Subject</th></tr></thead>
+          <tbody>${todaySlots.map(r=>`<tr><td class="small">${esc(r.start_time||'')} – ${esc(r.end_time||'')}</td><td>${esc(r.grade)}</td><td>${esc(r.stream||'')}</td><td>${esc(r.subject)}</td></tr>`).join('')}</tbody></table>`
+          :`<div class="muted small">No lessons scheduled for today.</div>`}
+        </div>
+        <div class="card">
+          <div class="section-title"><h3>Recent lesson plans</h3><a href="#" data-route="lessons" class="sub">View all</a></div>
+          ${(myPlans.data||[]).length?(myPlans.data||[]).map(p=>`
+            <div style="padding:.5rem 0;border-bottom:1px solid var(--stone)">
+              <div style="font-weight:500">${esc(p.planned_topic||'')}</div>
+              <div class="small muted">${esc(p.grade||'')} &middot; ${esc(p.delivery_date||'')} &middot; <span class="badge ${p.status==='skipped'?'terra':p.status==='delivered'?'':'amber'}">${esc(p.status)}</span></div>
+            </div>`).join(''):`<div class="muted small">No lesson plans yet.</div>`}
+        </div>
+      </div>
+      <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:1rem">
+        <div class="card">
+          <h3>Notices</h3>
+          ${(notices.data||[]).length?(notices.data||[]).map(n=>`
+            <div style="padding:.4rem 0;border-bottom:1px solid var(--stone)">
+              <div style="font-weight:500;font-size:.88rem">${esc(n.title)}</div>
+              <div class="small muted">${new Date(n.created_at).toLocaleDateString('en-KE',{day:'numeric',month:'short'})}</div>
+            </div>`).join(''):`<div class="muted small">No notices.</div>`}
+        </div>
+        <div class="card">
+          <h3>My assignments</h3>
+          ${(myAssignments.data||[]).length?(myAssignments.data||[]).map(a=>`
+            <div style="padding:.4rem 0;border-bottom:1px solid var(--stone)">
+              <div style="font-size:.88rem;font-weight:500">${esc(a.title)}</div>
+              <div class="small muted">${esc(a.grade||'')} &middot; Due ${esc(a.due_date||'')}</div>
+            </div>`).join(''):`<div class="muted small">No assignments posted.</div>`}
+        </div>
+      </div>
+    </div>`;
+  m.querySelectorAll('[data-route]').forEach(a=>a.onclick=(e)=>{e.preventDefault();navigate(a.dataset.route);});
+}
+
+async function dashboardParent(m){
+  const sid=state.profile.school_id;
+  const {data:kids=[]}=await sb.from('students').select('id,full_name,grade,stream,admission_number').eq('parent_id',state.profile.id);
+  if(!kids.length){
+    m.innerHTML=`
+      <h1>Welcome, ${esc((state.profile.full_name||'').split(' ')[0])}.</h1>
+      <div class="card" style="max-width:520px;margin-top:1rem">
+        <h3>No learner linked to your account</h3>
+        <p class="muted small">Your account is not yet linked to any learner. Please contact the school office and provide this email address: <b>${esc(state.profile.email||'')}</b></p>
+      </div>`;
+    return;
+  }
+  const kidIds=kids.map(k=>k.id);
+  const today=new Date().toISOString().slice(0,10);
+  const [bals,att,notices,assignments]=await Promise.all([
+    sb.from('fee_balances').select('student_id,term,year,amount_due,amount_paid,balance').in('student_id',kidIds),
+    sb.from('student_attendance').select('student_id,status').in('student_id',kidIds).eq('date',today),
+    sb.from('notices').select('id,title,body,created_at').eq('school_id',sid).in('audience',['all','parents']).order('created_at',{ascending:false}).limit(4),
+    sb.from('assignments').select('title,grade,due_date,teachers!inner(school_id)').eq('teachers.school_id',sid).gte('due_date',today).order('due_date').limit(5),
+  ]);
+  const attMap=Object.fromEntries((att.data||[]).map(a=>[a.student_id,a.status]));
+  const balMap={};(bals.data||[]).forEach(b=>{if(!balMap[b.student_id])balMap[b.student_id]=[];balMap[b.student_id].push(b);});
+  m.innerHTML=`
+    <h1>Hello, ${esc((state.profile.full_name||'').split(' ')[0])}.</h1>
+    <p class="muted" style="margin-top:-.4rem;margin-bottom:1.75rem">${new Date().toLocaleDateString('en-KE',{weekday:'long',day:'numeric',month:'long'})}</p>
+    ${kids.map(k=>{
+      const status=attMap[k.id];
+      const kidBals=balMap[k.id]||[];
+      const totalBal=kidBals.reduce((a,b)=>a+(+b.balance||0),0);
+      return `<div class="card" style="margin-bottom:1rem">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.5rem">
+          <div><div style="font-size:1.1rem;font-weight:600">${esc(k.full_name)}</div>
+            <div class="small muted">${esc(k.grade||'')} ${esc(k.stream||'')} &middot; Adm. ${esc(k.admission_number||'')}</div></div>
+          <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+            ${status?`<span class="badge ${status==='absent'?'terra':status==='late'?'amber':''}">${status} today</span>`:'<span class="badge amber">Attendance not marked</span>'}
+            ${totalBal>0?`<span class="badge terra">KSh ${totalBal.toLocaleString()} due</span>`:`<span class="badge">Fees cleared</span>`}
+          </div>
+        </div>
+        <div style="margin-top:.75rem;display:flex;gap:.5rem;flex-wrap:wrap">
+          <a href="#" class="btn secondary" style="height:32px;font-size:.82rem;padding:0 .75rem" data-route="reports">Report card</a>
+          <a href="#" class="btn secondary" style="height:32px;font-size:.82rem;padding:0 .75rem" data-route="fees">Fee statement</a>
+          <a href="#" class="btn secondary" style="height:32px;font-size:.82rem;padding:0 .75rem" data-route="assignments">Assignments</a>
+        </div>
+      </div>`;
+    }).join('')}
+    <div class="row" style="align-items:flex-start;gap:1.25rem;margin-top:.25rem">
+      <div class="card" style="flex:1">
+        <h3>School notices</h3>
+        ${(notices.data||[]).length?(notices.data||[]).map(n=>`
+          <div style="padding:.5rem 0;border-bottom:1px solid var(--stone)">
+            <div style="font-weight:500">${esc(n.title)}</div>
+            <div class="small muted">${new Date(n.created_at).toLocaleDateString('en-KE',{day:'numeric',month:'short'})}</div>
+            <div class="small">${esc((n.body||'').slice(0,120))}</div>
+          </div>`).join(''):`<div class="muted small">No notices yet.</div>`}
+      </div>
+      <div class="card" style="flex:1">
+        <h3>Upcoming assignments</h3>
+        ${(assignments.data||[]).length?(assignments.data||[]).map(a=>`
+          <div style="padding:.4rem 0;border-bottom:1px solid var(--stone)">
+            <div style="font-size:.88rem;font-weight:500">${esc(a.title)}</div>
+            <div class="small muted">${esc(a.grade||'')} &middot; Due ${esc(a.due_date||'')}</div>
+          </div>`).join(''):`<div class="muted small">No upcoming assignments.</div>`}
+      </div>
+    </div>`;
+  m.querySelectorAll('[data-route]').forEach(a=>a.onclick=(e)=>{e.preventDefault();navigate(a.dataset.route);});
+}
 
 /* --- STUDENTS --- */
 modules.students = async (m)=>{
@@ -1308,9 +1530,7 @@ modules.grading = async (m)=>{
     <div class="toolbar">
       <div class="field"><label>Grade</label><select id="g">${GRADES.map(g=>`<option>${g}</option>`).join('')}</select></div>
       <div class="field"><label>Stream</label><input id="s" placeholder="optional"></div>
-      <div class="field"><label>Strand</label>
-        <select id="strand">${strands.length?strands.map(s=>`<option value="${s.id}">${esc(s.subject)} \u2014 ${esc(s.strand)}${s.sub_strand?' / '+esc(s.sub_strand):''}</option>`).join(''):'<option value="">No strands \u2014 add one first</option>'}</select>
-      </div>
+      <div class="field" style="min-width:280px"><label>Strand</label><div id="strandPicker"></div></div>
       <div class="field"><label>Term</label><select id="t"><option>1</option><option>2</option><option>3</option></select></div>
       <div class="field"><label>Year</label><input id="y" type="number" value="${new Date().getFullYear()}"></div>
       <button class="btn secondary" id="load">Load grid</button>
@@ -1318,6 +1538,9 @@ modules.grading = async (m)=>{
     </div>
     <div id="modeNote" class="small muted" style="margin-bottom:.75rem"></div>
     <div id="grid"></div>`;
+
+  const pickerContainer = $('#strandPicker');
+  buildStrandPicker(pickerContainer, strands, null, null);
 
   const updateModeNote = ()=>{
     const g=$('#g').value;
@@ -1333,11 +1556,15 @@ modules.grading = async (m)=>{
     const sub_strand=prompt('Sub-strand (optional)?')||null;
     const grade=$('#g').value;
     const { error } = await sb.from('cbc_strands').insert({ school_id:sid, grade, subject, strand, sub_strand });
-    if(error) toast(error.message,true); else { toast('Strand added'); modules.grading(m); }
+    if(error){ toast(error.message,true); return; }
+    toast('Strand added');
+    // refresh strands list and rebuild picker
+    const { data:newStrands=[] } = await sb.from('cbc_strands').select('*').eq('school_id',sid).order('subject');
+    buildStrandPicker(pickerContainer, newStrands, null, null);
   };
 
   $('#load').onclick = async ()=>{
-    const grade=$('#g').value, stream=$('#s').value, strand_id=$('#strand').value, term=+$('#t').value, year=+$('#y').value;
+    const grade=$('#g').value, stream=$('#s').value, strand_id=pickerContainer.getValue(), term=+$('#t').value, year=+$('#y').value;
     if(!strand_id){ toast('Add a strand first',true); return; }
     const js = isJuniorSecondary(grade);
     let q = sb.from('students').select('id,full_name,admission_number').eq('school_id',sid).eq('grade',grade).order('full_name');
@@ -1682,7 +1909,9 @@ async function lessonPlanForm(existing, sid, teacherRecord, m){
         <div class="col field"><label>Date</label><input type="date" name="delivery_date" value="${esc(existing?.delivery_date||'')}"></div>
       </div>
       <div class="field"><label>Learning area / Strand *</label>
-        <select name="strand_id">${strands.map(s=>`<option value="${s.id}" ${existing?.strand_id===s.id?'selected':''}>${esc(s.grade||'')} &mdash; ${esc(s.subject)} &mdash; ${esc(s.strand)}${s.sub_strand?' / '+esc(s.sub_strand):''}</option>`).join('')}</select></div>
+        <div id="lpStrandPicker"></div>
+        <input type="hidden" name="strand_id" id="lpStrandHidden" value="${existing?.strand_id||''}">
+      </div>
 
       <div class="field"><label>Specific learning outcomes</label>
         <textarea name="learning_outcomes" rows="3" placeholder="By the end of the lesson, the learner should be able to...">${esc(existing?.learning_outcomes||existing?.planned_topic||'')}</textarea></div>
@@ -1711,9 +1940,16 @@ async function lessonPlanForm(existing, sid, teacherRecord, m){
     </form></div>`;
   $('#bk').onclick=(e)=>{e.preventDefault();navigate('lessons');};
   $('#lpc').onclick=()=>navigate('lessons');
+  // Build strand picker
+  const lpPicker=$('#lpStrandPicker');
+  buildStrandPicker(lpPicker, strands, existing?.strand_id||null, (s)=>{
+    $('#lpStrandHidden').value=s?.id||'';
+  });
+  if(existing?.strand_id) lpPicker.setValue(existing.strand_id);
   $('#lpf').onsubmit=async(e)=>{
     e.preventDefault();
     const f=Object.fromEntries(new FormData(e.target));
+    f.strand_id = $('#lpStrandHidden').value || null;
     f.term=+f.term; f.week_number=+f.week_number||null;
     if(!f.delivery_date) delete f.delivery_date;
     Object.keys(f).forEach(k=>{if(f[k]==='') delete f[k];});
@@ -1959,6 +2195,7 @@ modules.fees = async (m)=>{
     <div class="card">
       <div class="section-title"><h3>Fee balances</h3>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <button class="btn primary" id="recPay"><i class="ti ti-cash"></i> Record payment</button>
           <button class="btn secondary" id="addS"><i class="ti ti-plus"></i> Add structure</button>
           <button class="btn secondary" id="addBal"><i class="ti ti-plus"></i> Add balance</button>
           <button class="btn secondary" id="dlFee"><i class="ti ti-table-export"></i> Export CSV</button>
@@ -1987,6 +2224,8 @@ modules.fees = async (m)=>{
   };
   ['gf','tf','yf','sf'].forEach(id=>$('#'+id).onchange=refreshFee);
   $('#qf').oninput=refreshFee;
+  // wire the initial render's statement buttons
+  refreshFee();
 
   $('#addS').onclick = ()=>{
     m.innerHTML = `<div class="card" style="max-width:520px"><a href="#" id="bk" class="small"><i class="ti ti-arrow-left"></i> Back</a><h2 style="margin-top:1rem">Add fee structure</h2>
@@ -2034,6 +2273,125 @@ modules.fees = async (m)=>{
     const filtered = filterBals(allBals,g,t,y,s,q);
     const csv=[['Admission No','Name','Grade','Term','Year','Due','Paid','Balance','Status'],...filtered.map(b=>[b.students?.admission_number||'',b.students?.full_name||'',b.students?.grade||'',b.term,b.year,b.amount_due,b.amount_paid,b.balance,+b.balance>0?'Defaulter':'Cleared'])].map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
     const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='fee-balances.csv'; a.click();
+  };
+
+  $('#recPay').onclick = async ()=>{
+    const { data:students=[] } = await sb.from('students').select('id,full_name,grade,admission_number').eq('school_id',sid).order('full_name');
+    // build balance map per student
+    const balMap = {};
+    allBals.forEach(b=>{ if(!balMap[b.student_id]) balMap[b.student_id]=[]; balMap[b.student_id].push(b); });
+
+    m.innerHTML = `<div class="card" style="max-width:580px">
+      <a href="#" id="bkPay" class="small"><i class="ti ti-arrow-left"></i> Back to fees</a>
+      <h2 style="margin-top:1rem">Record fee payment</h2>
+      <p class="muted small">Use this form to record cash, bank transfer, or any manual payment. M-Pesa STK push coming soon.</p>
+      <form id="pf" class="stack">
+        <div class="field"><label>Learner *</label>
+          <select id="payStudent" name="student_id">
+            <option value="">Select learner...</option>
+            ${students.map(s=>`<option value="${s.id}">${esc(s.full_name)} — ${esc(s.grade||'')} (${esc(s.admission_number||'')})</option>`).join('')}
+          </select>
+        </div>
+        <div class="field"><label>Fee period *</label>
+          <select id="payBal" name="balance_id">
+            <option value="">Select learner first</option>
+          </select>
+        </div>
+        <div id="balSummary" style="display:none;padding:.75rem;background:var(--green-50);border-radius:var(--radius);margin-bottom:.25rem">
+          <div class="small muted">Current balance</div>
+          <div id="balAmt" style="font-size:1.3rem;font-weight:600;color:var(--green)"></div>
+        </div>
+        <div class="row">
+          <div class="col field"><label>Amount paid (KSh) *</label>
+            <input type="number" name="amount" id="payAmt" min="1" required placeholder="0"></div>
+          <div class="col field"><label>Payment method</label>
+            <select name="payment_method">
+              <option>Cash</option>
+              <option>M-Pesa</option>
+              <option>Bank transfer</option>
+              <option>Cheque</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col field"><label>Reference / Receipt no.</label>
+            <input name="reference" placeholder="e.g. QJK2345 or RCP-001"></div>
+          <div class="col field"><label>Payment date *</label>
+            <input type="date" name="payment_date" value="${new Date().toISOString().slice(0,10)}" required></div>
+        </div>
+        <div class="field"><label>Notes (optional)</label>
+          <input name="notes" placeholder="Any additional notes"></div>
+        <div style="display:flex;gap:.5rem">
+          <button type="submit" class="btn primary"><i class="ti ti-check"></i> Save payment</button>
+          <button type="button" class="btn secondary" id="payCancel">Cancel</button>
+        </div>
+      </form>
+    </div>`;
+
+    $('#bkPay').onclick=(e)=>{e.preventDefault();navigate('fees');};
+    $('#payCancel').onclick=()=>navigate('fees');
+
+    // When learner is selected, populate their fee periods
+    $('#payStudent').onchange = ()=>{
+      const stuId = $('#payStudent').value;
+      const bals = balMap[stuId]||[];
+      const sel = $('#payBal');
+      if(!bals.length){
+        sel.innerHTML='<option value="">No fee records for this learner</option>';
+        $('#balSummary').style.display='none';
+        return;
+      }
+      sel.innerHTML = bals.map(b=>`<option value="${b.id}" data-balance="${b.balance}" data-due="${b.amount_due}" data-paid="${b.amount_paid}">Term ${b.term} ${b.year} — Balance: KSh ${(+b.balance).toLocaleString()}</option>`).join('');
+      showBalSummary(bals[0]);
+    };
+
+    $('#payBal').onchange = ()=>{
+      const opt = $('#payBal').selectedOptions[0];
+      if(!opt||!opt.value) return;
+      showBalSummary({ balance:+opt.dataset.balance, amount_due:+opt.dataset.due, amount_paid:+opt.dataset.paid });
+    };
+
+    function showBalSummary(b){
+      const bal = +b.balance;
+      $('#balSummary').style.display='block';
+      $('#balAmt').textContent = bal>0 ? `KSh ${bal.toLocaleString()} outstanding` : 'Account cleared';
+      $('#balAmt').style.color = bal>0 ? 'var(--terracotta)' : 'var(--green)';
+      if(bal>0) $('#payAmt').value = bal;
+    }
+
+    $('#pf').onsubmit = async (e)=>{
+      e.preventDefault();
+      const f = Object.fromEntries(new FormData(e.target));
+      const balId = $('#payBal').value;
+      if(!balId){ toast('Select a fee period.',true); return; }
+      const amount = +f.amount;
+      if(!amount||amount<=0){ toast('Enter a valid amount.',true); return; }
+
+      // Find the current balance record
+      const { data:bal, error:bErr } = await sb.from('fee_balances').select('amount_paid,amount_due').eq('id',balId).single();
+      if(bErr||!bal){ toast('Could not load fee record.',true); return; }
+
+      const newPaid = Math.min(+bal.amount_paid + amount, +bal.amount_due);
+
+      // Record in mpesa_payments table as a general payment log
+      const { error:pErr } = await sb.from('mpesa_payments').insert({
+        student_id: f.student_id,
+        school_id: sid,
+        mpesa_ref: f.reference||`RCP-${Date.now()}`,
+        amount,
+        phone_number: f.payment_method,
+        payment_date: new Date(f.payment_date).toISOString(),
+        status: f.payment_method,
+      });
+      if(pErr){ toast('Failed to log payment: '+pErr.message,true); return; }
+
+      // Update fee balance
+      const { error:uErr } = await sb.from('fee_balances').update({ amount_paid: newPaid }).eq('id',balId);
+      if(uErr){ toast('Failed to update balance: '+uErr.message,true); return; }
+
+      toast(`Payment of KSh ${amount.toLocaleString()} recorded successfully.`);
+      navigate('fees');
+    };
   };
 };
 
@@ -2489,135 +2847,222 @@ window.addEventListener('online', syncOfflineQueue);
  * notices, and incidents so you can see all features working immediately.
  * ==========================================================================*/
 window.seedDemoData = async function(){
-  toast('Seeding demo data, please wait...');
+  toast('Seeding demo data — please wait...');
   const sid = state.profile?.school_id;
   if(!sid){ toast('No school linked to your account.',true); return; }
 
-  // Teachers
-  const teachers = [
-    { school_id:sid, full_name:'Jane Wanjiku', tsc_number:'TSC-00123', gender:'F', phone:'0712345678', email:'wanjiku@radari.ke', qualification:'B.Ed (Primary)', specialisation:'Mathematics & Science', date_joined:'2019-01-15', employment_status:'active' },
-    { school_id:sid, full_name:'Peter Otieno', tsc_number:'TSC-00456', gender:'M', phone:'0723456789', email:'otieno@radari.ke', qualification:'Diploma in Education', specialisation:'English & Creative Arts', date_joined:'2021-03-01', employment_status:'active' },
-    { school_id:sid, full_name:'Mary Njeri', tsc_number:'TSC-00789', gender:'F', phone:'0734567890', email:'njeri@radari.ke', qualification:'B.Ed (Junior Secondary)', specialisation:'Integrated Science & Health', date_joined:'2022-08-10', employment_status:'active' },
-  ];
-  const { data:insertedTeachers=[] } = await sb.from('teachers').insert(teachers).select('id,full_name');
+  // ── TEACHERS ────────────────────────────────────────────────────────────────
+  const { data:insertedTeachers=[] } = await sb.from('teachers').insert([
+    { school_id:sid, full_name:'Jane Wanjiku', tsc_number:'TSC-00123', gender:'Female', phone:'0712 345 678', email:'teacher@radari.ke', qualification:'B.Ed (Primary Education)', specialisation:'Mathematics & Science', date_joined:'2019-01-15', employment_status:'active' },
+    { school_id:sid, full_name:'Peter Otieno', tsc_number:'TSC-00456', gender:'Male', phone:'0723 456 789', email:'peter.otieno@radari.ke', qualification:'Diploma in Education', specialisation:'English & Creative Arts', date_joined:'2021-03-01', employment_status:'active' },
+    { school_id:sid, full_name:'Mary Njeri', tsc_number:'TSC-00789', gender:'Female', phone:'0734 567 890', email:'mary.njeri@radari.ke', qualification:'B.Ed (Junior Secondary)', specialisation:'Integrated Science & Health', date_joined:'2022-08-10', employment_status:'active' },
+    { school_id:sid, full_name:'Samuel Kipchoge', tsc_number:'TSC-01011', gender:'Male', phone:'0745 678 901', email:'kipchoge@radari.ke', qualification:'B.Ed (Early Childhood)', specialisation:'Pre-Primary & Kiswahili', date_joined:'2020-05-20', employment_status:'active' },
+    { school_id:sid, full_name:'Eunice Achieng', tsc_number:'TSC-01213', gender:'Female', phone:'0756 789 012', email:'achieng@radari.ke', qualification:'B.Ed (Arts)', specialisation:'Social Studies & Creative Arts', date_joined:'2018-09-03', employment_status:'active' },
+  ]).select('id,full_name');
 
-  // Students — mix of grades including Grade 7-9
-  const students = [
-    { school_id:sid, full_name:'Amina Khalid', admission_number:'ADM/2024/001', grade:'Grade 4', stream:'A', gender:'F', date_of_birth:'2015-03-12' },
-    { school_id:sid, full_name:'Brian Mwangi', admission_number:'ADM/2024/002', grade:'Grade 4', stream:'A', gender:'M', date_of_birth:'2015-07-22' },
-    { school_id:sid, full_name:'Cynthia Akinyi', admission_number:'ADM/2024/003', grade:'Grade 4', stream:'A', gender:'F', date_of_birth:'2015-01-05' },
-    { school_id:sid, full_name:'David Kamau', admission_number:'ADM/2024/004', grade:'Grade 4', stream:'A', gender:'M', date_of_birth:'2015-09-30' },
-    { school_id:sid, full_name:'Esther Waweru', admission_number:'ADM/2024/005', grade:'Grade 4', stream:'A', gender:'F', date_of_birth:'2015-11-14' },
-    { school_id:sid, full_name:'Felix Ochieng', admission_number:'ADM/2024/006', grade:'Grade 7', stream:'A', gender:'M', date_of_birth:'2012-04-18' },
-    { school_id:sid, full_name:'Grace Mutua', admission_number:'ADM/2024/007', grade:'Grade 7', stream:'A', gender:'F', date_of_birth:'2012-08-25' },
-    { school_id:sid, full_name:'Hassan Abdi', admission_number:'ADM/2024/008', grade:'Grade 9', stream:'A', gender:'M', date_of_birth:'2010-02-10' },
-    { school_id:sid, full_name:'Irene Chebet', admission_number:'ADM/2024/009', grade:'Grade 9', stream:'A', gender:'F', date_of_birth:'2010-06-03' },
-    { school_id:sid, full_name:'James Njoroge', admission_number:'ADM/2024/010', grade:'Grade 9', stream:'A', gender:'M', date_of_birth:'2010-12-19' },
-  ];
-  const { data:insertedStudents=[] } = await sb.from('students').insert(students).select('id,full_name,grade');
+  // ── STUDENTS ────────────────────────────────────────────────────────────────
+  const { data:insertedStudents=[] } = await sb.from('students').insert([
+    // PP1
+    { school_id:sid, full_name:'Liam Odhiambo', admission_number:'ADM/2024/001', grade:'PP1', stream:'A', gender:'Male', date_of_birth:'2019-04-12', father_name:'George Odhiambo', mother_name:'Rose Odhiambo', contact_phone:'0711 000 001', nationality:'Kenyan', home_county:'Nairobi' },
+    { school_id:sid, full_name:'Zara Hassan', admission_number:'ADM/2024/002', grade:'PP1', stream:'A', gender:'Female', date_of_birth:'2019-07-22', father_name:'Ali Hassan', mother_name:'Fatuma Hassan', contact_phone:'0711 000 002', nationality:'Kenyan', home_county:'Nairobi' },
+    // Grade 2
+    { school_id:sid, full_name:'Kevin Mwangi', admission_number:'ADM/2024/003', grade:'Grade 2', stream:'A', gender:'Male', date_of_birth:'2017-02-18', father_name:'Joseph Mwangi', mother_name:'Grace Mwangi', contact_phone:'0711 000 003', nationality:'Kenyan', home_county:'Kiambu' },
+    { school_id:sid, full_name:'Amina Khalid', admission_number:'ADM/2024/004', grade:'Grade 2', stream:'A', gender:'Female', date_of_birth:'2017-09-05', father_name:'Khalid Omar', mother_name:'Safia Omar', contact_phone:'0711 000 004', nationality:'Kenyan', home_county:'Mombasa' },
+    // Grade 4
+    { school_id:sid, full_name:'Brian Kamau', admission_number:'ADM/2024/005', grade:'Grade 4', stream:'A', gender:'Male', date_of_birth:'2015-03-14', father_name:'David Kamau', mother_name:'Lucy Kamau', contact_phone:'0711 000 005', nationality:'Kenyan', home_county:'Muranga', emergency_name:'David Kamau', emergency_relationship:'Father', emergency_phone:'0722 000 005' },
+    { school_id:sid, full_name:'Cynthia Akinyi', admission_number:'ADM/2024/006', grade:'Grade 4', stream:'A', gender:'Female', date_of_birth:'2015-11-30', father_name:'Collins Akinyi', mother_name:'Janet Akinyi', contact_phone:'0711 000 006', nationality:'Kenyan', home_county:'Kisumu' },
+    { school_id:sid, full_name:'Dennis Waweru', admission_number:'ADM/2024/007', grade:'Grade 4', stream:'A', gender:'Male', date_of_birth:'2015-06-08', father_name:'Francis Waweru', mother_name:'Ann Waweru', contact_phone:'0711 000 007', nationality:'Kenyan', home_county:'Nairobi' },
+    { school_id:sid, full_name:'Esther Mutua', admission_number:'ADM/2024/008', grade:'Grade 4', stream:'B', gender:'Female', date_of_birth:'2015-01-25', father_name:'Paul Mutua', mother_name:'Mary Mutua', contact_phone:'0711 000 008', nationality:'Kenyan', home_county:'Machakos' },
+    { school_id:sid, full_name:'Felix Njoroge', admission_number:'ADM/2024/009', grade:'Grade 4', stream:'B', gender:'Male', date_of_birth:'2015-08-17', father_name:'James Njoroge', mother_name:'Sarah Njoroge', contact_phone:'0711 000 009', nationality:'Kenyan', home_county:'Nairobi' },
+    // Grade 6
+    { school_id:sid, full_name:'Gloria Chebet', admission_number:'ADM/2024/010', grade:'Grade 6', stream:'A', gender:'Female', date_of_birth:'2013-05-20', father_name:'Robert Chebet', mother_name:'Alice Chebet', contact_phone:'0711 000 010', nationality:'Kenyan', home_county:'Uasin Gishu' },
+    { school_id:sid, full_name:'Henry Otieno', admission_number:'ADM/2024/011', grade:'Grade 6', stream:'A', gender:'Male', date_of_birth:'2013-12-03', father_name:'Michael Otieno', mother_name:'Pamela Otieno', contact_phone:'0711 000 011', nationality:'Kenyan', home_county:'Siaya' },
+    // Grade 7
+    { school_id:sid, full_name:'Irene Wanjiru', admission_number:'ADM/2024/012', grade:'Grade 7', stream:'A', gender:'Female', date_of_birth:'2012-04-09', father_name:'Stephen Wanjiru', mother_name:'Doris Wanjiru', contact_phone:'0711 000 012', nationality:'Kenyan', home_county:'Nairobi', nemis_number:'NEM-20120409-12' },
+    { school_id:sid, full_name:'James Abdi', admission_number:'ADM/2024/013', grade:'Grade 7', stream:'A', gender:'Male', date_of_birth:'2012-08-14', father_name:'Mohammed Abdi', mother_name:'Halima Abdi', contact_phone:'0711 000 013', nationality:'Kenyan', home_county:'Garissa', nemis_number:'NEM-20120814-13' },
+    { school_id:sid, full_name:'Karen Wambui', admission_number:'ADM/2024/014', grade:'Grade 7', stream:'B', gender:'Female', date_of_birth:'2012-11-27', father_name:'Simon Wambui', mother_name:'Mercy Wambui', contact_phone:'0711 000 014', nationality:'Kenyan', home_county:'Nyeri', nemis_number:'NEM-20121127-14' },
+    // Grade 9
+    { school_id:sid, full_name:'Lawrence Kiprop', admission_number:'ADM/2024/015', grade:'Grade 9', stream:'A', gender:'Male', date_of_birth:'2010-02-22', father_name:'Benjamin Kiprop', mother_name:'Christine Kiprop', contact_phone:'0711 000 015', nationality:'Kenyan', home_county:'Kericho', nemis_number:'NEM-20100222-15', emergency_name:'Benjamin Kiprop', emergency_relationship:'Father', emergency_phone:'0733 000 015' },
+    { school_id:sid, full_name:'Monica Nduta', admission_number:'ADM/2024/016', grade:'Grade 9', stream:'A', gender:'Female', date_of_birth:'2010-06-11', father_name:'Peter Nduta', mother_name:'Catherine Nduta', contact_phone:'0711 000 016', nationality:'Kenyan', home_county:'Nairobi', nemis_number:'NEM-20100611-16' },
+    { school_id:sid, full_name:'Nathan Ochieng', admission_number:'ADM/2024/017', grade:'Grade 9', stream:'A', gender:'Male', date_of_birth:'2010-09-30', father_name:'Vincent Ochieng', mother_name:'Lydia Ochieng', contact_phone:'0711 000 017', nationality:'Kenyan', home_county:'Kisumu', nemis_number:'NEM-20100930-17' },
+  ]).select('id,full_name,grade');
 
-  // CBC Strands — primary and junior secondary
-  const strands = [
-    { school_id:sid, grade:'Grade 4', subject:'Mathematics', strand:'Numbers', sub_strand:'Whole Numbers' },
-    { school_id:sid, grade:'Grade 4', subject:'English', strand:'Listening & Speaking', sub_strand:'Oral Communication' },
+  // ── CBC STRANDS ──────────────────────────────────────────────────────────────
+  const { data:insertedStrands=[] } = await sb.from('cbc_strands').insert([
+    // PP1
+    { school_id:sid, grade:'PP1', subject:'Language Activities', strand:'Listening & Speaking', sub_strand:'Following instructions' },
+    { school_id:sid, grade:'PP1', subject:'Mathematical Activities', strand:'Numbers', sub_strand:'Counting 1–10' },
+    // Grade 2
+    { school_id:sid, grade:'Grade 2', subject:'English', strand:'Reading', sub_strand:'Phonics and word recognition' },
+    { school_id:sid, grade:'Grade 2', subject:'Mathematics', strand:'Numbers', sub_strand:'Addition within 100' },
+    { school_id:sid, grade:'Grade 2', subject:'Environmental Activities', strand:'Living Things', sub_strand:'Animals around us' },
+    // Grade 4
+    { school_id:sid, grade:'Grade 4', subject:'Mathematics', strand:'Numbers', sub_strand:'Fractions' },
+    { school_id:sid, grade:'Grade 4', subject:'Mathematics', strand:'Measurement', sub_strand:'Length' },
+    { school_id:sid, grade:'Grade 4', subject:'English', strand:'Reading', sub_strand:'Comprehension' },
+    { school_id:sid, grade:'Grade 4', subject:'English', strand:'Writing', sub_strand:'Sentence construction' },
+    { school_id:sid, grade:'Grade 4', subject:'Kiswahili', strand:'Kusoma', sub_strand:'Ufahamu' },
     { school_id:sid, grade:'Grade 4', subject:'Science & Technology', strand:'Living Things', sub_strand:'Plants' },
-    { school_id:sid, grade:'Grade 4', subject:'Creative Arts', strand:'Visual Arts', sub_strand:'Drawing' },
-    { school_id:sid, grade:'Grade 4', subject:'Social Studies', strand:'Our Environment', sub_strand:'Physical Features' },
-    { school_id:sid, grade:'Grade 7', subject:'Mathematics', strand:'Numbers', sub_strand:'Integers' },
-    { school_id:sid, grade:'Grade 7', subject:'English', strand:'Reading', sub_strand:'Comprehension' },
-    { school_id:sid, grade:'Grade 7', subject:'Integrated Science', strand:'Cells', sub_strand:'Cell Structure' },
-    { school_id:sid, grade:'Grade 9', subject:'Mathematics', strand:'Algebra', sub_strand:'Linear Equations' },
-    { school_id:sid, grade:'Grade 9', subject:'English', strand:'Writing', sub_strand:'Essay Writing' },
-    { school_id:sid, grade:'Grade 9', subject:'Integrated Science', strand:'Genetics', sub_strand:'Heredity' },
-    { school_id:sid, grade:'Grade 9', subject:'Social Studies', strand:'Governance', sub_strand:'Democracy' },
-  ];
-  const { data:insertedStrands=[] } = await sb.from('cbc_strands').insert(strands).select('id,grade,subject');
+    { school_id:sid, grade:'Grade 4', subject:'Social Studies', strand:'Our Environment', sub_strand:'Physical features' },
+    { school_id:sid, grade:'Grade 4', subject:'Creative Arts', strand:'Visual Arts', sub_strand:'Drawing and painting' },
+    { school_id:sid, grade:'Grade 4', subject:'Physical & Health Education', strand:'Physical Fitness', sub_strand:'Running' },
+    // Grade 6
+    { school_id:sid, grade:'Grade 6', subject:'Mathematics', strand:'Numbers', sub_strand:'Decimals and percentages' },
+    { school_id:sid, grade:'Grade 6', subject:'English', strand:'Writing', sub_strand:'Compositions' },
+    { school_id:sid, grade:'Grade 6', subject:'Science & Technology', strand:'Energy', sub_strand:'Light and sound' },
+    { school_id:sid, grade:'Grade 6', subject:'Social Studies', strand:'Citizenship', sub_strand:'Rights and responsibilities' },
+    // Grade 7 (Junior Secondary)
+    { school_id:sid, grade:'Grade 7', subject:'Mathematics', strand:'Numbers', sub_strand:'Integers and number bases' },
+    { school_id:sid, grade:'Grade 7', subject:'English', strand:'Reading', sub_strand:'Comprehension and inference' },
+    { school_id:sid, grade:'Grade 7', subject:'Kiswahili', strand:'Fasihi', sub_strand:'Hadithi fupi' },
+    { school_id:sid, grade:'Grade 7', subject:'Integrated Science', strand:'Cells', sub_strand:'Cell structure and function' },
+    { school_id:sid, grade:'Grade 7', subject:'Health Education', strand:'Nutrition', sub_strand:'Balanced diet' },
+    { school_id:sid, grade:'Grade 7', subject:'Pre-Technical Studies', strand:'Drawing', sub_strand:'Plane figures' },
+    // Grade 9 (Junior Secondary)
+    { school_id:sid, grade:'Grade 9', subject:'Mathematics', strand:'Algebra', sub_strand:'Linear equations and inequalities' },
+    { school_id:sid, grade:'Grade 9', subject:'Mathematics', strand:'Geometry', sub_strand:'Circles and polygons' },
+    { school_id:sid, grade:'Grade 9', subject:'English', strand:'Writing', sub_strand:'Argumentative essays' },
+    { school_id:sid, grade:'Grade 9', subject:'Integrated Science', strand:'Genetics', sub_strand:'Heredity and variation' },
+    { school_id:sid, grade:'Grade 9', subject:'Social Studies', strand:'Governance', sub_strand:'Democracy and human rights' },
+    { school_id:sid, grade:'Grade 9', subject:'Business Studies', strand:'Entrepreneurship', sub_strand:'Business planning' },
+  ]).select('id,grade,subject,strand');
 
-  // Assessments — primary uses EE/ME/AE/BE, JS uses percentages
+  // ── ASSESSMENTS ──────────────────────────────────────────────────────────────
   const assessRows = [];
-  const g4students = insertedStudents.filter(s=>s.grade==='Grade 4');
-  const g4strands = insertedStrands.filter(s=>s.grade==='Grade 4');
-  const g4scores = ['EE','ME','ME','AE','ME'];
-  g4students.forEach((stu,i)=>{
-    g4strands.forEach(str=>{
-      assessRows.push({ student_id:stu.id, strand_id:str.id, term:1, year:2025, score:g4scores[i%g4scores.length], remarks:'Good effort' });
+  const strandsByGrade = {};
+  insertedStrands.forEach(s=>{ if(!strandsByGrade[s.grade]) strandsByGrade[s.grade]=[]; strandsByGrade[s.grade].push(s); });
+
+  const primaryScores = ['EE','ME','ME','ME','AE'];
+  const g4remarks = ['Excellent understanding','Good progress','Needs more practice','Well done','Requires support'];
+  insertedStudents.filter(s=>['PP1','Grade 2','Grade 4','Grade 6'].includes(s.grade)).forEach((stu,i)=>{
+    (strandsByGrade[stu.grade]||[]).forEach((str,j)=>{
+      assessRows.push({ student_id:stu.id, strand_id:str.id, term:1, year:2025, score:primaryScores[(i+j)%primaryScores.length], remarks:g4remarks[(i+j)%g4remarks.length] });
     });
   });
-  const g7students = insertedStudents.filter(s=>s.grade==='Grade 7');
-  const g7strands = insertedStrands.filter(s=>s.grade==='Grade 7');
-  const g7pcts = ['78','65','82'];
-  g7students.forEach((stu,i)=>{
-    g7strands.forEach(str=>{
-      assessRows.push({ student_id:stu.id, strand_id:str.id, term:1, year:2025, score:String(+g7pcts[i%g7pcts.length]+Math.floor(Math.random()*10)), remarks:'' });
+  const g7pcts = [78,65,82,71,88,73];
+  insertedStudents.filter(s=>s.grade==='Grade 7').forEach((stu,i)=>{
+    (strandsByGrade['Grade 7']||[]).forEach((str,j)=>{
+      assessRows.push({ student_id:stu.id, strand_id:str.id, term:1, year:2025, score:String(g7pcts[(i+j)%g7pcts.length]+Math.floor(Math.random()*8)), remarks:'' });
     });
   });
-  const g9students = insertedStudents.filter(s=>s.grade==='Grade 9');
-  const g9strands = insertedStrands.filter(s=>s.grade==='Grade 9');
-  const g9pcts = ['88','72','91'];
-  g9students.forEach((stu,i)=>{
-    g9strands.forEach(str=>{
-      assessRows.push({ student_id:stu.id, strand_id:str.id, term:1, year:2025, score:String(+g9pcts[i%g9pcts.length]+Math.floor(Math.random()*8)), remarks:'' });
+  const g9pcts = [88,72,91,68,95,77];
+  insertedStudents.filter(s=>s.grade==='Grade 9').forEach((stu,i)=>{
+    (strandsByGrade['Grade 9']||[]).forEach((str,j)=>{
+      assessRows.push({ student_id:stu.id, strand_id:str.id, term:1, year:2025, score:String(g9pcts[(i+j)%g9pcts.length]+Math.floor(Math.random()*6)), remarks:'' });
+      assessRows.push({ student_id:stu.id, strand_id:str.id, term:2, year:2024, score:String(g9pcts[(i+j+1)%g9pcts.length]), remarks:'Prev year' });
     });
   });
   if(assessRows.length) await sb.from('assessments').insert(assessRows);
 
-  // Attendance — last 14 days for Grade 4 students
+  // ── ATTENDANCE ─────────────────────────────────────────────────────────────
   const attRows = [];
-  for(let d=0;d<14;d++){
-    const dt = new Date(); dt.setDate(dt.getDate()-d);
+  for(let d=0;d<20;d++){
+    const dt=new Date(); dt.setDate(dt.getDate()-d);
     if(dt.getDay()===0||dt.getDay()===6) continue;
-    const dateStr = dt.toISOString().slice(0,10);
+    const dateStr=dt.toISOString().slice(0,10);
     insertedStudents.forEach(stu=>{
-      const roll = Math.random();
-      attRows.push({ student_id:stu.id, school_id:sid, date:dateStr, status:roll>0.9?'absent':roll>0.85?'late':'present', noted_by:state.profile.id });
+      const r=Math.random();
+      attRows.push({ student_id:stu.id, school_id:sid, date:dateStr, status:r>0.92?'absent':r>0.88?'late':r>0.85?'excused':'present', noted_by:state.profile.id });
     });
   }
   if(attRows.length) await sb.from('student_attendance').upsert(attRows,{onConflict:'student_id,date'});
 
-  // Fee structures & balances
-  const { data:feeStructs=[] } = await sb.from('fee_structures').insert([
-    { school_id:sid, grade:'Grade 4', term:1, year:2025, amount:5500, description:'Tuition fee' },
-    { school_id:sid, grade:'Grade 7', term:1, year:2025, amount:7500, description:'Tuition fee' },
-    { school_id:sid, grade:'Grade 9', term:1, year:2025, amount:8500, description:'Tuition fee' },
-  ]).select('id');
-  const feeRows = insertedStudents.map(stu=>{
-    const paid = Math.random()>0.3 ? (Math.random()>0.5 ? 8500 : 4000) : 0;
-    return { student_id:stu.id, school_id:sid, term:1, year:2025, amount_due:8500, amount_paid:paid };
+  // ── FEES ────────────────────────────────────────────────────────────────────
+  await sb.from('fee_structures').insert([
+    { school_id:sid, grade:'PP1',    term:1, year:2025, amount:4500,  description:'Term 1 tuition' },
+    { school_id:sid, grade:'Grade 2',term:1, year:2025, amount:5500,  description:'Term 1 tuition' },
+    { school_id:sid, grade:'Grade 4',term:1, year:2025, amount:6000,  description:'Term 1 tuition' },
+    { school_id:sid, grade:'Grade 6',term:1, year:2025, amount:6500,  description:'Term 1 tuition' },
+    { school_id:sid, grade:'Grade 7',term:1, year:2025, amount:8500,  description:'Term 1 tuition (JS)' },
+    { school_id:sid, grade:'Grade 9',term:1, year:2025, amount:9500,  description:'Term 1 tuition (JS)' },
+  ]);
+  const feeAmounts = { 'PP1':4500, 'Grade 2':5500, 'Grade 4':6000, 'Grade 6':6500, 'Grade 7':8500, 'Grade 9':9500 };
+  const feeRows = insertedStudents.map((stu,i)=>{
+    const due = feeAmounts[stu.grade]||6000;
+    const paid = i%3===0 ? due : i%3===1 ? Math.round(due*0.5) : 0;
+    return { student_id:stu.id, school_id:sid, term:1, year:2025, amount_due:due, amount_paid:paid };
   });
   await sb.from('fee_balances').insert(feeRows);
 
-  // Health records
-  await sb.from('student_health').insert([
-    { student_id:insertedStudents[0]?.id, condition_name:'Asthma', description:'Mild intermittent asthma triggered by dust', severity:'mild', requires_medication:true, medication_notes:'Blue inhaler in school bag', emergency_action:'Allow to use inhaler, rest in a cool area, call parent if no improvement in 10 minutes', diagnosed_by:'Dr. Kariuki, Nairobi Hospital' },
-    { student_id:insertedStudents[5]?.id, condition_name:'Epilepsy', description:'Generalised tonic-clonic seizures, last episode 6 months ago', severity:'severe', requires_medication:true, medication_notes:'Takes Carbamazepine 200mg daily', emergency_action:'Do not restrain. Clear area, protect head, time the seizure, call 999 if over 5 minutes', diagnosed_by:'Dr. Mwenda, Kenyatta National Hospital' },
-  ].filter(r=>r.student_id));
+  // ── HEALTH RECORDS ───────────────────────────────────────────────────────────
+  const g4students = insertedStudents.filter(s=>s.grade==='Grade 4');
+  const g7students = insertedStudents.filter(s=>s.grade==='Grade 7');
+  const healthRows = [];
+  if(g4students[0]) healthRows.push({ student_id:g4students[0].id, condition_name:'Asthma', description:'Mild intermittent asthma triggered by dust and cold air', severity:'mild', requires_medication:true, medication_notes:'Blue Ventolin inhaler in school bag at all times', emergency_action:'Allow to sit upright and use inhaler. Rest in a well-ventilated area. Call parent if no improvement in 10 minutes.', diagnosed_by:'Dr. Kariuki — Nairobi West Hospital' });
+  if(g4students[1]) healthRows.push({ student_id:g4students[1].id, condition_name:'Nut allergy', description:'Severe allergy to groundnuts and tree nuts', severity:'moderate', requires_medication:true, medication_notes:'EpiPen in school first aid cabinet. Also carries antihistamines.', emergency_action:'Administer EpiPen immediately if anaphylaxis suspected. Call 999 and parent simultaneously.', diagnosed_by:'Dr. Mwenda — Aga Khan Hospital' });
+  if(g7students[0]) healthRows.push({ student_id:g7students[0].id, condition_name:'Epilepsy', description:'Generalised tonic-clonic seizures. Last episode was 8 months ago. Currently well controlled on medication.', severity:'severe', requires_medication:true, medication_notes:'Takes Carbamazepine 200mg every morning. Parents informed of any missed dose.', emergency_action:'Do not restrain. Clear area, protect head with soft object, time the seizure. Call 999 if seizure exceeds 5 minutes. Place in recovery position after seizure. Call parent.', diagnosed_by:'Dr. Wekesa — Kenyatta National Hospital, Neurology Dept.' });
+  if(healthRows.length) await sb.from('student_health').insert(healthRows);
 
-  // Notices
+  // ── NOTICES ──────────────────────────────────────────────────────────────────
   await sb.from('notices').insert([
-    { school_id:sid, title:'Term 1 2025 Fee Deadline', body:'Please note that all outstanding Term 1 fees must be cleared by 28th February 2025. Parents with difficulties are encouraged to visit the school office.', audience:'parents', posted_by:state.profile.id },
-    { school_id:sid, title:'Staff Meeting — 17th June', body:'All teachers are reminded of the mandatory staff meeting on Monday 17th June at 4:00pm in the staffroom. Attendance is compulsory.', audience:'teachers', posted_by:state.profile.id },
-    { school_id:sid, title:'Junior Secondary Sports Day', body:'The annual Junior Secondary Sports Day will be held on 28th June 2025. All Grade 7-9 learners should report in sports attire.', audience:'all', posted_by:state.profile.id },
+    { school_id:sid, title:'Term 2 Opening Date', body:'Term 2 2025 will begin on Monday 28th April 2025. All learners should report by 7:30am in full school uniform. Parents are reminded to clear all outstanding Term 1 fees before the first day of Term 2.', audience:'all', posted_by:state.profile.id },
+    { school_id:sid, title:'Parent-Teacher Meeting — 25th April', body:'The school will host a Parent-Teacher meeting on Friday 25th April 2025 at 3:00pm in the school hall. Parents of Grade 7, 8, and 9 learners are especially encouraged to attend as we will discuss the Junior Secondary assessment framework.', audience:'parents', posted_by:state.profile.id },
+    { school_id:sid, title:'CBC Continuous Assessment Reminder', body:'All teachers are reminded that School-Based Assessment (SBA) records for Term 1 must be submitted to the Head of Department by 15th April 2025. KNEC portal upload is due by 30th April 2025.', audience:'teachers', posted_by:state.profile.id },
+    { school_id:sid, title:'Sports Day — 20th June 2025', body:'The annual school sports day is scheduled for Friday 20th June 2025. All learners are encouraged to participate. Grade 7 to 9 learners will represent the school in inter-school athletics competitions.', audience:'all', posted_by:state.profile.id },
+    { school_id:sid, title:'Fee Payment Reminder — Term 1', body:'Term 1 2025 fees are now due. You can pay via M-Pesa Paybill 4024241 (Account: your child\'s admission number) or visit the school accounts office. Parents with payment difficulties are encouraged to speak to the Principal.', audience:'parents', posted_by:state.profile.id },
   ]);
 
-  // Incidents
-  await sb.from('incidents').insert([
-    { student_id:insertedStudents[1]?.id, school_id:sid, reported_by:state.profile.id, incident_type:'discipline', description:'Disruptive behaviour during Mathematics lesson', action_taken:'Counseled by class teacher. Parent informed via phone.', incident_date:'2025-06-10' },
-    { student_id:insertedStudents[2]?.id, school_id:sid, reported_by:state.profile.id, incident_type:'commendation', description:'Represented school at county spelling bee and finished 2nd place', action_taken:'Certificate awarded at assembly', incident_date:'2025-06-05' },
-  ].filter(r=>r.student_id));
-
-  // Timetable
-  if(insertedTeachers.length){
-    const slots = [
-      { school_id:sid, teacher_id:insertedTeachers[0].id, grade:'Grade 4', stream:'A', subject:'Mathematics', day_of_week:'Mon', start_time:'08:00', end_time:'09:00' },
-      { school_id:sid, teacher_id:insertedTeachers[1].id, grade:'Grade 4', stream:'A', subject:'English', day_of_week:'Mon', start_time:'09:00', end_time:'10:00' },
-      { school_id:sid, teacher_id:insertedTeachers[2].id, grade:'Grade 7', stream:'A', subject:'Integrated Science', day_of_week:'Tue', start_time:'08:00', end_time:'09:00' },
-      { school_id:sid, teacher_id:insertedTeachers[0].id, grade:'Grade 9', stream:'A', subject:'Mathematics', day_of_week:'Wed', start_time:'10:00', end_time:'11:00' },
-    ];
-    await sb.from('timetables').insert(slots);
+  // ── INCIDENTS ─────────────────────────────────────────────────────────────────
+  const allStudents = insertedStudents;
+  if(allStudents.length>=2){
+    await sb.from('incidents').insert([
+      { student_id:allStudents[4].id, school_id:sid, reported_by:state.profile.id, incident_type:'discipline', description:'Disrupted Mathematics lesson repeatedly and refused to follow teacher instructions', action_taken:'Counseled by class teacher. Parents informed via phone call. Behaviour contract signed.', incident_date:'2025-06-10' },
+      { student_id:allStudents[5].id, school_id:sid, reported_by:state.profile.id, incident_type:'commendation', description:'Represented school at the Nairobi County Science Congress and won first place in the Grade 4 category', action_taken:'Certificate of merit presented at Monday assembly. Name recorded in school honours board.', incident_date:'2025-05-28' },
+      { student_id:allStudents[11].id, school_id:sid, reported_by:state.profile.id, incident_type:'counseling', description:'Learner reported feeling overwhelmed with Junior Secondary workload and expressed anxiety about assessments', action_taken:'Referred to school counselor. Parents notified. Will receive additional academic support from subject teachers.', incident_date:'2025-06-05' },
+      { student_id:allStudents[14].id, school_id:sid, reported_by:state.profile.id, incident_type:'commendation', description:'Achieved the highest Grade 9 Mathematics score in Term 1 assessment at 95%', action_taken:'Commendation letter issued and shared with parents. Nominated for County Mathematics Olympiad.', incident_date:'2025-04-15' },
+    ]);
   }
 
-  toast('Demo data seeded successfully. Reload the page to see everything.');
-  setTimeout(()=>navigate('dashboard'),2000);
+  // ── TIMETABLE ────────────────────────────────────────────────────────────────
+  if(insertedTeachers.length>=3){
+    await sb.from('timetables').insert([
+      { school_id:sid, teacher_id:insertedTeachers[0].id, grade:'Grade 4', stream:'A', subject:'Mathematics', day_of_week:'Mon', start_time:'08:00', end_time:'09:00' },
+      { school_id:sid, teacher_id:insertedTeachers[1].id, grade:'Grade 4', stream:'A', subject:'English', day_of_week:'Mon', start_time:'09:00', end_time:'10:00' },
+      { school_id:sid, teacher_id:insertedTeachers[0].id, grade:'Grade 4', stream:'A', subject:'Mathematics', day_of_week:'Tue', start_time:'08:00', end_time:'09:00' },
+      { school_id:sid, teacher_id:insertedTeachers[2].id, grade:'Grade 7', stream:'A', subject:'Integrated Science', day_of_week:'Tue', start_time:'10:00', end_time:'11:00' },
+      { school_id:sid, teacher_id:insertedTeachers[1].id, grade:'Grade 6', stream:'A', subject:'English', day_of_week:'Wed', start_time:'09:00', end_time:'10:00' },
+      { school_id:sid, teacher_id:insertedTeachers[0].id, grade:'Grade 9', stream:'A', subject:'Mathematics', day_of_week:'Wed', start_time:'11:00', end_time:'12:00' },
+      { school_id:sid, teacher_id:insertedTeachers[2].id, grade:'Grade 9', stream:'A', subject:'Integrated Science', day_of_week:'Thu', start_time:'08:00', end_time:'09:00' },
+      { school_id:sid, teacher_id:insertedTeachers[3].id, grade:'PP1', stream:'A', subject:'Language Activities', day_of_week:'Thu', start_time:'09:00', end_time:'10:00' },
+      { school_id:sid, teacher_id:insertedTeachers[4].id, grade:'Grade 6', stream:'A', subject:'Social Studies', day_of_week:'Fri', start_time:'10:00', end_time:'11:00' },
+      { school_id:sid, teacher_id:insertedTeachers[0].id, grade:'Grade 4', stream:'B', subject:'Mathematics', day_of_week:'Fri', start_time:'11:00', end_time:'12:00' },
+    ]);
+  }
+
+  // ── LESSON PLANS ─────────────────────────────────────────────────────────────
+  const g4MathStrand = insertedStrands.find(s=>s.grade==='Grade 4'&&s.subject==='Mathematics'&&s.strand==='Numbers');
+  const g7SciStrand  = insertedStrands.find(s=>s.grade==='Grade 7'&&s.subject==='Integrated Science');
+  if(insertedTeachers[0] && g4MathStrand){
+    await sb.from('lesson_plans').insert([
+      { teacher_id:insertedTeachers[0].id, strand_id:g4MathStrand.id, grade:'Grade 4', term:1, year:2025, week_number:3, delivery_date:'2025-02-17', status:'delivered', planned_topic:'Introduction to fractions', learning_outcomes:'Learner should be able to identify and write simple fractions using real objects', key_inquiry:'What is a fraction? Where do we use fractions in daily life?', learning_experiences:'Learners cut oranges and bread into halves and quarters. Group activity: share objects equally and record fractions.', core_competencies:'Critical thinking, Communication', values:'Sharing, Cooperation', pci:'Life skills — sharing resources', resources:'Oranges, bread, fraction charts, exercise books', assessment_method:'Oral questions and observation during activity', delivered_topic:'Covered as planned. Most learners grasped halves and quarters. Will revisit thirds next week.' },
+      { teacher_id:insertedTeachers[0].id, strand_id:g4MathStrand.id, grade:'Grade 4', term:1, year:2025, week_number:4, delivery_date:'2025-02-24', status:'delivered', planned_topic:'Equivalent fractions', learning_outcomes:'Learner should be able to identify equivalent fractions and represent them on a number line', key_inquiry:'How can different fractions represent the same amount?', learning_experiences:'Use fraction strips and number lines. Learners work in pairs to match equivalent fractions.', core_competencies:'Critical thinking, Digital literacy', values:'Accuracy, Patience', pci:'Financial literacy — equal sharing', resources:'Fraction strips, number line chart, rulers', assessment_method:'Written exercise and pair work observation', delivered_topic:'Lesson went well. Some learners still confused with denominators > 4. Will provide remedial work.' },
+      { teacher_id:insertedTeachers[0].id, strand_id:g4MathStrand.id, grade:'Grade 4', term:1, year:2025, week_number:5, delivery_date:'2025-03-03', status:'planned', planned_topic:'Adding fractions with same denominator', learning_outcomes:'Learner should be able to add two fractions with the same denominator', key_inquiry:'How do we combine parts of the same whole?', learning_experiences:'Use fraction bars to add. Learners create their own fraction addition word problems.', core_competencies:'Numeracy, Problem solving', values:'Accuracy', pci:'Nutrition — sharing food equally', resources:'Fraction bars, worksheets, KLB Mathematics Grade 4 pg 45', assessment_method:'Individual written exercise', delivered_topic:'' },
+    ]);
+  }
+  if(insertedTeachers[2] && g7SciStrand){
+    await sb.from('lesson_plans').insert([
+      { teacher_id:insertedTeachers[2].id, strand_id:g7SciStrand.id, grade:'Grade 7', term:1, year:2025, week_number:2, delivery_date:'2025-02-10', status:'delivered', planned_topic:'Cell structure: plant and animal cells', learning_outcomes:'Learner should be able to identify and describe the parts of a plant cell and an animal cell', key_inquiry:'What is the basic unit of life? How are plant and animal cells similar and different?', learning_experiences:'Observe prepared slides under microscope. Draw and label cell diagrams. Compare using Venn diagram.', core_competencies:'Critical thinking, Communication, Digital literacy', values:'Curiosity, Accuracy', pci:'Health — understanding the human body', resources:'Microscopes, prepared slides, Biology textbook Grade 7, Manila paper for diagrams', assessment_method:'Labelled diagram in science notebook, quiz', delivered_topic:'All learners viewed slides. Most labelled cells correctly. Three learners needed extra explanation on chloroplasts.' },
+    ]);
+  }
+
+  // ── ASSIGNMENTS ──────────────────────────────────────────────────────────────
+  if(insertedTeachers[0] && g4MathStrand){
+    await sb.from('assignments').insert([
+      { teacher_id:insertedTeachers[0].id, grade:'Grade 4', stream:'A', strand_id:g4MathStrand.id, title:'Week 4 Mathematics: Equivalent Fractions Exercise', description:'Complete the equivalent fractions worksheet. Show all your working. Questions 1 to 15. Due on Thursday. Ask a parent or guardian to sign your work before submission.', due_date:'2025-02-27' },
+      { teacher_id:insertedTeachers[1].id, grade:'Grade 4', strand_id:insertedStrands.find(s=>s.grade==='Grade 4'&&s.subject==='English')?.id||null, title:'Creative Writing: My Favourite Animal', description:'Write a composition of at least 10 sentences about your favourite animal. Include what it looks like, what it eats, and why you like it. Use paragraphs and punctuation correctly.', due_date:'2025-03-05' },
+    ]);
+  }
+
+  // ── LEAVE REQUESTS ───────────────────────────────────────────────────────────
+  if(insertedTeachers.length>=3){
+    await sb.from('leave_requests').insert([
+      { teacher_id:insertedTeachers[1].id, school_id:sid, start_date:'2025-06-23', end_date:'2025-06-27', reason:'Annual leave', status:'approved', approved_by:state.profile.id },
+      { teacher_id:insertedTeachers[2].id, school_id:sid, start_date:'2025-07-07', end_date:'2025-07-08', reason:'Maternity/Paternity leave', status:'pending' },
+    ]);
+  }
+
+  toast('Demo data seeded. Reloading in 2 seconds...');
+  setTimeout(()=>location.reload(), 2000);
 };
 
 boot();
