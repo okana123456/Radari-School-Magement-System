@@ -963,6 +963,7 @@ const NAV_GROUPS = [
     { id:'timetable',   label:'Timetable',        icon:'ti-calendar',         roles:['admin','headteacher','teacher'] },
     { id:'lessons',     label:'Lesson Plans',     icon:'ti-book-2',           roles:['admin','headteacher','teacher'] },
     { id:'assignments', label:'Assignments',      icon:'ti-notebook',         roles:['admin','headteacher','teacher','parent'] },
+    { id:'revision',    label:'Revision Hub',     icon:'ti-files',            roles:['admin','headteacher','teacher','parent'] },
   ]},
   { label:'Staff', items:[
     { id:'teachers',    label:'Teachers',         icon:'ti-school',           roles:['admin','headteacher'] },
@@ -1633,10 +1634,14 @@ modules.grading = async (m)=>{
     if(stream) sq=sq.eq('stream',stream);
     const {data:students=[]}=await sq;
 
-    // Load strands for this learning area and grade
-    const {data:strands=[]}=await sb.from('cbc_strands')
-      .select('*').eq('school_id',sid).eq('grade',grade)
-      .ilike('subject',`%${learning_area.split('/')[0].trim()}%`).order('strand');
+    // Load strands for this learning area and grade — exact match first, then fuzzy fallback
+    let strandsRes = await sb.from('cbc_strands').select('*').eq('school_id',sid).eq('grade',grade).eq('subject',learning_area).order('strand');
+    let strands = strandsRes.data||[];
+    if(!strands.length){
+      const fuzzyKey = learning_area.split('/')[0].split('(')[0].trim();
+      const fuzzyRes = await sb.from('cbc_strands').select('*').eq('school_id',sid).eq('grade',grade).ilike('subject',`%${fuzzyKey}%`).order('strand');
+      strands = fuzzyRes.data||[];
+    }
 
     // Load existing assessments for this class/term/year
     if(!students.length){
@@ -1644,10 +1649,13 @@ modules.grading = async (m)=>{
       return;
     }
 
-    const stuIds=students.map(s=>s.id);
-    const {data:existing=[]}=await sb.from('assessments')
-      .select('*').in('student_id',stuIds).eq('term',term).eq('year',year)
-      .ilike('learning_area',`%${learning_area.split('/')[0].trim()}%`);
+    let existingRes = await sb.from('assessments').select('*').in('student_id',students.map(s=>s.id)).eq('term',term).eq('year',year).eq('learning_area',learning_area);
+    let existing = existingRes.data||[];
+    if(!existing.length){
+      const fuzzyKey = learning_area.split('/')[0].split('(')[0].trim();
+      const fuzzyExRes = await sb.from('assessments').select('*').in('student_id',students.map(s=>s.id)).eq('term',term).eq('year',year).ilike('learning_area',`%${fuzzyKey}%`);
+      existing = fuzzyExRes.data||[];
+    }
 
     // Build a map: student_id -> {strand_id -> assessment row}
     const amap={};
@@ -1705,7 +1713,10 @@ modules.grading = async (m)=>{
             </tbody>
           </table></div>
           <div class="small muted" style="margin-top:.75rem">EE = Exceeding (90–100%) &nbsp;&middot;&nbsp; ME = Meeting (58–89%) &nbsp;&middot;&nbsp; AE = Approaching (31–57%) &nbsp;&middot;&nbsp; BE = Below (0–30%)</div>
-          `:`<div class="empty"><i class="ti ti-book-2"></i><div>No strands found for ${esc(learning_area)} in ${esc(grade)}. Add strands first.</div></div>`}
+          `:`<div style="padding:1rem 0">
+            <div class="small muted" style="margin-bottom:.75rem">No strands found for <b>${esc(learning_area)}</b> in <b>${esc(grade)}</b>. Add strands for this learning area before grading.</div>
+            <button class="btn secondary" id="quickAddStrandsJS">Add strand for ${esc(learning_area)}</button>
+          </div>`}
         </div>`;
 
       // Live calculation
@@ -1721,6 +1732,14 @@ modules.grading = async (m)=>{
         cell.style.color=lv?levelColor(lv.code):'var(--muted)';
         cell.innerHTML=lv?`${final}%<br><span style="font-size:.72rem">${lv.code}</span>`:'—';
       });
+
+      if($('#quickAddStrandsJS')) $('#quickAddStrandsJS').onclick=async()=>{
+        const strand=prompt(`Enter strand name for ${learning_area}:`); if(!strand) return;
+        const sub=prompt('Sub-strand (optional):')||null;
+        const {error}=await sb.from('cbc_strands').insert({school_id:sid,grade,subject:learning_area,strand,sub_strand:sub});
+        if(error){ toast('Failed to add strand: '+error.message,true); return; }
+        toast('Strand added. Reloading...'); $('#load').click();
+      };
 
     } else {
       // Primary / Pre-Primary: EE/ME/AE/BE buttons, default ME, optional remarks
@@ -3183,6 +3202,184 @@ modules.knec = async (m)=>{
     const csv = rows.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], {type:'text/csv'});
     const a2=document.createElement('a'); a2.href=URL.createObjectURL(blob); a2.download=`knec-sba-${grade}-T${term}-${year}.csv`; a2.click();
+  };
+};
+
+/* --- REVISION HUB --- */
+// Paid revision papers per grade/subject, KCSE-Online style.
+// Admin/teachers upload PDFs and set a price. Teachers/parents pay per-download via M-Pesa.
+modules.revision = async (m)=>{
+  const sid=state.profile.school_id;
+  const role=state.profile.role;
+  const canUpload=['admin','headteacher','teacher'].includes(role);
+
+  const GRADES=['PP1','PP2','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6','Grade 7','Grade 8','Grade 9'];
+
+  const [{data:papers=[]},{data:myPurchases=[]}]=await Promise.all([
+    sb.from('revision_papers').select('*').eq('school_id',sid).order('created_at',{ascending:false}),
+    sb.from('revision_purchases').select('paper_id').eq('user_id',state.profile.id).eq('status','completed'),
+  ]);
+  const purchasedSet=new Set((myPurchases||[]).map(p=>p.paper_id));
+
+  m.innerHTML=`
+    <div class="section-title">
+      <div>
+        <h1 style="margin:0">Revision Hub</h1>
+        <p class="muted small" style="margin-top:.2rem">Past papers and revision materials per grade and learning area. ${canUpload?'Upload and price your own materials.':'Pay a small fee per download via M-Pesa.'}</p>
+      </div>
+      ${canUpload?`<button class="btn primary" id="addPaper"><i class="ti ti-upload"></i> Upload paper</button>`:''}
+    </div>
+
+    <div class="toolbar" style="margin-bottom:1.25rem">
+      <div class="field"><label>Grade</label><select id="fg"><option>All</option>${GRADES.map(g=>`<option>${g}</option>`).join('')}</select></div>
+      <div class="field"><label>Learning area</label><select id="fla"><option>All</option></select></div>
+      <div class="field" style="flex:2;min-width:200px"><label>Search</label><input id="fq" placeholder="Title, term, exam type..."></div>
+    </div>
+
+    <div id="paperGrid"></div>`;
+
+  // populate learning area filter from all known areas
+  const allLAs=[...new Set(Object.values(CBC_LEARNING_AREAS).flat())].sort();
+  $('#fla').innerHTML='<option>All</option>'+allLAs.map(a=>`<option>${esc(a)}</option>`).join('');
+
+  function renderGrid(){
+    const fg=$('#fg').value, fla=$('#fla').value, fq=$('#fq').value.toLowerCase();
+    const filtered=papers.filter(p=>
+      (fg==='All'||p.grade===fg)&&
+      (fla==='All'||p.learning_area===fla)&&
+      (!fq||(p.title||'').toLowerCase().includes(fq)||(p.exam_type||'').toLowerCase().includes(fq))
+    );
+    if(!filtered.length){
+      $('#paperGrid').innerHTML=`<div class="card empty"><i class="ti ti-files"></i><div>No revision papers match this filter.</div></div>`;
+      return;
+    }
+    $('#paperGrid').innerHTML=`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:1rem">
+      ${filtered.map(p=>{
+        const owned=purchasedSet.has(p.id)||p.price<=0;
+        return `<div class="card" style="margin:0;display:flex;flex-direction:column;gap:.5rem">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.5rem">
+            <div>
+              <div style="font-weight:600;font-size:.95rem;line-height:1.3">${esc(p.title)}</div>
+              <div class="small muted" style="margin-top:.15rem">${esc(p.grade)} &middot; ${esc(p.learning_area)}</div>
+            </div>
+            <span class="badge ${owned?'':'amber'}" style="flex-shrink:0">${p.price>0?'KSh '+(+p.price).toLocaleString():'Free'}</span>
+          </div>
+          ${p.exam_type?`<div class="small muted">${esc(p.exam_type)}${p.term?' &middot; Term '+esc(p.term):''}${p.year?' &middot; '+esc(p.year):''}</div>`:''}
+          ${p.description?`<div class="small" style="color:var(--ink-2)">${esc((p.description||'').slice(0,90))}</div>`:''}
+          <div style="margin-top:auto;padding-top:.5rem">
+            ${owned
+              ?`<a href="${esc(p.file_url)}" target="_blank" class="btn primary block" style="height:36px;font-size:.85rem"><i class="ti ti-download"></i> Download PDF</a>`
+              :`<button class="btn primary block buy-btn" data-id="${p.id}" data-price="${p.price}" data-title="${esc(p.title)}" style="height:36px;font-size:.85rem"><i class="ti ti-lock"></i> Pay KSh ${(+p.price).toLocaleString()} to unlock</button>`}
+          </div>
+          ${canUpload?`<div style="display:flex;gap:.5rem;margin-top:.25rem">
+            <a href="${esc(p.file_url)}" target="_blank" class="small">Preview</a>
+            <a href="#" class="small del-paper" data-id="${p.id}" style="color:var(--terracotta);margin-left:auto">Delete</a>
+          </div>`:''}
+        </div>`;
+      }).join('')}
+    </div>`;
+
+    $('#paperGrid').querySelectorAll('.buy-btn').forEach(b=>b.onclick=()=>buyPaper(b.dataset.id,b.dataset.title,+b.dataset.price));
+    $('#paperGrid').querySelectorAll('.del-paper').forEach(a=>a.onclick=async(e)=>{
+      e.preventDefault();
+      if(!confirm('Delete this paper?')) return;
+      await sb.from('revision_papers').delete().eq('id',a.dataset.id);
+      toast('Deleted'); navigate('revision');
+    });
+  }
+  ['fg','fla'].forEach(id=>$('#'+id).onchange=renderGrid);
+  $('#fq').oninput=renderGrid;
+  renderGrid();
+
+  async function buyPaper(paperId,title,price){
+    m.innerHTML=`<div class="card" style="max-width:480px">
+      <a href="#" id="bk" class="small"><i class="ti ti-arrow-left"></i> Back to Revision Hub</a>
+      <h2 style="margin-top:1rem">Unlock revision paper</h2>
+      <div style="padding:.85rem 1rem;background:var(--green-50);border-radius:var(--radius);margin-bottom:1.25rem">
+        <div style="font-weight:600">${esc(title)}</div>
+        <div class="small muted" style="margin-top:.2rem">One-time download fee</div>
+        <div style="font-family:'Fraunces',serif;font-size:1.8rem;color:var(--green);margin-top:.3rem">KSh ${price.toLocaleString()}</div>
+      </div>
+      <form id="payForm" class="stack">
+        <div class="field"><label>M-Pesa phone number *</label>
+          <input name="phone" required placeholder="07XX XXX XXX" value="${esc(state.profile.phone||'')}"></div>
+        <div><button type="submit" class="btn primary block"><i class="ti ti-device-mobile"></i> Pay KSh ${price.toLocaleString()} via M-Pesa</button></div>
+      </form>
+      <p class="muted small" style="margin-top:1rem">You will receive an M-Pesa prompt on your phone. Enter your PIN to complete the payment, then your download will unlock automatically.</p>
+    </div>`;
+    $('#bk').onclick=(e)=>{e.preventDefault();navigate('revision');};
+    $('#payForm').onsubmit=async(e)=>{
+      e.preventDefault();
+      const f=Object.fromEntries(new FormData(e.target));
+      const btn=e.target.querySelector('button');
+      btn.disabled=true; btn.textContent='Sending STK push...';
+
+      // Record a pending purchase
+      const {data:purchase,error:pErr}=await sb.from('revision_purchases').insert({
+        paper_id:paperId, user_id:state.profile.id, school_id:sid,
+        amount:price, phone:f.phone, status:'pending',
+      }).select().single();
+
+      if(pErr){ toast('Could not start payment: '+pErr.message,true); btn.disabled=false; return; }
+
+      // STUB: Daraja STK push will be wired here once sandbox credentials are added.
+      // For now, simulate the flow so the UI is fully testable end-to-end.
+      toast('M-Pesa STK push sent. Waiting for confirmation (demo mode auto-confirms in 2s)...');
+      setTimeout(async()=>{
+        await sb.from('revision_purchases').update({status:'completed',mpesa_ref:'DEMO-'+Date.now()}).eq('id',purchase.id);
+        toast('Payment confirmed. Your download is now unlocked.');
+        navigate('revision');
+      },2000);
+    };
+  }
+
+  if($('#addPaper')) $('#addPaper').onclick=()=>{
+    m.innerHTML=`<div class="card" style="max-width:600px">
+      <a href="#" id="bk2" class="small"><i class="ti ti-arrow-left"></i> Back</a>
+      <h2 style="margin-top:1rem">Upload revision paper</h2>
+      <form id="uf" class="stack">
+        <div class="field"><label>Title *</label><input name="title" required placeholder="e.g. Grade 7 Mathematics End Term 1 2025"></div>
+        <div class="row">
+          <div class="col field"><label>Grade *</label><select name="grade">${GRADES.map(g=>`<option>${g}</option>`).join('')}</select></div>
+          <div class="col field"><label>Learning area *</label><select name="learning_area">${allLAs.map(a=>`<option>${esc(a)}</option>`).join('')}</select></div>
+        </div>
+        <div class="row">
+          <div class="col field"><label>Exam type</label><select name="exam_type"><option>End Term Exam</option><option>CAT 1</option><option>CAT 2</option><option>Mock Exam</option><option>Revision Booklet</option><option>Past Paper</option></select></div>
+          <div class="col field"><label>Term</label><select name="term"><option value="">—</option><option>1</option><option>2</option><option>3</option></select></div>
+          <div class="col field"><label>Year</label><input name="year" type="number" value="${new Date().getFullYear()}"></div>
+        </div>
+        <div class="field"><label>Description (optional)</label><textarea name="description" rows="2" placeholder="Brief description of what this paper covers"></textarea></div>
+        <div class="field"><label>Price (KSh) *</label><input name="price" type="number" min="0" required placeholder="e.g. 30 — enter 0 for free"></div>
+        <div class="field"><label>PDF file *</label>
+          <input type="file" id="pdfUpload" accept="application/pdf" required style="padding:.5rem">
+          <span class="small muted">Max 10MB.</span></div>
+        <div id="upProgress" style="display:none" class="small muted">Uploading...</div>
+        <div><button type="submit" class="btn primary">Upload</button> <button type="button" class="btn secondary" id="uc">Cancel</button></div>
+      </form>
+    </div>`;
+    $('#bk2').onclick=(e)=>{e.preventDefault();navigate('revision');};
+    $('#uc').onclick=()=>navigate('revision');
+    $('#uf').onsubmit=async(e)=>{
+      e.preventDefault();
+      const f=Object.fromEntries(new FormData(e.target));
+      const fileInput=$('#pdfUpload');
+      if(!fileInput.files.length){ toast('Choose a PDF file.',true); return; }
+      const file=fileInput.files[0];
+      if(file.size>10*1024*1024){ toast('File too large. Max 10MB.',true); return; }
+
+      $('#upProgress').style.display='block';
+      const path=`revision/${sid}/${Date.now()}-${file.name.replace(/\s/g,'_')}`;
+      const {error:upErr}=await sb.storage.from('school-files').upload(path,file,{contentType:'application/pdf'});
+      if(upErr){ toast('Upload failed: '+upErr.message,true); $('#upProgress').style.display='none'; return; }
+      const {data:pub}=sb.storage.from('school-files').getPublicUrl(path);
+
+      f.school_id=sid; f.file_url=pub?.publicUrl||null; f.uploaded_by=state.profile.id;
+      f.price=+f.price; f.term=f.term?+f.term:null; f.year=f.year?+f.year:null;
+
+      const {error}=await sb.from('revision_papers').insert(f);
+      if(error) toast('Save failed: '+error.message,true);
+      else { toast('Revision paper uploaded.'); navigate('revision'); }
+    };
   };
 };
 
