@@ -1676,15 +1676,13 @@ modules.grading = async (m)=>{
       return;
     }
 
-    // Load existing scores for this grade+term+year+testNum
-    // We store test number in a new field: test_number (or we reuse cat1/cat2/endterm_score columns)
-    // Strategy: store test1 in cat1, test2 in cat2, test3 in endterm_score
-    // Load all three tests so we can show context
+    // Load existing scores for this class — strand_id must be null (LA-level records)
     const {data:existing=[]}=await sb.from('assessments')
       .select('student_id,learning_area,cat1,cat2,endterm_score,score,weighted_score,remarks,teacher_id')
       .in('student_id',students.map(s=>s.id))
       .eq('term',term).eq('year',year)
-      .is('strand_id',null);
+      .is('strand_id',null)
+      .not('learning_area','is',null);
 
     // Map: student_id -> learning_area -> row
     const amap={};
@@ -1777,7 +1775,7 @@ modules.grading = async (m)=>{
 
     $('#saveGrades').onclick=async()=>{
       const rows=[...document.querySelectorAll('#gradeTable tbody tr')];
-      const toUpsert=[]; const toUpdate=[];
+      const toUpsert=[];
 
       rows.forEach(row=>{
         const studentId=row.dataset.sid;
@@ -1785,59 +1783,53 @@ modules.grading = async (m)=>{
           const inp=row.querySelector(`.pct-inp[data-la="${CSS.escape(la)}"]`);
           if(!inp) return;
           const raw=inp.value.trim();
-          if(raw==='') return; // skip blank
+          if(raw==='') return;
 
           const pct=+raw;
-          if(isNaN(pct)||pct<0||pct>100){ toast(`Invalid score for ${la}`,true); return; }
+          if(isNaN(pct)||pct<0||pct>100){ toast(`Invalid score for ${la}: must be 0–100`,true); return; }
           const rc=pctToRubricCode(pct);
           const existing=amap[studentId]?.[la];
 
-          if(existing){
-            // Update existing row — only change the test column that changed
-            const upd={ score:rc, weighted_score:pct };
-            upd[testCol]=pct;
-            // recalculate avg across all three tests
-            const t1=testNum===1?pct:(existing.cat1??null);
-            const t2=testNum===2?pct:(existing.cat2??null);
-            const t3=testNum===3?pct:(existing.endterm_score??null);
-            const parts=[t1,t2,t3].filter(v=>v!=null);
-            upd.weighted_score=parts.length?Math.round(parts.reduce((a,b)=>a+b,0)/parts.length*10)/10:pct;
-            upd.score=pctToRubricCode(upd.weighted_score);
-            toUpdate.push({id:existing.id||null, studentId, la, upd});
-          } else {
-            const row={
-              student_id:studentId, teacher_id:tch?.id||null,
-              learning_area:la, term, year, strand_id:null,
-              score:rc, weighted_score:pct,
-              cat1:null,cat2:null,endterm_score:null,remarks:null,
-            };
-            row[testCol]=pct;
-            toUpsert.push(row);
-          }
+          // Recalculate average across all three tests
+          const t1=testNum===1?pct:(existing?.cat1??null);
+          const t2=testNum===2?pct:(existing?.cat2??null);
+          const t3=testNum===3?pct:(existing?.endterm_score??null);
+          const parts=[t1,t2,t3].filter(v=>v!=null);
+          const avg=parts.length?Math.round(parts.reduce((a,b)=>a+b,0)/parts.length*10)/10:pct;
+
+          const upsertRow={
+            student_id:studentId,
+            teacher_id:tch?.id||null,
+            learning_area:la,
+            term, year,
+            score:pctToRubricCode(avg),
+            weighted_score:avg,
+            cat1: testNum===1?pct:(existing?.cat1??null),
+            cat2: testNum===2?pct:(existing?.cat2??null),
+            endterm_score: testNum===3?pct:(existing?.endterm_score??null),
+            remarks: existing?.remarks||null,
+          };
+          toUpsert.push(upsertRow);
         });
       });
 
-      let saved=0;
-      if(toUpsert.length){
-        const {error}=await sb.from('assessments').insert(toUpsert);
-        if(error){ toast('Save failed: '+error.message,true); return; }
-        saved+=toUpsert.length;
+      if(!toUpsert.length){ toast('No scores entered. Type at least one percentage.',true); return; }
+
+      const btn=$('#saveGrades');
+      btn.disabled=true; btn.textContent='Saving...';
+
+      const {error}=await sb.from('assessments')
+        .upsert(toUpsert, {onConflict:'student_id,learning_area,term,year', ignoreDuplicates:false});
+
+      btn.disabled=false; btn.innerHTML='<i class="ti ti-device-floppy"></i> Save scores';
+
+      if(error){
+        console.error('Save error:', error);
+        toast('Save failed: '+error.message,true);
+        return;
       }
-      // Update existing rows
-      for(const u of toUpdate){
-        // find by student+la+term+year
-        const {error}=await sb.from('assessments')
-          .update(u.upd)
-          .eq('student_id',u.studentId)
-          .eq('learning_area',u.la)
-          .eq('term',term).eq('year',year)
-          .is('strand_id',null);
-        if(error){ toast('Update failed: '+error.message,true); return; }
-        saved++;
-      }
-      toast(`Saved ${saved} score${saved>1?'s':''} for ${esc(testLabel)}.`);
-      // Reload to refresh amap
-      $('#load').click();
+      toast(`Saved ${toUpsert.length} score${toUpsert.length>1?'s':''} for ${testLabel}.`);
+      $('#load').click(); // Reload to refresh amap with saved values
     };
   };
 };
