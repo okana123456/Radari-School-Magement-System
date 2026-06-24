@@ -1787,29 +1787,26 @@ modules.grading = async (m)=>{
 
           const pct=+raw;
           if(isNaN(pct)||pct<0||pct>100){ toast(`Invalid score for ${la}: must be 0–100`,true); return; }
-          const rc=pctToRubricCode(pct);
           const existing=amap[studentId]?.[la];
 
-          // Recalculate average across all three tests
           const t1=testNum===1?pct:(existing?.cat1??null);
           const t2=testNum===2?pct:(existing?.cat2??null);
           const t3=testNum===3?pct:(existing?.endterm_score??null);
           const parts=[t1,t2,t3].filter(v=>v!=null);
           const avg=parts.length?Math.round(parts.reduce((a,b)=>a+b,0)/parts.length*10)/10:pct;
 
-          const upsertRow={
+          toUpsert.push({
             student_id:studentId,
             teacher_id:tch?.id||null,
             learning_area:la,
             term, year,
             score:pctToRubricCode(avg),
             weighted_score:avg,
-            cat1: testNum===1?pct:(existing?.cat1??null),
-            cat2: testNum===2?pct:(existing?.cat2??null),
-            endterm_score: testNum===3?pct:(existing?.endterm_score??null),
-            remarks: existing?.remarks||null,
-          };
-          toUpsert.push(upsertRow);
+            cat1:t1,
+            cat2:t2,
+            endterm_score:t3,
+            remarks:existing?.remarks||null,
+          });
         });
       });
 
