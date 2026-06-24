@@ -1607,195 +1607,237 @@ function averageScore(scores){
 }
 
 /* --- CBC GRADING MODULE --- */
-// Matches the official KICD "School Term Summative Report" rubric book format:
-// First Test, Second Test, Third Test columns, each scored 0-100%, converted to
-// the dual-band rubric (EE1/EE2/ME1/ME2/AE1/AE2/BE1/BE2), with an Average Score row.
+// New model (per teacher feedback & KNEC guidelines):
+// - No strands/sub-strands in grading
+// - Teacher enters raw percentage per Learning Area for each test
+// - System auto-classifies into EE1/EE2/ME1/ME2/AE1/AE2/BE1/BE2
+// - Data stored in assessments table with strand_id=null, keyed by student+learning_area+term+year+test_num
+// - Upsert key: student_id, learning_area, term, year (strand_id null allowed via separate constraint)
+
 modules.grading = async (m)=>{
   const sid=state.profile.school_id;
-  const role=state.profile.role;
   const GRADES=['PP1','PP2','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6','Grade 7','Grade 8','Grade 9'];
+  const TESTS=['First Test','Second Test','Third Test'];
 
   m.innerHTML=`
     <div class="section-title" style="margin-bottom:1.25rem">
       <div>
         <h1 style="margin:0">CBC Grading</h1>
-        <p class="muted small" style="margin-top:.2rem">Matches the official Rubric Assessment Book: First Test, Second Test, Third Test per strand, scored on the EE1–BE2 dual-band rubric.</p>
+        <p class="muted small" style="margin-top:.2rem">
+          Enter raw percentage marks per learning area. The system automatically classifies each mark
+          into the correct rubric band (EE1–BE2) and points. No strands required.
+        </p>
       </div>
     </div>
 
     <div class="card" style="margin-bottom:1.25rem">
-      <h3>Step 1 — Select class and learning area</h3>
-      <div class="toolbar" style="margin-bottom:0">
+      <div class="toolbar" style="margin-bottom:.5rem">
         <div class="field"><label>Grade *</label>
           <select id="g">${GRADES.map(g=>`<option>${g}</option>`).join('')}</select></div>
-        <div class="field"><label>Stream</label><input id="s" placeholder="e.g. A, B or leave blank"></div>
-        <div class="field"><label>Learning area *</label>
-          <select id="la"><option value="">Select grade first</option></select></div>
+        <div class="field"><label>Stream</label>
+          <input id="s" placeholder="e.g. A, B or leave blank"></div>
+        <div class="field"><label>Test *</label>
+          <select id="testSel">
+            <option value="1">First Test</option>
+            <option value="2">Second Test</option>
+            <option value="3">Third Test</option>
+          </select></div>
         <div class="field"><label>Term *</label>
           <select id="t"><option value="1">Term 1</option><option value="2">Term 2</option><option value="3">Term 3</option></select></div>
         <div class="field"><label>Year *</label>
           <input id="y" type="number" value="${new Date().getFullYear()}" style="width:90px"></div>
-        <button class="btn primary" id="load" style="align-self:flex-end">Load class</button>
+        <button class="btn primary" id="load" style="align-self:flex-end">
+          <i class="ti ti-table"></i> Load class</button>
+      </div>
+      <div class="small muted">
+        Rubric: EE1=90–99 &middot; EE2=75–89 &middot; ME1=58–74 &middot; ME2=41–57 &middot;
+        AE1=31–40 &middot; AE2=21–30 &middot; BE1=11–20 &middot; BE2=1–10
       </div>
     </div>
 
     <div id="gradingBody"></div>`;
 
-  const populateLA=()=>{
-    const g=$('#g').value;
-    const areas=CBC_LEARNING_AREAS[g]||[];
-    $('#la').innerHTML=areas.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join('');
-  };
-  $('#g').onchange=populateLA; populateLA();
-
   $('#load').onclick=async()=>{
     const grade=$('#g').value, stream=$('#s').value.trim(),
-          learning_area=$('#la').value, term=+$('#t').value, year=+$('#y').value;
-    if(!learning_area){ toast('Select a learning area.',true); return; }
+          testNum=+$('#testSel').value, term=+$('#t').value, year=+$('#y').value;
+    const testLabel=TESTS[testNum-1];
+    const learningAreas=CBC_LEARNING_AREAS[grade]||[];
 
-    let sq=sb.from('students').select('id,full_name,admission_number').eq('school_id',sid).eq('grade',grade).order('full_name');
+    // Load students
+    let sq=sb.from('students').select('id,full_name,admission_number')
+      .eq('school_id',sid).eq('grade',grade).order('full_name');
     if(stream) sq=sq.eq('stream',stream);
     const {data:students=[]}=await sq;
 
     if(!students.length){
-      $('#gradingBody').innerHTML=`<div class="card"><div class="empty"><i class="ti ti-users"></i><div>No learners found in ${esc(grade)}${stream?' '+esc(stream):''}.</div></div></div>`;
+      $('#gradingBody').innerHTML=`<div class="card"><div class="empty">
+        <i class="ti ti-users"></i><div>No learners found in ${esc(grade)}${stream?' '+esc(stream):''}.</div>
+      </div></div>`;
       return;
     }
 
-    // Strands — exact match first, fuzzy fallback
-    let strandsRes = await sb.from('cbc_strands').select('*').eq('school_id',sid).eq('grade',grade).eq('subject',learning_area).order('strand');
-    let strands = strandsRes.data||[];
-    if(!strands.length){
-      const fuzzyKey = learning_area.split('/')[0].split('(')[0].trim();
-      const fuzzyRes = await sb.from('cbc_strands').select('*').eq('school_id',sid).eq('grade',grade).ilike('subject',`%${fuzzyKey}%`).order('strand');
-      strands = fuzzyRes.data||[];
-    }
+    // Load existing scores for this grade+term+year+testNum
+    // We store test number in a new field: test_number (or we reuse cat1/cat2/endterm_score columns)
+    // Strategy: store test1 in cat1, test2 in cat2, test3 in endterm_score
+    // Load all three tests so we can show context
+    const {data:existing=[]}=await sb.from('assessments')
+      .select('student_id,learning_area,cat1,cat2,endterm_score,score,weighted_score,remarks,teacher_id')
+      .in('student_id',students.map(s=>s.id))
+      .eq('term',term).eq('year',year)
+      .is('strand_id',null);
 
-    if(!strands.length){
-      $('#gradingBody').innerHTML=`<div class="card">
-        <div style="padding:1rem 0">
-          <div class="small muted" style="margin-bottom:.75rem">No strands found for <b>${esc(learning_area)}</b> in <b>${esc(grade)}</b>. Add a strand to begin grading.</div>
-          <button class="btn secondary" id="quickAddStrands">Add strand for ${esc(learning_area)}</button>
-        </div>
-      </div>`;
-      $('#quickAddStrands').onclick=async()=>{
-        const strand=prompt(`Enter strand name for ${learning_area}:`); if(!strand) return;
-        const sub=prompt('Sub-strand (optional):')||null;
-        const {error}=await sb.from('cbc_strands').insert({school_id:sid,grade,subject:learning_area,strand,sub_strand:sub});
-        if(error){ toast('Failed to add strand: '+error.message,true); return; }
-        toast('Strand added.'); $('#load').click();
-      };
-      return;
-    }
-
-    // Existing assessments
-    let existingRes = await sb.from('assessments').select('*').in('student_id',students.map(s=>s.id)).eq('term',term).eq('year',year).eq('learning_area',learning_area);
-    let existing = existingRes.data||[];
-    if(!existing.length){
-      const fuzzyKey = learning_area.split('/')[0].split('(')[0].trim();
-      const fuzzyExRes = await sb.from('assessments').select('*').in('student_id',students.map(s=>s.id)).eq('term',term).eq('year',year).ilike('learning_area',`%${fuzzyKey}%`);
-      existing = fuzzyExRes.data||[];
-    }
+    // Map: student_id -> learning_area -> row
     const amap={};
     existing.forEach(a=>{
       if(!amap[a.student_id]) amap[a.student_id]={};
-      amap[a.student_id][a.strand_id]=a;
+      amap[a.student_id][a.learning_area]=a;
     });
+
+    const testCol=testNum===1?'cat1':testNum===2?'cat2':'endterm_score';
+
+    // Get teacher id
+    const {data:tch}=await sb.from('teachers').select('id,full_name')
+      .eq('school_id',sid).eq('user_id',state.profile.id).maybeSingle();
 
     $('#gradingBody').innerHTML=`
       <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap;gap:.5rem">
           <div>
-            <h3 style="margin:0">${esc(grade)}${stream?' — '+esc(stream):''} &nbsp; ${esc(learning_area)} &nbsp; <span class="badge amber">Term ${term} ${year}</span></h3>
-            <div class="small muted" style="margin-top:.2rem">Enter a percentage (0–100) for each test. The rubric code and Average Score update automatically.</div>
+            <h3 style="margin:0">${esc(grade)}${stream?' — '+esc(stream):''}</h3>
+            <div class="small muted">${esc(testLabel)} &nbsp;&middot;&nbsp; Term ${term} ${year} &nbsp;&middot;&nbsp; ${students.length} learner${students.length>1?'s':''}</div>
           </div>
-          <button class="btn primary" id="saveGrades"><i class="ti ti-device-floppy"></i> Save all</button>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+            <button class="btn secondary" id="fillAll">Set all to — (blank)</button>
+            <button class="btn primary" id="saveGrades"><i class="ti ti-device-floppy"></i> Save scores</button>
+          </div>
         </div>
+
         <div style="overflow-x:auto">
-        <table class="grading" id="gradeTable">
+        <table id="gradeTable" style="font-size:.85rem">
           <thead>
             <tr>
-              <th rowspan="2" style="min-width:160px;vertical-align:bottom">Learner</th>
-              ${strands.map(str=>`<th colspan="4" style="text-align:center;border-left:2px solid var(--stone)">${esc(str.strand)}${str.sub_strand?'<div class="strand-sub">'+esc(str.sub_strand)+'</div>':''}</th>`).join('')}
-            </tr>
-            <tr>
-              ${strands.map(()=>`
-                <th style="border-left:2px solid var(--stone);font-size:.72rem;color:var(--muted)">1st Test</th>
-                <th style="font-size:.72rem;color:var(--muted)">2nd Test</th>
-                <th style="font-size:.72rem;color:var(--muted)">3rd Test</th>
-                <th style="font-size:.72rem;color:var(--muted)">Avg</th>
-              `).join('')}
+              <th style="min-width:160px;position:sticky;left:0;background:var(--surface);z-index:2">Learner</th>
+              ${learningAreas.map(la=>`
+                <th style="min-width:100px;text-align:center">
+                  <div style="font-size:.75rem;line-height:1.2">${esc(la.length>18?la.slice(0,17)+'…':la)}</div>
+                </th>`).join('')}
             </tr>
           </thead>
           <tbody>
-            ${students.map(s=>`
-              <tr data-sid="${s.id}">
-                <td style="font-weight:500">${esc(s.full_name)}<div class="small muted">${esc(s.admission_number||'')}</div></td>
-                ${strands.map(str=>{
-                  const ex=amap[s.id]?.[str.id]||{};
-                  const scores={test1:ex.cat1??'',test2:ex.cat2??'',test3:ex.endterm_score??''};
-                  const avg=averageScore(scores);
-                  const lv=avg!==null?pctToLevel(avg):null;
-                  const rc=avg!==null?pctToRubricCode(avg):null;
-                  return `<td style="border-left:2px solid var(--stone)"><input type="number" class="score-inp" min="0" max="100" data-strand="${str.id}" data-type="test1" value="${scores.test1}" style="width:48px;font-size:.82rem;padding:.25rem .3rem"></td>
-                  <td><input type="number" class="score-inp" min="0" max="100" data-strand="${str.id}" data-type="test2" value="${scores.test2}" style="width:48px;font-size:.82rem;padding:.25rem .3rem"></td>
-                  <td><input type="number" class="score-inp" min="0" max="100" data-strand="${str.id}" data-type="test3" value="${scores.test3}" style="width:48px;font-size:.82rem;padding:.25rem .3rem"></td>
-                  <td class="final-cell" data-strand="${str.id}" style="font-weight:600;font-size:.82rem;color:${lv?levelColor(rc):'var(--muted)'};white-space:nowrap">
-                    ${lv?`${avg}%<br><span style="font-size:.72rem">${rc}</span>`:'—'}</td>`;
+            ${students.map((s,si)=>`
+              <tr data-sid="${s.id}" style="${si%2?'background:var(--bg)':''}">
+                <td style="font-weight:500;position:sticky;left:0;background:${si%2?'var(--bg)':'var(--surface)'};z-index:1">
+                  ${esc(s.full_name)}
+                  <div class="small muted">${esc(s.admission_number||'')}</div>
+                </td>
+                ${learningAreas.map(la=>{
+                  const ex=amap[s.id]?.[la];
+                  const val=ex?.[testCol]??'';
+                  const rc=val!==''&&val!=null?pctToRubricCode(+val):null;
+                  const pts=rc?RUBRIC_BANDS.find(b=>b.code===rc)?.points||'':'' ;
+                  return `<td style="text-align:center;padding:.3rem .4rem">
+                    <input type="number" min="0" max="100"
+                      class="pct-inp" data-la="${esc(la)}"
+                      value="${val!==''&&val!=null?val:''}"
+                      placeholder="—"
+                      style="width:58px;text-align:center;font-size:.9rem;padding:.3rem .35rem;border-radius:4px;border:1px solid var(--stone)">
+                    <div class="rc-badge" style="margin-top:.2rem;font-size:.72rem;font-weight:600;color:${rc?levelColor(rc):'var(--muted)'};min-height:14px">
+                      ${rc?`${rc} <span style="color:var(--muted)">(${pts})</span>`:''}
+                    </div>
+                  </td>`;
                 }).join('')}
               </tr>`).join('')}
           </tbody>
-        </table></div>
+        </table>
+        </div>
+
         <div class="small muted" style="margin-top:.75rem">
-          EE1=8 (90–99%) &middot; EE2=7 (75–89%) &middot; ME1=6 (58–74%) &middot; ME2=5 (41–57%) &middot;
-          AE1=4 (31–40%) &middot; AE2=3 (21–30%) &middot; BE1=2 (11–20%) &middot; BE2=1 (1–10%)
+          Type a percentage (0–100) in each cell. The rubric code and points appear automatically below the mark.
+          Only filled cells are saved — leave blank to skip a learning area.
         </div>
       </div>`;
 
-    // Live calculation
-    document.querySelectorAll('.score-inp').forEach(inp=>inp.oninput=()=>{
-      const row=inp.closest('tr');
-      const strandId=inp.dataset.strand;
-      const inps=row.querySelectorAll(`.score-inp[data-strand="${strandId}"]`);
-      const scores={test1:'',test2:'',test3:''};
-      inps.forEach(i=>{ scores[i.dataset.type]=i.value; });
-      const avg=averageScore(scores);
-      const rc=avg!==null?pctToRubricCode(avg):null;
-      const cell=row.querySelector(`.final-cell[data-strand="${strandId}"]`);
-      cell.style.color=rc?levelColor(rc):'var(--muted)';
-      cell.innerHTML=rc?`${avg}%<br><span style="font-size:.72rem">${rc}</span>`:'—';
+    // Live rubric badge update
+    document.querySelectorAll('.pct-inp').forEach(inp=>inp.oninput=()=>{
+      const v=inp.value.trim();
+      const badge=inp.parentElement.querySelector('.rc-badge');
+      if(v===''||isNaN(+v)){ badge.innerHTML=''; return; }
+      const rc=pctToRubricCode(+v);
+      const pts=rc?RUBRIC_BANDS.find(b=>b.code===rc)?.points||'':'';
+      badge.style.color=rc?levelColor(rc):'var(--muted)';
+      badge.innerHTML=rc?`${rc} <span style="color:var(--muted)">(${pts})</span>`:'';
     });
+
+    $('#fillAll').onclick=()=>{
+      document.querySelectorAll('.pct-inp').forEach(inp=>{
+        inp.value='';
+        inp.parentElement.querySelector('.rc-badge').innerHTML='';
+      });
+    };
 
     $('#saveGrades').onclick=async()=>{
       const rows=[...document.querySelectorAll('#gradeTable tbody tr')];
-      const upserts=[];
-      const teacherRes=await sb.from('teachers').select('id').eq('school_id',sid).eq('user_id',state.profile.id).maybeSingle();
-      const teacherId=teacherRes?.data?.id||null;
+      const toUpsert=[]; const toUpdate=[];
 
       rows.forEach(row=>{
         const studentId=row.dataset.sid;
-        strands.forEach(str=>{
-          const inps=row.querySelectorAll(`.score-inp[data-strand="${str.id}"]`);
-          const scores={test1:'',test2:'',test3:''};
-          inps.forEach(i=>{ scores[i.dataset.type]=i.value; });
-          const avg=averageScore(scores);
-          if(avg===null) return;
-          const rubricCode=pctToRubricCode(avg);
-          upserts.push({
-            student_id:studentId, strand_id:str.id, teacher_id:teacherId,
-            learning_area, term, year, score:rubricCode,
-            cat1:scores.test1!==''?+scores.test1:null,
-            cat2:scores.test2!==''?+scores.test2:null,
-            endterm_score:scores.test3!==''?+scores.test3:null,
-            weighted_score:avg,
-            remarks:null,
-          });
+        learningAreas.forEach(la=>{
+          const inp=row.querySelector(`.pct-inp[data-la="${CSS.escape(la)}"]`);
+          if(!inp) return;
+          const raw=inp.value.trim();
+          if(raw==='') return; // skip blank
+
+          const pct=+raw;
+          if(isNaN(pct)||pct<0||pct>100){ toast(`Invalid score for ${la}`,true); return; }
+          const rc=pctToRubricCode(pct);
+          const existing=amap[studentId]?.[la];
+
+          if(existing){
+            // Update existing row — only change the test column that changed
+            const upd={ score:rc, weighted_score:pct };
+            upd[testCol]=pct;
+            // recalculate avg across all three tests
+            const t1=testNum===1?pct:(existing.cat1??null);
+            const t2=testNum===2?pct:(existing.cat2??null);
+            const t3=testNum===3?pct:(existing.endterm_score??null);
+            const parts=[t1,t2,t3].filter(v=>v!=null);
+            upd.weighted_score=parts.length?Math.round(parts.reduce((a,b)=>a+b,0)/parts.length*10)/10:pct;
+            upd.score=pctToRubricCode(upd.weighted_score);
+            toUpdate.push({id:existing.id||null, studentId, la, upd});
+          } else {
+            const row={
+              student_id:studentId, teacher_id:tch?.id||null,
+              learning_area:la, term, year, strand_id:null,
+              score:rc, weighted_score:pct,
+              cat1:null,cat2:null,endterm_score:null,remarks:null,
+            };
+            row[testCol]=pct;
+            toUpsert.push(row);
+          }
         });
       });
-      if(!upserts.length){ toast('Nothing to save. Enter at least one test score.',true); return; }
-      const {error}=await sb.from('assessments').upsert(upserts,{onConflict:'student_id,strand_id,term,year'});
-      if(error) toast('Save failed: '+error.message,true);
-      else toast(`Saved ${upserts.length} assessment record${upserts.length>1?'s':''}.`);
+
+      let saved=0;
+      if(toUpsert.length){
+        const {error}=await sb.from('assessments').insert(toUpsert);
+        if(error){ toast('Save failed: '+error.message,true); return; }
+        saved+=toUpsert.length;
+      }
+      // Update existing rows
+      for(const u of toUpdate){
+        // find by student+la+term+year
+        const {error}=await sb.from('assessments')
+          .update(u.upd)
+          .eq('student_id',u.studentId)
+          .eq('learning_area',u.la)
+          .eq('term',term).eq('year',year)
+          .is('strand_id',null);
+        if(error){ toast('Update failed: '+error.message,true); return; }
+        saved++;
+      }
+      toast(`Saved ${saved} score${saved>1?'s':''} for ${esc(testLabel)}.`);
+      // Reload to refresh amap
+      $('#load').click();
     };
   };
 };
@@ -2794,8 +2836,8 @@ modules.reports = async (m)=>{
 
   m.innerHTML=`
     <h1>Report cards</h1>
-    <div class="card" style="max-width:720px">
-      <h3>Select learner</h3>
+    <div class="card" style="max-width:760px">
+      <h3>Select learner and period</h3>
       <div class="toolbar" style="margin-bottom:1rem">
         <div class="field" style="flex:2;min-width:220px">
           <label>Search learner</label>
@@ -2806,19 +2848,21 @@ modules.reports = async (m)=>{
         <div class="field"><label>Year</label>
           <input id="y" type="number" value="${new Date().getFullYear()}" style="width:90px"></div>
       </div>
-      <div id="stuResults" style="margin-bottom:1rem"></div>
-      <div id="selectedStu" style="display:none;padding:.6rem .85rem;background:var(--green-50);border-radius:var(--radius);display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+      <div id="stuResults"></div>
+      <div id="selectedStu" style="display:none;margin-bottom:1rem;padding:.6rem .85rem;background:var(--green-50);border-radius:var(--radius);display:flex;justify-content:space-between;align-items:center">
         <span id="selectedName" style="font-weight:500"></span>
         <button class="btn secondary" style="height:28px;font-size:.78rem" id="clearStu">Change</button>
       </div>
       <input type="hidden" id="stuId">
-      <button class="btn primary" id="gen" disabled><i class="ti ti-file-text"></i> Generate report card</button>
-      <button class="btn secondary" id="prn" style="margin-left:.5rem"><i class="ti ti-printer"></i> Print</button>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn primary" id="gen" disabled><i class="ti ti-file-text"></i> Generate report card</button>
+        <button class="btn secondary" id="prn"><i class="ti ti-printer"></i> Print</button>
+      </div>
     </div>
-    <div id="rep" style="margin-top:1.25rem"></div>`;
+    <div id="rep" style="margin-top:1.5rem"></div>`;
 
+  // Student search
   let selectedId=null;
-
   function renderResults(query){
     const q=(query||'').toLowerCase().trim();
     if(!q){ $('#stuResults').innerHTML=''; return; }
@@ -2827,44 +2871,32 @@ modules.reports = async (m)=>{
       (s.admission_number||'').toLowerCase().includes(q)||
       (s.grade||'').toLowerCase().includes(q)
     ).slice(0,10);
-    if(!filtered.length){
-      $('#stuResults').innerHTML=`<div class="muted small" style="padding:.4rem 0">No learners match.</div>`;
-      return;
-    }
-    $('#stuResults').innerHTML=`<div style="border:1px solid var(--stone);border-radius:var(--radius);overflow:hidden">
+    if(!filtered.length){ $('#stuResults').innerHTML=`<div class="muted small" style="padding:.4rem 0">No learners match.</div>`; return; }
+    $('#stuResults').innerHTML=`<div style="border:1px solid var(--stone);border-radius:var(--radius);overflow:hidden;margin-bottom:.5rem">
       ${filtered.map(s=>`<div class="strand-opt" data-id="${s.id}" data-name="${esc(s.full_name)} — ${esc(s.grade||'')} ${esc(s.stream||'')}">
         <b>${esc(s.full_name)}</b>
         <span class="small muted" style="margin-left:.5rem">${esc(s.grade||'')} ${esc(s.stream||'')} &middot; ${esc(s.admission_number||'')}</span>
       </div>`).join('')}
     </div>`;
     $('#stuResults').querySelectorAll('.strand-opt[data-id]').forEach(el=>el.onclick=()=>{
-      selectedId=el.dataset.id;
-      $('#stuId').value=selectedId;
+      selectedId=el.dataset.id; $('#stuId').value=selectedId;
       $('#selectedName').textContent=el.dataset.name;
       $('#selectedStu').style.display='flex';
-      $('#stuResults').innerHTML='';
-      $('#stuSearch').style.display='none';
+      $('#stuResults').innerHTML=''; $('#stuSearch').style.display='none';
       $('#gen').disabled=false;
     });
   }
-
   $('#stuSearch').oninput=e=>renderResults(e.target.value);
   $('#clearStu').onclick=()=>{
     selectedId=null; $('#stuId').value='';
     $('#selectedStu').style.display='none';
-    $('#stuSearch').style.display='';
-    $('#stuSearch').value=''; $('#stuSearch').focus();
+    $('#stuSearch').style.display=''; $('#stuSearch').value=''; $('#stuSearch').focus();
     $('#gen').disabled=true; $('#rep').innerHTML='';
   };
-
-  // If parent with one child, auto-select
   if(role==='parent'&&students.length===1){
-    selectedId=students[0].id;
-    $('#stuId').value=selectedId;
+    selectedId=students[0].id; $('#stuId').value=selectedId;
     $('#selectedName').textContent=`${students[0].full_name} — ${students[0].grade||''} ${students[0].stream||''}`;
-    $('#selectedStu').style.display='flex';
-    $('#stuSearch').style.display='none';
-    $('#gen').disabled=false;
+    $('#selectedStu').style.display='flex'; $('#stuSearch').style.display='none'; $('#gen').disabled=false;
   }
 
   $('#gen').onclick=async()=>{
@@ -2872,267 +2904,287 @@ modules.reports = async (m)=>{
     if(!sidu){ toast('Select a learner first.',true); return; }
     $('#rep').innerHTML=`<div class="muted small" style="padding:1rem">Generating report card...</div>`;
 
-    const [{data:s},{data:assessments=[]},{data:att=[]},{data:health=[]}]=await Promise.all([
+    const [{data:s},{data:allAss=[]},{data:att=[]},{data:health=[]},{data:allStudents=[]}]=await Promise.all([
       sb.from('students').select('*').eq('id',sidu).single(),
-      sb.from('assessments').select('*, cbc_strands(subject,strand,sub_strand,grade)').eq('student_id',sidu).eq('term',term).eq('year',year),
+      // Load strand-free assessments (strand_id is null)
+      sb.from('assessments').select('learning_area,cat1,cat2,endterm_score,weighted_score,score,remarks,teachers(full_name)')
+        .eq('student_id',sidu).eq('term',term).eq('year',year).is('strand_id',null),
       sb.from('student_attendance').select('status').eq('student_id',sidu),
       sb.from('student_health').select('condition_name,severity').eq('student_id',sidu),
+      // All students in same grade+stream for ranking
+      sb.from('students').select('id,full_name').eq('school_id',sid).eq('grade',s?.grade||'').eq('stream',s?.stream||''),
     ]);
 
-    const daysAbsent=att.filter(x=>x.status==='absent').length;
     const daysPresent=att.filter(x=>x.status==='present').length;
-    const termAtt=att.length;
-    const attRate=termAtt?Math.round(daysPresent/termAtt*100):null;
+    const daysAbsent=att.filter(x=>x.status==='absent').length;
 
-    // Group assessments by learning area; each row has test1/test2/test3 (cat1/cat2/endterm_score) and weighted_score (=avg)
+    // Build per-learning-area scores
     const laMap={};
-    assessments.forEach(a=>{
-      const la=a.learning_area||a.cbc_strands?.subject||'Unknown';
-      if(!laMap[la]) laMap[la]=[];
-      laMap[la].push(a);
+    allAss.forEach(a=>{ laMap[a.learning_area]=a; });
+
+    const laOrder=(CBC_LEARNING_AREAS[s.grade||'']||Object.keys(laMap));
+    const laRows=laOrder.map(la=>{
+      const a=laMap[la];
+      if(!a) return {la,t1:null,t2:null,t3:null,avg:null,rc:null,pts:null,remarks:'',instructor:''};
+      const t1=a.cat1!=null?+a.cat1:null;
+      const t2=a.cat2!=null?+a.cat2:null;
+      const t3=a.endterm_score!=null?+a.endterm_score:null;
+      const parts=[t1,t2,t3].filter(v=>v!=null);
+      const avg=parts.length?Math.round(parts.reduce((p,c)=>p+c,0)/parts.length*10)/10:null;
+      const rc=avg!=null?pctToRubricCode(avg):null;
+      const pts=rc?RUBRIC_BANDS.find(b=>b.code===rc)?.points||null:null;
+      return {la,t1,t2,t3,avg,rc,pts,remarks:a.remarks||'',instructor:a.teachers?.full_name||''};
+    }).filter(r=>r.avg!=null||r.t1!=null||r.t2!=null||r.t3!=null);
+
+    // Summary stats
+    const filledRows=laRows.filter(r=>r.avg!=null);
+    const totalMarks=filledRows.reduce((a,r)=>a+(r.avg||0),0);
+    const maxMarks=filledRows.length*100;
+    const overallAvg=filledRows.length?Math.round(totalMarks/filledRows.length*10)/10:null;
+    const overallRc=overallAvg!=null?pctToRubricCode(overallAvg):null;
+    const overallPts=overallRc?RUBRIC_BANDS.find(b=>b.code===overallRc)?.points||null:null;
+
+    // Ranking — compare this student's avg vs classmates (load their assessments)
+    const classIds=allStudents.map(s=>s.id);
+    const {data:classAss=[]}=classIds.length>1?await sb.from('assessments')
+      .select('student_id,weighted_score').in('student_id',classIds)
+      .eq('term',term).eq('year',year).is('strand_id',null):{data:[]};
+    const classAvgs={};
+    classAss.forEach(a=>{
+      if(!classAvgs[a.student_id]) classAvgs[a.student_id]=[];
+      if(a.weighted_score!=null) classAvgs[a.student_id].push(+a.weighted_score);
+    });
+    const classRanked=Object.entries(classAvgs)
+      .map(([id,scores])=>({id,avg:scores.reduce((a,b)=>a+b,0)/scores.length}))
+      .sort((a,b)=>b.avg-a.avg);
+    const myRank=classRanked.findIndex(r=>r.id===sidu)+1||null;
+    const streamSize=allStudents.length;
+
+    // Print window HTML — Image 1 inspired modern layout
+    const printHtml=buildReportCardHtml(s,laRows,{
+      term,year,daysPresent,daysAbsent,totalMarks,maxMarks,
+      overallAvg,overallRc,overallPts,myRank,streamSize,health,
+      school:state.school||{}
     });
 
-    // For each learning area, average all three test columns across its strands (matches the
-    // official form's one-row-per-learning-area layout, First/Second/Third Test, Average Score)
-    function laTestAverages(rows){
-      const t1=rows.map(r=>r.cat1).filter(v=>v!=null);
-      const t2=rows.map(r=>r.cat2).filter(v=>v!=null);
-      const t3=rows.map(r=>r.endterm_score).filter(v=>v!=null);
-      const avg=arr=>arr.length?Math.round((arr.reduce((a,b)=>a+ +b,0)/arr.length)*10)/10:null;
-      const test1=avg(t1), test2=avg(t2), test3=avg(t3);
-      const allTests=[test1,test2,test3].filter(v=>v!=null);
-      const overallAvg=allTests.length?Math.round((allTests.reduce((a,b)=>a+b,0)/allTests.length)*10)/10:null;
-      return {test1,test2,test3,overallAvg};
-    }
-
-    const laOrder=Object.keys(CBC_LEARNING_AREAS[s.grade]||{}).length
-      ? (CBC_LEARNING_AREAS[s.grade]||[])
-      : Object.keys(laMap);
-    const laRows=laOrder.filter(la=>laMap[la]).map(la=>({la,...laTestAverages(laMap[la])}));
-
-    // Radar uses overall average per learning area, converted to rubric points
-    const radarLabels=laRows.map(r=>r.la);
-    const radarData=laRows.map(r=>r.overallAvg!=null?(pctToLevel(r.overallAvg)?.points||0):0);
-
-    // Overall average score across all learning areas (bottom-right summary, like the photo's AVERAGE SCORE row)
-    const allAvgs=laRows.map(r=>r.overallAvg).filter(v=>v!=null);
-    const overallAverageScore=allAvgs.length?Math.round((allAvgs.reduce((a,b)=>a+b,0)/allAvgs.length)*10)/10:null;
-
-    // Grade 9 transition (unchanged logic, still useful for JS exit reporting)
-    let transitionHTML='';
-    if(s.grade==='Grade 9'){
-      const {data:hist=[]}=await sb.from('assessments').select('score,weighted_score,learning_area,cbc_strands(grade)').eq('student_id',sidu);
-      const gradeLA={};
-      hist.forEach(h=>{
-        const g=h.cbc_strands?.grade||'';
-        if(!['Grade 7','Grade 8','Grade 9'].includes(g)) return;
-        const la=h.learning_area||'Unknown';
-        if(!gradeLA[g]) gradeLA[g]={};
-        if(!gradeLA[g][la]) gradeLA[g][la]=[];
-        const pts=h.weighted_score!=null?pctToLevel(+h.weighted_score)?.points||0:0;
-        gradeLA[g][la].push(pts);
-      });
-      const tRows=[];
-      ['Grade 7','Grade 8','Grade 9'].forEach(g=>{
-        Object.keys(gradeLA[g]||{}).forEach(la=>{
-          const arr=gradeLA[g][la];
-          const avg=arr.reduce((a,b)=>a+b,0)/arr.length;
-          const w=g==='Grade 9'?0.6:0.2;
-          tRows.push({grade:g,la,avg:Math.round(avg*10)/10,contribution:Math.round(avg*w*10)/10});
-        });
-      });
-      const totalW=tRows.length?tRows.reduce((a,r)=>a+r.contribution,0)/tRows.length:null;
-      const projLv=totalW?pctToLevel(totalW/8*100):null;
-      transitionHTML=`<div class="card" style="margin-top:1.25rem">
-        <h3>Grade 9 Transition Score (60-20-20 SBA Model)</h3>
-        <p class="muted small">Grade 9 contributes 60%, Grades 7 and 8 each contribute 20% of the School-Based Assessment weight.</p>
-        <table><thead><tr><th>Grade</th><th>Learning area</th><th>Avg pts</th><th>Weighted</th></tr></thead>
-        <tbody>${tRows.map(r=>`<tr><td>${esc(r.grade)}</td><td>${esc(r.la)}</td><td>${r.avg}</td><td>${r.contribution}</td></tr>`).join('')}</tbody></table>
-        <div style="margin-top:1rem;padding:1rem;background:var(--green-50);border-radius:var(--radius);display:flex;gap:2rem;align-items:center">
-          <div><div class="small muted">Projected points</div><div style="font-family:'Fraunces',serif;font-size:2.5rem;color:var(--green);line-height:1">${totalW??'—'}</div></div>
-          <div><div class="small muted">Projected level</div><div style="font-size:1.4rem;font-weight:600;color:var(--green)">${projLv?.code??'—'}</div></div>
-        </div>
-      </div>`;
-    }
-
-    $('#rep').innerHTML=`<div id="report">
-      <div class="card">
-        <!-- Official form header -->
-        <div style="text-align:center;border-bottom:3px solid var(--green);padding-bottom:1rem;margin-bottom:1rem">
-          <div class="small" style="text-transform:uppercase;letter-spacing:.06em;color:var(--muted)">Ministry of Education</div>
-          <div class="small" style="text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">State Department of Early Learning and Basic Education</div>
-          <div style="font-family:'Fraunces',serif;font-size:1.25rem;color:var(--green);margin-top:.35rem">School Term Summative Report</div>
-          <div style="font-weight:600;margin-top:.15rem">${esc(s.grade||'')} Termly Exam Result Summary Report — Term ${term}</div>
-        </div>
-
-        <!-- Header fields, matching the photo layout -->
-        <table style="margin-bottom:1.25rem">
-          <tbody>
-            <tr><td style="width:25%;font-weight:600;background:var(--bg)">Name of School</td><td colspan="3">${esc(state.school?.name||'')}</td></tr>
-            <tr><td style="font-weight:600;background:var(--bg)">Name of Learner</td><td>${esc(s.full_name)}</td>
-                <td style="font-weight:600;background:var(--bg)">Enrolment</td><td>${esc(s.admission_number||'—')}</td></tr>
-            <tr><td style="font-weight:600;background:var(--bg)">Grade</td><td>${esc(s.grade||'')} ${esc(s.stream||'')}</td>
-                <td style="font-weight:600;background:var(--bg)">Year</td><td>${year}</td></tr>
-            <tr><td style="font-weight:600;background:var(--bg)">Learner ID / UPI</td><td>${esc(s.nemis_number||'—')}</td>
-                <td style="font-weight:600;background:var(--bg)">Total Days Absent</td><td style="color:${daysAbsent>0?'var(--terracotta)':'inherit'}">${daysAbsent}</td></tr>
-            <tr><td style="font-weight:600;background:var(--bg)">Class Teacher</td><td>—</td>
-                <td style="font-weight:600;background:var(--bg)">Total Days Present</td><td>${daysPresent}</td></tr>
-          </tbody>
-        </table>
-
-        ${health.length?`<div style="padding:.6rem .85rem;background:var(--amber-bg);border-radius:var(--radius);margin-bottom:1.25rem;font-size:.85rem;color:#5a3d11">
-          <b>Health note:</b> ${health.map(h=>`${esc(h.condition_name)} (${esc(h.severity)})`).join(', ')}
-        </div>`:''}
-
-        <!-- Rubric legend, matching the photo exactly -->
-        <table style="margin-bottom:1.25rem;font-size:.78rem">
-          <thead><tr>
-            <th colspan="2" style="text-align:center">Exceeding Expectation</th>
-            <th colspan="2" style="text-align:center">Meeting Expectation</th>
-            <th colspan="2" style="text-align:center">Approaching Expectation</th>
-            <th colspan="2" style="text-align:center">Below Expectation</th>
-          </tr></thead>
-          <tbody>
-            <tr style="text-align:center">
-              <td>EE1<br>90-99%</td><td>EE2<br>75-89%</td>
-              <td>ME1<br>58-74%</td><td>ME2<br>41-57%</td>
-              <td>AE1<br>31-40%</td><td>AE2<br>21-30%</td>
-              <td>BE1<br>11-20%</td><td>BE2<br>1-10%</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <!-- Main learning area x test grid, matching the photo layout -->
-        <h3 style="margin-bottom:.5rem">Frequency of Assessment</h3>
-        ${laRows.length?`
-        <div style="overflow-x:auto">
-        <table style="font-size:.82rem">
-          <thead>
-            <tr>
-              <th rowspan="2" style="vertical-align:bottom;min-width:140px">Learning Areas</th>
-              <th colspan="2" style="text-align:center;border-left:2px solid var(--stone)">First Test</th>
-              <th colspan="2" style="text-align:center">Second Test</th>
-              <th colspan="2" style="text-align:center">Third Test</th>
-              <th rowspan="2" style="vertical-align:bottom;text-align:center">Average<br>Score</th>
-            </tr>
-            <tr>
-              <th style="border-left:2px solid var(--stone);font-size:.72rem">%</th><th style="font-size:.72rem">Rubric</th>
-              <th style="font-size:.72rem">%</th><th style="font-size:.72rem">Rubric</th>
-              <th style="font-size:.72rem">%</th><th style="font-size:.72rem">Rubric</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${laRows.map(r=>{
-              const rc1=r.test1!=null?pctToRubricCode(r.test1):null;
-              const rc2=r.test2!=null?pctToRubricCode(r.test2):null;
-              const rc3=r.test3!=null?pctToRubricCode(r.test3):null;
-              const rcAvg=r.overallAvg!=null?pctToRubricCode(r.overallAvg):null;
-              return `<tr>
-                <td style="font-weight:600;text-transform:uppercase;font-size:.78rem">${esc(r.la)}</td>
-                <td style="border-left:2px solid var(--stone);text-align:center">${r.test1??'—'}</td>
-                <td style="text-align:center;font-weight:600;color:${rc1?levelColor(rc1):'var(--muted)'}">${rc1||'—'}</td>
-                <td style="text-align:center">${r.test2??'—'}</td>
-                <td style="text-align:center;font-weight:600;color:${rc2?levelColor(rc2):'var(--muted)'}">${rc2||'—'}</td>
-                <td style="text-align:center">${r.test3??'—'}</td>
-                <td style="text-align:center;font-weight:600;color:${rc3?levelColor(rc3):'var(--muted)'}">${rc3||'—'}</td>
-                <td style="text-align:center;font-weight:700;color:${rcAvg?levelColor(rcAvg):'var(--muted)'}">${r.overallAvg??'—'}${rcAvg?'<br><span style="font-size:.72rem">'+rcAvg+'</span>':''}</td>
-              </tr>`;
-            }).join('')}
-            <tr style="border-top:2px solid var(--green)">
-              <td style="font-weight:700">AVERAGE SCORE</td>
-              <td colspan="6"></td>
-              <td style="text-align:center;font-weight:700;font-size:1.05rem;color:var(--green)">${overallAverageScore??'—'}</td>
-            </tr>
-          </tbody>
-        </table></div>
-        ${radarLabels.length>=3?`<div style="margin-top:1.25rem;max-width:280px">
-          <div class="small muted" style="margin-bottom:.5rem;font-weight:500">Competency profile</div>
-          <canvas id="radarChart" width="260" height="260"></canvas>
-        </div>`:''}
-        `:`<div class="muted small">No assessments recorded for Term ${term} ${year}.</div>`}
-
-        <!-- Core Competencies -->
-        <h3 style="margin-top:1.5rem;margin-bottom:.75rem">Core Competencies</h3>
-        <table>
-          <thead><tr><th>Competency</th><th>Performance</th></tr></thead>
-          <tbody>${CORE_COMPETENCIES.map(c=>`<tr>
-            <td>${esc(c)}</td>
-            <td><div class="score-cell" style="gap:.25rem">
-              ${['EE','ME','AE','BE'].map(sc=>`<span style="padding:.2rem .45rem;border-radius:3px;font-size:.75rem;background:var(--stone);color:var(--muted)">${sc}</span>`).join('')}
-              <span class="small muted" style="margin-left:.25rem">(teacher to circle)</span>
-            </div></td>
-          </tr>`).join('')}
-          </tbody>
-        </table>
-
-        <!-- Values and attitudes -->
-        <h3 style="margin-top:1.5rem;margin-bottom:.75rem">Values and Attitudes</h3>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem;margin-bottom:1.25rem">
-          ${CBC_VALUES.map(v=>`<div style="padding:.5rem .75rem;border:1px solid var(--stone);border-radius:var(--radius);font-size:.85rem;display:flex;align-items:center;gap:.4rem">
-            <span style="width:14px;height:14px;border:1.5px solid var(--stone);border-radius:3px;display:inline-block;flex-shrink:0"></span>
-            ${esc(v)}
-          </div>`).join('')}
-        </div>
-
-        <!-- Facilitator's remarks, matching the photo's wording -->
-        <div style="border-top:1px solid var(--stone);padding-top:1rem;margin-top:.5rem">
-          <div style="font-weight:500;margin-bottom:.35rem">Facilitator's remarks based on: Core Competencies, Achievements, PCI's Development and Values</div>
-          <div style="border:1px solid var(--stone);border-radius:var(--radius);padding:.75rem;min-height:60px;font-size:.88rem;color:var(--muted)">
-            ${assessments[0]?.remarks?esc(assessments[0].remarks):'&nbsp;'}
-          </div>
-        </div>
-
-        <!-- Signatures, matching the photo's three rows plus school stamp box -->
-        <div style="display:grid;grid-template-columns:2fr 1fr;gap:1.5rem;margin-top:1.5rem;padding-top:1rem;border-top:1px solid var(--stone)">
-          <div>
-            ${['Facilitator\u2019s Signature','Head teacher\u2019s Signature','Parent / Guardian\u2019s Signature'].map(r=>`
-              <div style="display:flex;align-items:flex-end;gap:.5rem;margin-bottom:.85rem">
-                <div style="flex:1;border-bottom:1px solid var(--ink);height:22px"></div>
-                <div class="small muted" style="white-space:nowrap">${esc(r)}</div>
-                <div style="width:90px;border-bottom:1px solid var(--ink);height:22px"></div>
-                <div class="small muted">Date</div>
-              </div>`).join('')}
-          </div>
-          <div style="border:1px dashed var(--stone);border-radius:var(--radius);display:flex;align-items:center;justify-content:center;min-height:90px">
-            <span class="small muted">School Stamp</span>
-          </div>
-        </div>
-
-        <div style="display:flex;gap:2rem;margin-top:1rem;font-size:.85rem">
-          <div><span class="small muted">Opening Date:</span> _______________</div>
-          <div><span class="small muted">Closing Date:</span> _______________</div>
-          <div><span class="small muted">Next Term Begins On:</span> _______________</div>
-        </div>
-
-        <p class="muted small" style="margin-top:1rem;border-top:1px solid var(--stone);padding-top:.75rem">
-          EE Exceeding Expectations &middot; ME Meeting Expectations &middot; AE Approaching Expectations &middot; BE Below Expectations &middot; Rubric scale 1\u20138 (see legend above)
-        </p>
+    $('#rep').innerHTML=`<div id="reportPreview">
+      <div class="card" style="padding:0;overflow:hidden">
+        <iframe id="reportFrame" style="width:100%;border:none;min-height:700px"></iframe>
       </div>
-      ${transitionHTML}
+      <div style="margin-top:.75rem;display:flex;gap:.5rem">
+        <button class="btn primary" id="prn2"><i class="ti ti-printer"></i> Print report card</button>
+      </div>
     </div>`;
 
-    // Radar chart
-    if(radarLabels.length>=3&&window.Chart){
-      const ctx=document.getElementById('radarChart')?.getContext('2d');
-      if(ctx){
-        if(window._radarChart) window._radarChart.destroy();
-        window._radarChart=new Chart(ctx,{
-          type:'radar',
-          data:{labels:radarLabels,datasets:[{
-            label:'Performance',data:radarData,
-            backgroundColor:'rgba(31,68,52,.12)',
-            borderColor:'rgba(31,68,52,.75)',
-            pointBackgroundColor:'rgba(31,68,52,.9)',
-            pointRadius:4,borderWidth:2
-          }]},
-          options:{scales:{r:{min:0,max:8,ticks:{stepSize:2,font:{size:9}},pointLabels:{font:{size:9}}}},
-            plugins:{legend:{display:false}},animation:{duration:300}}
-        });
-      }
-    }
+    const frame=document.getElementById('reportFrame');
+    frame.srcdoc=printHtml;
+    frame.onload=()=>{ frame.style.height=(frame.contentDocument.body.scrollHeight+40)+'px'; };
+    document.getElementById('prn2').onclick=()=>{
+      const w=window.open('','_blank'); w.document.write(printHtml); w.document.close();
+      setTimeout(()=>w.print(),600);
+    };
   };
-  $('#prn').onclick=()=>window.print();
+  $('#prn').onclick=()=>{ const f=document.getElementById('reportFrame'); if(f){ const w=window.open('','_blank'); w.document.write(f.srcdoc); w.document.close(); setTimeout(()=>w.print(),600); } };
 };
+
+function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMarks,maxMarks,overallAvg,overallRc,overallPts,myRank,streamSize,health,school}){
+  const BAND_COLOR={EE1:'#1b5e20',EE2:'#2e7d32',ME1:'#1565c0',ME2:'#1976d2',AE1:'#e65100',AE2:'#f57c00',BE1:'#b71c1c',BE2:'#c62828'};
+  const rcColor=rc=>BAND_COLOR[rc]||'#333';
+  const fmt=v=>v!=null?v:'—';
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>Report Card — ${s.full_name}</title>
+  <style>
+    @page{size:A4;margin:1.2cm}
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#111;background:#fff}
+
+    /* Header */
+    .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1a3c2a;padding-bottom:10px;margin-bottom:10px}
+    .school-logo{width:52px;height:52px;border:2px solid #1a3c2a;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:bold;color:#1a3c2a;text-align:center;line-height:1.2;flex-shrink:0}
+    .school-info{flex:1;padding:0 14px}
+    .school-name{font-size:17px;font-weight:900;color:#1a3c2a;text-transform:uppercase;letter-spacing:.03em}
+    .doc-title{font-size:10px;color:#555;font-style:italic;margin-top:1px}
+    .photo-box{width:68px;height:78px;border:1.5px solid #bbb;display:flex;align-items:center;justify-content:center;font-size:8px;color:#aaa;flex-shrink:0;background:#f8f8f8}
+
+    /* Info grid */
+    .info-strip{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px;font-size:10.5px}
+    .info-cell{display:flex;gap:4px}
+    .info-cell .lbl{color:#666;white-space:nowrap}
+    .info-cell .val{font-weight:700;color:#111}
+
+    /* Performance summary box — Image 1 style */
+    .perf-box{background:#1a3c2a;color:#fff;border-radius:6px;padding:8px 12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+    .perf-item{text-align:center}
+    .perf-num{font-size:20px;font-weight:900;line-height:1}
+    .perf-lbl{font-size:8px;opacity:.8;text-transform:uppercase;letter-spacing:.05em;margin-top:1px}
+    .perf-badge{background:#fff;color:#1a3c2a;font-size:16px;font-weight:900;border-radius:4px;padding:3px 10px}
+
+    /* Exam details strip */
+    .exam-strip{display:flex;gap:16px;font-size:10px;margin-bottom:10px;padding:6px 10px;background:#f5f5f5;border-radius:4px;border-left:4px solid #1a3c2a}
+    .exam-strip .lbl{color:#666}
+    .exam-strip .val{font-weight:700}
+
+    /* Main table */
+    table{width:100%;border-collapse:collapse;margin-bottom:8px;font-size:10.5px}
+    th{background:#1a3c2a;color:#fff;padding:5px 6px;text-align:left;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+    th.center,td.center{text-align:center}
+    td{padding:4px 6px;border-bottom:1px solid #e0e0e0;vertical-align:middle}
+    tr:nth-child(even) td{background:#f8fffe}
+    .rc-pill{display:inline-block;padding:1px 6px;border-radius:3px;font-weight:700;font-size:10px;color:#fff}
+    .pts-badge{display:inline-block;width:20px;height:20px;border-radius:50%;font-weight:700;font-size:10px;text-align:center;line-height:20px;color:#fff}
+    .avg-row td{font-weight:700;background:#e8f5e9;border-top:2px solid #1a3c2a;font-size:11px}
+
+    /* Levels legend — Image 1 style rounded badge */
+    .legend-box{border:1px solid #ddd;border-radius:6px;padding:8px 12px;margin-bottom:10px;display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;font-size:9.5px}
+    .legend-row{display:flex;gap:4px;align-items:center}
+    .legend-code{width:30px;font-weight:700}
+
+    /* 3-column grouping (Arts/Social/STEM) */
+    .group-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border:1.5px solid #1a3c2a;border-radius:4px;overflow:hidden;margin-bottom:10px;font-size:10px}
+    .group-cell{padding:5px 8px;border-right:1.5px solid #1a3c2a;text-align:center}
+    .group-cell:last-child{border-right:none}
+    .group-cell .g-lbl{font-size:8.5px;color:#666;text-transform:uppercase;letter-spacing:.04em}
+
+    /* Remarks */
+    .remarks-section{margin-bottom:10px}
+    .remarks-section .r-lbl{font-size:9.5px;font-weight:700;color:#1a3c2a;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+    .remarks-section .r-body{border-bottom:1px solid #999;min-height:18px;padding:2px 0;font-style:italic;font-size:10.5px}
+
+    /* Signatures */
+    .sig-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:8px}
+    .sig-block .sig-lbl{font-size:9px;color:#666;margin-top:3px}
+    .sig-line{border-bottom:1px solid #333;height:22px;margin-bottom:0}
+
+    .footer-row{display:flex;justify-content:space-between;font-size:9px;color:#666;margin-top:6px;border-top:1px solid #ddd;padding-top:5px}
+
+    @media print{body{font-size:11px}@page{margin:1cm}}
+  </style></head><body>
+
+  <!-- Header -->
+  <div class="header">
+    <div class="school-logo">${esc((school.name||'S').split(' ').map(w=>w[0]).join('').slice(0,4).toUpperCase())}</div>
+    <div class="school-info">
+      <div class="school-name">${esc(school.name||'School Name')}</div>
+      <div class="doc-title">Learner Assessment Report</div>
+    </div>
+    <div class="photo-box">Photo</div>
+  </div>
+
+  <!-- Learner info -->
+  <div class="info-strip">
+    <div class="info-cell"><span class="lbl">NAME:</span><span class="val">${esc(s.full_name)}</span></div>
+    <div class="info-cell"><span class="lbl">CLASS:</span><span class="val">${esc(s.grade||'')} ${esc(s.stream||'')}</span></div>
+    <div class="info-cell"><span class="lbl">ADM No:</span><span class="val">${esc(s.admission_number||'—')}</span></div>
+    <div class="info-cell"><span class="lbl">UPI / NEMIS:</span><span class="val">${esc(s.nemis_number||'—')}</span></div>
+    <div class="info-cell"><span class="lbl">Days Present:</span><span class="val">${daysPresent}</span></div>
+    <div class="info-cell"><span class="lbl">Days Absent:</span><span class="val" style="color:${daysAbsent>0?'#b71c1c':'inherit'}">${daysAbsent}</span></div>
+  </div>
+
+  <!-- Exam details + performance summary -->
+  <div class="exam-strip">
+    <span><span class="lbl">EXAM: </span><span class="val">END TERM</span></span>
+    <span><span class="lbl">TERM: </span><span class="val">${term}</span></span>
+    <span><span class="lbl">YEAR: </span><span class="val">${year}</span></span>
+    ${myRank?`<span><span class="lbl">STREAM POSITION: </span><span class="val">${myRank}/${streamSize}</span></span>`:''}
+  </div>
+
+  ${overallAvg!=null?`
+  <div class="perf-box">
+    <div class="perf-item"><div class="perf-num">${totalMarks.toFixed(1)}/${maxMarks}</div><div class="perf-lbl">Total Marks</div></div>
+    <div class="perf-item"><div class="perf-num">${overallPts||'—'}</div><div class="perf-lbl">Points</div></div>
+    <div class="perf-item"><div class="perf-num">${overallAvg}%</div><div class="perf-lbl">Average Mark</div></div>
+    <div class="perf-item"><div class="perf-badge" style="color:${rcColor(overallRc)}">${overallRc||'—'}</div><div class="perf-lbl" style="color:#ccc">Overall Level</div></div>
+    ${myRank?`<div class="perf-item"><div class="perf-num">${myRank}<span style="font-size:12px">/${streamSize}</span></div><div class="perf-lbl">Stream Position</div></div>`:''}
+  </div>`:''}
+
+  ${health.length?`<div style="background:#fff8e1;border-left:4px solid #f9a825;border-radius:3px;padding:4px 8px;margin-bottom:8px;font-size:10px">
+    <b>Health note:</b> ${health.map(h=>`${esc(h.condition_name)} (${esc(h.severity)})`).join(', ')}
+  </div>`:''}
+
+  <!-- Main results table — Image 1 style columns -->
+  <table>
+    <thead>
+      <tr>
+        <th style="width:22%">Learning Area</th>
+        <th class="center" style="width:9%">1st Test</th>
+        <th class="center" style="width:9%">2nd Test</th>
+        <th class="center" style="width:9%">3rd Test</th>
+        <th class="center" style="width:8%">Avg %</th>
+        <th class="center" style="width:8%">Level</th>
+        <th class="center" style="width:6%">Pts</th>
+        <th style="width:22%">Comments</th>
+        <th style="width:7%">Instructor</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${laRows.map(r=>`<tr>
+        <td style="font-weight:600">${esc(r.la)}</td>
+        <td class="center">${r.t1!=null?r.t1+'/100':'—'}</td>
+        <td class="center">${r.t2!=null?r.t2+'/100':'—'}</td>
+        <td class="center">${r.t3!=null?r.t3+'/100':'—'}</td>
+        <td class="center" style="font-weight:700">${r.avg!=null?r.avg+'%':'—'}</td>
+        <td class="center">${r.rc?`<span class="rc-pill" style="background:${rcColor(r.rc)}">${r.rc}</span>`:'—'}</td>
+        <td class="center">${r.pts!=null?`<span class="pts-badge" style="background:${rcColor(r.rc)}">${r.pts}</span>`:'—'}</td>
+        <td style="font-style:italic;font-size:10px;color:#444">${esc(r.remarks)}</td>
+        <td style="font-size:9.5px;color:#555">${esc(r.instructor)}</td>
+      </tr>`).join('')}
+      ${overallAvg!=null?`<tr class="avg-row">
+        <td>AVERAGE SCORE</td>
+        <td class="center" colspan="3"></td>
+        <td class="center">${overallAvg}%</td>
+        <td class="center"><span class="rc-pill" style="background:${rcColor(overallRc)}">${overallRc||'—'}</span></td>
+        <td class="center"><span class="pts-badge" style="background:${rcColor(overallRc)}">${overallPts||'—'}</span></td>
+        <td colspan="2"></td>
+      </tr>`:''}
+    </tbody>
+  </table>
+
+  <!-- Subject groupings — Arts & Sports / Social Sciences / STEM (from Image 2) -->
+  <div class="group-row">
+    <div class="group-cell"><div class="g-lbl">Arts &amp; Sports</div></div>
+    <div class="group-cell"><div class="g-lbl">Social Sciences</div></div>
+    <div class="group-cell"><div class="g-lbl">STEM</div></div>
+  </div>
+
+  <!-- Levels legend -->
+  <div class="legend-box">
+    <div class="legend-row"><span class="legend-code" style="color:${rcColor('EE1')}">EE1</span>90–100%</div>
+    <div class="legend-row"><span class="legend-code" style="color:${rcColor('AE1')}">AE1</span>31–40%</div>
+    <div class="legend-row"><span class="legend-code" style="color:${rcColor('EE2')}">EE2</span>75–89%</div>
+    <div class="legend-row"><span class="legend-code" style="color:${rcColor('AE2')}">AE2</span>21–30%</div>
+    <div class="legend-row"><span class="legend-code" style="color:${rcColor('ME1')}">ME1</span>58–74%</div>
+    <div class="legend-row"><span class="legend-code" style="color:${rcColor('BE1')}">BE1</span>11–20%</div>
+    <div class="legend-row"><span class="legend-code" style="color:${rcColor('ME2')}">ME2</span>41–57%</div>
+    <div class="legend-row"><span class="legend-code" style="color:${rcColor('BE2')}">BE2</span>1–10%</div>
+  </div>
+
+  <!-- Facilitator remarks -->
+  <div class="remarks-section">
+    <div class="r-lbl">Class Teacher's comments:</div>
+    <div class="r-body">&nbsp;</div>
+  </div>
+  <div class="remarks-section">
+    <div class="r-lbl">HOI's comments:</div>
+    <div class="r-body">&nbsp;</div>
+  </div>
+
+  <!-- Signatures -->
+  <div class="sig-row">
+    <div class="sig-block"><div class="sig-line"></div><div class="sig-lbl">HOI's Signature</div></div>
+    <div class="sig-block"><div class="sig-line"></div><div class="sig-lbl">Parent's Signature</div></div>
+    <div class="sig-block"><div class="sig-line"></div><div class="sig-lbl">Class Teacher's Signature</div></div>
+  </div>
+
+  <div class="footer-row">
+    <span>Generated on: ${new Date().toLocaleDateString('en-KE',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</span>
+    <span>${esc(school.name||'')} &bull; Powered by Radari</span>
+  </div>
+
+  </body></html>`;
+}
+
+
 
 /* --- INCIDENTS --- */
 modules.incidents = async (m)=>{
@@ -3497,7 +3549,7 @@ async function syncOfflineQueue(){
   const q = JSON.parse(localStorage.getItem(OFFLINE_KEY)||'[]');
   if(!q.length) return;
   if(!navigator.onLine) return;
-  const { error } = await sb.from('assessments').upsert(q, { onConflict:'student_id,strand_id,term,year' });
+  const { error } = await sb.from('assessments').upsert(q, { onConflict:'student_id,learning_area,term,year' });
   if(!error){
     localStorage.removeItem(OFFLINE_KEY);
     toast(`Synced ${q.length} offline score(s) to the server.`);
@@ -3593,64 +3645,38 @@ window.seedDemoData = async function(){
     { school_id:sid, grade:'Grade 9', subject:'Pre-Technical Studies', strand:'Entrepreneurship', sub_strand:'Business planning' },
   ]).select('id,grade,subject,strand');
 
-  // ── ASSESSMENTS ──────────────────────────────────────────────────────────────
-  // Generates First/Second/Third Test percentage scores per strand, matching the
-  // official rubric book format (cat1=1st test, cat2=2nd test, endterm_score=3rd test).
-  const assessRows = [];
-  const strandsByGrade = {};
-  insertedStrands.forEach(s=>{ if(!strandsByGrade[s.grade]) strandsByGrade[s.grade]=[]; strandsByGrade[s.grade].push(s); });
-
+  // ── ASSESSMENTS — new strand-free schema ────────────────────────────────────
+  // One row per student per learning area per term, strand_id = null
+  const assessRows=[];
   function makeThreeTests(basePct){
-    // Slight natural variation around a base percentage across the three tests
     const jitter=()=>Math.max(1,Math.min(99,basePct+Math.floor(Math.random()*14)-7));
-    const t1=jitter(), t2=jitter(), t3=jitter();
+    const t1=jitter(),t2=jitter(),t3=jitter();
     const avg=Math.round(((t1+t2+t3)/3)*10)/10;
     return {t1,t2,t3,avg};
   }
+  const remarksBank=['Excellent understanding','Good progress','Needs more practice','Well done, keep it up','Requires extra support','Shows steady improvement'];
+  const demoComments=['Displays smart study attitude','Your excellence is inspirational','Keep up the exemplary effort','Displays great subject interest','Maintains good class engagement','Very reliable and consistent','Consistently outstanding results','Good work, keep progressing','Shows true love for learning'];
 
-  const remarksBank = ['Excellent understanding','Good progress','Needs more practice','Well done, keep it up','Requires extra support','Shows steady improvement'];
-
-  insertedStudents.filter(s=>['PP1','Grade 2','Grade 4','Grade 6'].includes(s.grade)).forEach((stu,i)=>{
-    const base=[88,70,55,40][i%4]; // varies EE/ME/AE/BE band across students
-    (strandsByGrade[stu.grade]||[]).forEach((str,j)=>{
+  insertedStudents.forEach((stu,i)=>{
+    const las=CBC_LEARNING_AREAS[stu.grade]||[];
+    const base=[88,72,60,45,80,65,91,55,78,68,85,50,75,92,62][i%15];
+    las.forEach((la,j)=>{
       const {t1,t2,t3,avg}=makeThreeTests(base);
       assessRows.push({
-        student_id:stu.id, strand_id:str.id, term:1, year:2025,
-        learning_area:str.subject, score:pctToRubricCode(avg),
+        student_id:stu.id, strand_id:null, learning_area:la,
+        term:1, year:2025, score:pctToRubricCode(avg),
         cat1:t1, cat2:t2, endterm_score:t3, weighted_score:avg,
-        remarks:remarksBank[(i+j)%remarksBank.length],
+        remarks:demoComments[(i+j)%demoComments.length],
       });
-    });
-  });
-
-  insertedStudents.filter(s=>s.grade==='Grade 7').forEach((stu,i)=>{
-    const base=[80,68,90,72,85,60][i%6];
-    (strandsByGrade['Grade 7']||[]).forEach((str,j)=>{
-      const {t1,t2,t3,avg}=makeThreeTests(base);
-      assessRows.push({
-        student_id:stu.id, strand_id:str.id, term:1, year:2025,
-        learning_area:str.subject, score:pctToRubricCode(avg),
-        cat1:t1, cat2:t2, endterm_score:t3, weighted_score:avg, remarks:'',
-      });
-    });
-  });
-
-  insertedStudents.filter(s=>s.grade==='Grade 9').forEach((stu,i)=>{
-    const base=[88,72,91,68,95,77][i%6];
-    (strandsByGrade['Grade 9']||[]).forEach((str,j)=>{
-      const {t1,t2,t3,avg}=makeThreeTests(base);
-      assessRows.push({
-        student_id:stu.id, strand_id:str.id, term:1, year:2025,
-        learning_area:str.subject, score:pctToRubricCode(avg),
-        cat1:t1, cat2:t2, endterm_score:t3, weighted_score:avg, remarks:'',
-      });
-      // also seed a Term 2 / prior year row for the Grade 9 transition feature
-      const prev=makeThreeTests(base-5);
-      assessRows.push({
-        student_id:stu.id, strand_id:str.id, term:2, year:2024,
-        learning_area:str.subject, score:pctToRubricCode(prev.avg),
-        cat1:prev.t1, cat2:prev.t2, endterm_score:prev.t3, weighted_score:prev.avg, remarks:'Prior year',
-      });
+      if(stu.grade==='Grade 9'){
+        const prev=makeThreeTests(base-5);
+        assessRows.push({
+          student_id:stu.id, strand_id:null, learning_area:la,
+          term:2, year:2024, score:pctToRubricCode(prev.avg),
+          cat1:prev.t1, cat2:prev.t2, endterm_score:prev.t3,
+          weighted_score:prev.avg, remarks:'Prior year',
+        });
+      }
     });
   });
   if(assessRows.length) await sb.from('assessments').insert(assessRows);
