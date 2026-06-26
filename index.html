@@ -380,7 +380,7 @@ on conflict (school_code) do nothing;
     html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
       font-family:'Inter',system-ui,-apple-system,sans-serif;font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
     h1,h2,h3,h4{font-family:'Fraunces',Georgia,serif;font-weight:500;letter-spacing:-.01em;margin:0 0 .4em}
-    h1{font-size:2rem;line-height:1.15}
+    h1{font-size:1.8rem;line-height:1.15}
     h2{font-size:1.35rem}
     h3{font-size:1.05rem;font-family:'Inter',sans-serif;font-weight:600}
     a{color:var(--green);text-decoration:none}
@@ -388,42 +388,44 @@ on conflict (school_code) do nothing;
     .muted{color:var(--muted)}
     .small{font-size:.85rem}
     .row{display:flex;gap:1rem;flex-wrap:wrap}
-    .col{flex:1;min-width:220px}
+    .col{flex:1;min-width:200px}
     .stack > * + *{margin-top:.75rem}
 
     /* progress bar */
-    #progress{position:fixed;top:0;left:0;height:2px;width:0;background:var(--green);z-index:1000;transition:width .25s ease}
+    #progress{position:fixed;top:0;left:0;height:3px;width:0;background:var(--green);z-index:1000;transition:width .25s ease}
 
     /* AUTH */
     .auth{min-height:100vh;display:grid;grid-template-columns:1fr 1fr}
-    @media (max-width:860px){.auth{grid-template-columns:1fr}}
+    @media(max-width:860px){.auth{grid-template-columns:1fr}}
     .auth-brand{background:var(--green);color:#f1ece0;padding:3rem;display:flex;flex-direction:column;justify-content:space-between;position:relative;overflow:hidden}
     .auth-brand::before{content:"";position:absolute;inset:0;background-image:
-      radial-gradient(circle at 20% 30%, rgba(255,255,255,.05) 0, transparent 35%),
-      radial-gradient(circle at 80% 80%, rgba(255,255,255,.04) 0, transparent 30%),
-      repeating-linear-gradient(135deg, rgba(255,255,255,.025) 0 2px, transparent 2px 28px);
+      radial-gradient(circle at 20% 30%,rgba(255,255,255,.05) 0,transparent 35%),
+      radial-gradient(circle at 80% 80%,rgba(255,255,255,.04) 0,transparent 30%),
+      repeating-linear-gradient(135deg,rgba(255,255,255,.025) 0 2px,transparent 2px 28px);
       pointer-events:none}
-    .auth-brand > *{position:relative}
-    .auth-brand h1{font-size:2.6rem;color:#fbf7ec}
+    .auth-brand>*{position:relative}
+    .auth-brand h1{font-size:2.4rem;color:#fbf7ec}
     .auth-brand .tag{opacity:.8;max-width:380px}
     .brand-mark{font-family:'Fraunces',serif;font-size:1.6rem;letter-spacing:.02em}
-    @media (max-width:860px){.auth-brand{display:none}}
-    .auth-form{background:var(--bg);padding:3rem 2rem;display:flex;flex-direction:column;justify-content:center;align-items:center}
+    @media(max-width:860px){.auth-brand{display:none}}
+    .auth-form{background:var(--bg);padding:2rem 1.25rem;display:flex;flex-direction:column;justify-content:center;align-items:center}
     .auth-form .inner{width:100%;max-width:380px}
     .auth-form .mobile-brand{display:none;text-align:center;margin-bottom:2rem}
-    @media (max-width:860px){.auth-form .mobile-brand{display:block}}
+    @media(max-width:860px){.auth-form .mobile-brand{display:block}}
 
     label{display:block;font-size:.85rem;color:var(--ink-2);margin-bottom:.3rem}
     input,select,textarea{
       width:100%;padding:.75rem .85rem;border:1px solid var(--stone-2);
       background:#fff;border-radius:var(--radius);font:inherit;color:var(--ink);
-      transition:border-color .15s, box-shadow .15s
+      transition:border-color .15s,box-shadow .15s;-webkit-appearance:none;appearance:none
     }
     input:focus,select:focus,textarea:focus{outline:none;border-color:var(--green);box-shadow:0 0 0 3px rgba(31,68,52,.15)}
     .field{margin-bottom:1rem}
     .field .err{color:var(--terracotta);font-size:.8rem;margin-top:.3rem;display:block}
     .btn{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;
-      padding:0 1.1rem;height:44px;border-radius:var(--radius);font:inherit;font-weight:500;cursor:pointer;border:1px solid transparent;background:transparent;color:var(--ink);transition:background .15s,border-color .15s}
+      padding:0 1.1rem;height:44px;border-radius:var(--radius);font:inherit;font-size:.9rem;font-weight:500;cursor:pointer;
+      border:1px solid transparent;background:transparent;color:var(--ink);
+      transition:background .15s,border-color .15s;white-space:nowrap;flex-shrink:0}
     .btn.primary{background:var(--green);color:#fff;border-color:var(--green)}
     .btn.primary:hover{background:var(--green-700)}
     .btn.primary[disabled]{opacity:.7;cursor:wait}
@@ -441,50 +443,45 @@ on conflict (school_code) do nothing;
     /* APP SHELL */
     .shell{display:flex;min-height:100vh;align-items:stretch}
 
-    /* SIDEBAR — fixed width, full height, never scrolls with content */
+    /* SIDEBAR */
     .sidebar{
       width:232px;flex-shrink:0;
       background:var(--surface);border-right:1px solid var(--stone);
       display:flex;flex-direction:column;
       position:sticky;top:0;height:100vh;overflow-y:auto;
     }
-    .sidebar-inner{padding:1.5rem 1rem;display:flex;flex-direction:column;gap:.75rem;flex:1}
-    .sidebar .brand{font-family:'Fraunces',serif;font-size:1.35rem;color:var(--green);padding:0 .5rem;margin-bottom:.25rem;line-height:1.2}
-    .sidebar .school-name{font-size:.78rem;color:var(--muted);padding:0 .5rem;margin-top:-.2rem;margin-bottom:.5rem;font-weight:400}
+    .sidebar-inner{padding:1.25rem .75rem;display:flex;flex-direction:column;gap:.5rem;flex:1}
+    .sidebar .brand{font-family:'Fraunces',serif;font-size:1.25rem;color:var(--green);padding:0 .5rem;margin-bottom:.15rem;line-height:1.2}
+    .sidebar .school-name{font-size:.75rem;color:var(--muted);padding:0 .5rem;margin-top:-.15rem;margin-bottom:.4rem;font-weight:400}
 
-    /* NAV GROUPS */
-    .nav-group{margin-bottom:.5rem}
-    .nav-group-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:.25rem .75rem;margin-bottom:.15rem;font-weight:600}
-    .nav{display:flex;flex-direction:column;gap:.05rem}
+    .nav-group{margin-bottom:.35rem}
+    .nav-group-label{font-size:.66rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:.2rem .75rem;margin-bottom:.1rem;font-weight:600}
+    .nav{display:flex;flex-direction:column;gap:.02rem}
     .nav a{
-      display:flex;align-items:center;gap:.55rem;
-      padding:.52rem .75rem;border-radius:var(--radius);
-      color:var(--ink-2);font-size:.875rem;line-height:1.3;
+      display:flex;align-items:center;gap:.5rem;
+      padding:.48rem .75rem;border-radius:var(--radius);
+      color:var(--ink-2);font-size:.85rem;line-height:1.3;
       transition:background .12s,color .12s;
     }
     .nav a:hover{background:var(--green-50);color:var(--green);text-decoration:none}
     .nav a.active{background:var(--green-50);color:var(--green);font-weight:500}
-    .nav a .ti{font-size:1rem;opacity:.75;flex-shrink:0}
+    .nav a .ti{font-size:.95rem;opacity:.75;flex-shrink:0}
     .nav a.active .ti{opacity:1}
-
-    .sidebar .footer{
-      padding:1rem;border-top:1px solid var(--stone);
-      font-size:.78rem;color:var(--muted);
-    }
-    .sidebar .footer strong{display:block;color:var(--ink);font-size:.82rem;margin-bottom:.15rem}
+    .sidebar .footer{padding:.85rem;border-top:1px solid var(--stone);font-size:.75rem;color:var(--muted)}
+    .sidebar .footer strong{display:block;color:var(--ink);font-size:.8rem;margin-bottom:.1rem}
 
     /* TOPBAR — mobile only */
     .topbar{
-      display:none;padding:.7rem 1rem;
+      display:none;padding:.6rem 1rem;
       background:var(--surface);border-bottom:1px solid var(--stone);
       align-items:center;gap:.75rem;
       position:sticky;top:0;z-index:50;
     }
-    .topbar .menu{background:none;border:none;padding:.25rem;color:var(--ink);cursor:pointer;font-size:1.25rem;line-height:1;display:flex;align-items:center}
-    .topbar .school{font-weight:600;font-size:.95rem}
-    .topbar .mod{margin-left:auto;color:var(--muted);font-size:.82rem}
+    .topbar .menu{background:none;border:none;padding:.25rem;color:var(--ink);cursor:pointer;font-size:1.3rem;line-height:1;display:flex;align-items:center}
+    .topbar .school{font-weight:600;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .topbar .mod{margin-left:auto;color:var(--muted);font-size:.78rem;white-space:nowrap}
 
-    @media (max-width:860px){
+    @media(max-width:860px){
       .shell{flex-direction:column}
       .topbar{display:flex}
       .sidebar{
@@ -499,85 +496,132 @@ on conflict (school_code) do nothing;
 
     /* MAIN CONTENT */
     .content-wrap{flex:1;min-width:0;display:flex;flex-direction:column}
-    main{
-      flex:1;padding:2rem 2.25rem;
-      max-width:1080px;          /* cap width so content never sprawls on wide screens */
-      width:100%;
-    }
-    @media (max-width:860px){main{padding:1.25rem}}
+    main{flex:1;padding:1.5rem 1.75rem;max-width:1080px;width:100%}
+    @media(max-width:860px){main{padding:.9rem .9rem 4rem}}
 
-    /* PAGE HEADER — consistent across all modules */
-    .page-header{margin-bottom:1.75rem;padding-bottom:1rem;border-bottom:1px solid var(--stone)}
-    .page-header h1{margin-bottom:.2rem;font-size:1.65rem}
-    .page-header .sub{color:var(--muted);font-size:.88rem}
-    .page-header-row{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap}
-
-    /* MODULE CONTENT WRAPPER — keeps sections from floating loose */
-    .module-body{display:flex;flex-direction:column;gap:1.25rem}
-    .card{background:var(--surface);padding:1.25rem 1.25rem;border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:1.25rem}
-    .section-title{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:1rem}
+    /* CARDS */
+    .card{background:var(--surface);padding:1.1rem 1.1rem;border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:1rem}
+    @media(max-width:600px){.card{padding:.85rem .85rem;border-radius:8px}}
+    .section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:.85rem;flex-wrap:wrap;gap:.5rem}
     .section-title .sub{color:var(--muted);font-size:.88rem}
 
-    /* dashboard asymmetric grid */
-    .metrics{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:1.25rem}
-    @media (max-width:860px){.metrics{grid-template-columns:1fr 1fr}}
-    .metric{padding:1.4rem;background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow)}
-    .metric .num{font-family:'Fraunces',serif;font-size:2.8rem;line-height:1;color:var(--green);font-weight:500}
-    .metric.lg .num{font-size:4rem}
-    .metric .lbl{color:var(--ink-2);margin-top:.5rem;font-size:.9rem}
-    .metric.lg{grid-row:span 2}
+    /* DASHBOARD METRICS — responsive grid */
+    .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:.85rem;margin-bottom:1.25rem}
+    @media(max-width:860px){.metrics{grid-template-columns:repeat(2,1fr);gap:.65rem}}
+    @media(max-width:480px){.metrics{grid-template-columns:1fr 1fr;gap:.5rem}}
+    .metric{padding:1rem 1.1rem;background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow)}
+    .metric .num{font-family:'Fraunces',serif;font-size:2.2rem;line-height:1;color:var(--green);font-weight:500}
+    .metric.lg .num{font-size:2.8rem}
+    .metric .lbl{color:var(--ink-2);margin-top:.35rem;font-size:.82rem}
+    .metric.lg{grid-column:span 2}
+    @media(max-width:480px){.metric.lg{grid-column:span 2}.metric .num{font-size:1.8rem}.metric.lg .num{font-size:2.2rem}}
 
-    table{width:100%;border-collapse:collapse}
-    th,td{padding:.7rem .6rem;text-align:left;border-bottom:1px solid var(--stone);font-size:.92rem}
-    th{font-weight:500;color:var(--ink-2);font-size:.82rem;border-bottom:1px solid var(--stone-2)}
-    tbody tr:nth-child(even){background:rgba(231,226,214,.25)}
+    /* TABLES — horizontal scroll on mobile */
+    .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -.1rem}
+    table{width:100%;border-collapse:collapse;min-width:400px}
+    th,td{padding:.6rem .55rem;text-align:left;border-bottom:1px solid var(--stone);font-size:.88rem}
+    th{font-weight:500;color:var(--ink-2);font-size:.78rem;border-bottom:1px solid var(--stone-2)}
+    tbody tr:nth-child(even){background:rgba(231,226,214,.22)}
     tbody tr:hover{background:rgba(31,68,52,.04)}
+    @media(max-width:600px){th,td{padding:.5rem .4rem;font-size:.82rem}}
 
-    .badge{display:inline-block;padding:.15rem .55rem;border-radius:999px;font-size:.75rem;background:var(--green-50);color:var(--green)}
+    /* BADGES */
+    .badge{display:inline-block;padding:.15rem .5rem;border-radius:999px;font-size:.72rem;background:var(--green-50);color:var(--green)}
     .badge.amber{background:var(--amber-bg);color:var(--amber)}
     .badge.terra{background:var(--terracotta-bg);color:var(--terracotta)}
     .badge.muted{background:var(--stone);color:var(--ink-2)}
 
-    .grading td{padding:.4rem}
-    .score-cell{display:flex;gap:.25rem}
-    .score-btn{flex:1;padding:.45rem 0;border:1px solid var(--stone-2);background:#fff;border-radius:var(--radius);cursor:pointer;font-size:.8rem;color:var(--ink-2)}
+    /* GRADING TABLE — the most complex mobile layout */
+    .grading-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--stone);border-radius:var(--radius)}
+    .grading-wrap table{min-width:600px;border-collapse:collapse}
+    .grading-wrap th,.grading-wrap td{padding:.45rem .4rem;border-bottom:1px solid var(--stone);font-size:.82rem}
+    .grading-wrap th{background:var(--green);color:#fff;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.03em;position:sticky;top:0;z-index:3}
+    .grading-wrap th:first-child,.grading-wrap td:first-child{position:sticky;left:0;z-index:2;background:var(--surface);border-right:2px solid var(--stone);min-width:130px;max-width:160px}
+    .grading-wrap th:first-child{background:var(--green);z-index:4}
+    .grading-wrap tbody tr:nth-child(even) td{background:#f8fffe}
+    .grading-wrap tbody tr:nth-child(even) td:first-child{background:#f8fffe}
+    .pct-inp{
+      width:56px;text-align:center;font-size:.88rem;
+      padding:.28rem .3rem;border-radius:4px;
+      border:1px solid var(--stone);background:#fff;font:inherit;
+      -moz-appearance:textfield;
+    }
+    .pct-inp::-webkit-inner-spin-button,.pct-inp::-webkit-outer-spin-button{-webkit-appearance:none}
+    .pct-inp:focus{border-color:var(--green);outline:none;box-shadow:0 0 0 2px rgba(31,68,52,.15)}
+    .rc-badge{margin-top:.15rem;font-size:.7rem;font-weight:700;min-height:13px;line-height:1;text-align:center}
+    @media(max-width:600px){
+      .pct-inp{width:48px;font-size:.82rem}
+      .grading-wrap th:first-child,.grading-wrap td:first-child{min-width:110px;max-width:130px}
+    }
+
+    /* SCORE BUTTONS (old primary grading style kept for PP/Grade 1-3 if needed) */
+    .score-cell{display:flex;gap:.2rem}
+    .score-btn{flex:1;padding:.4rem 0;border:1px solid var(--stone-2);background:#fff;border-radius:var(--radius);cursor:pointer;font-size:.78rem;color:var(--ink-2)}
     .score-btn.active{background:var(--green);color:#fff;border-color:var(--green)}
     .score-btn.active.be{background:var(--terracotta);border-color:var(--terracotta)}
     .score-btn.active.ae{background:var(--amber);border-color:var(--amber)}
 
-    .toast{position:fixed;bottom:1.5rem;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:.7rem 1.2rem;border-radius:var(--radius);box-shadow:var(--shadow);z-index:200;opacity:0;transition:opacity .2s}
+    /* TOOLBAR — stacks on mobile */
+    .toolbar{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.85rem;align-items:flex-end}
+    .toolbar .field{margin:0;min-width:120px;flex:1}
+    @media(max-width:600px){
+      .toolbar{gap:.4rem}
+      .toolbar .field{min-width:calc(50% - .2rem);flex:1 1 calc(50% - .2rem)}
+      .toolbar .btn{width:100%;flex:1 1 100%}
+    }
+
+    /* REPORT CARD IFRAME */
+    #reportFrame{width:100%;border:none;border-radius:var(--radius)}
+    @media(max-width:600px){#reportFrame{min-height:500px}}
+
+    /* TOAST */
+    .toast{position:fixed;bottom:1.25rem;left:50%;transform:translateX(-50%);
+      background:var(--ink);color:#fff;padding:.65rem 1.1rem;
+      border-radius:var(--radius);box-shadow:var(--shadow);
+      z-index:300;opacity:0;transition:opacity .2s;
+      font-size:.88rem;max-width:calc(100vw - 2rem);text-align:center;white-space:nowrap}
     .toast.show{opacity:1}
     .toast.error{background:var(--terracotta)}
 
+    /* MISC */
     .empty{padding:2.5rem 1rem;text-align:center;color:var(--muted)}
     .empty .ti{font-size:2rem;display:block;margin-bottom:.5rem;color:var(--stone-2)}
-
-    .health-card{padding:.85rem 1rem;border-radius:var(--radius);margin-bottom:.5rem}
+    .health-card{padding:.75rem .9rem;border-radius:var(--radius);margin-bottom:.5rem}
     .health-card.mild,.health-card.moderate{background:var(--amber-bg);color:#5a3d11}
     .health-card.severe{background:var(--terracotta-bg);color:#5a1d10}
     .health-card .title{font-weight:600}
-
-    .toolbar{display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:1rem;align-items:flex-end}
-    .toolbar .field{margin:0;min-width:140px;flex:1}
-
     .hide{display:none !important}
 
-    /* Searchable strand picker */
+    /* STRAND PICKER */
     .strand-picker{position:relative}
     .strand-picker input{width:100%;box-sizing:border-box}
     .strand-dropdown{
       position:absolute;top:100%;left:0;right:0;z-index:200;
       background:var(--surface);border:1px solid var(--stone);
       border-radius:var(--radius);box-shadow:0 4px 16px rgba(28,29,26,.10);
-      max-height:220px;overflow-y:auto;display:none;margin-top:2px;
+      max-height:200px;overflow-y:auto;display:none;margin-top:2px;
     }
     .strand-dropdown.open{display:block}
-    .strand-opt{
-      padding:.55rem .85rem;cursor:pointer;font-size:.875rem;
-      border-bottom:1px solid var(--stone);line-height:1.3;
-    }
+    .strand-opt{padding:.5rem .85rem;cursor:pointer;font-size:.875rem;border-bottom:1px solid var(--stone);line-height:1.3}
     .strand-opt:last-child{border-bottom:none}
     .strand-opt:hover,.strand-opt.selected{background:var(--green-50);color:var(--green)}
+    .strand-sub{font-size:.75rem;color:var(--muted);margin-top:.1rem}
+
+    /* PRINT */
+    @media print{
+      .shell,.sidebar,.topbar,nav,.nav,.toolbar,button,.btn,#progress,.toast,
+      .scrim,[id="back"],[id="back2"],[id="back3"],
+      .section-title>button,.section-title>div,#reportPreview>div:last-child{display:none!important}
+      body{background:#fff!important}
+      .content-wrap{padding:0!important}
+      main{padding:.5cm!important;max-width:100%!important}
+      .card{box-shadow:none!important;border:1px solid #ddd!important}
+    }
+
+    /* MOBILE BOTTOM NAV — quick access buttons at bottom on very small screens */
+    @media(max-width:480px){
+      main{padding:.75rem .75rem 5rem}
+    }
     .strand-opt .strand-sub{font-size:.78rem;color:var(--muted);margin-top:.1rem}
 
     @media print{
@@ -1107,42 +1151,43 @@ async function dashboardAdmin(m){
   const outstanding=due-paid;
   m.innerHTML=`
     <h1>Good ${new Date().getHours()<12?'morning':'afternoon'}, ${esc((state.profile.full_name||'').split(' ')[0])}.</h1>
-    <p class="muted" style="margin-top:-.4rem;margin-bottom:1.75rem">${esc(state.school?.name||'')} &mdash; ${new Date().toLocaleDateString('en-KE',{weekday:'long',day:'numeric',month:'long'})}</p>
+    <p class="muted small" style="margin-top:-.25rem;margin-bottom:1.1rem">${esc(state.school?.name||'')} &mdash; ${new Date().toLocaleDateString('en-KE',{weekday:'long',day:'numeric',month:'long'})}</p>
     <div class="metrics">
-      <div class="metric lg"><div class="num">${students.count||0}</div><div class="lbl">Learners enrolled</div></div>
+      <div class="metric"><div class="num">${students.count||0}</div><div class="lbl">Learners enrolled</div></div>
       <div class="metric"><div class="num">${teachers.count||0}</div><div class="lbl">Active teachers</div></div>
       <div class="metric"><div class="num">${attRate===null?'—':attRate+'%'}</div><div class="lbl">Attendance today</div></div>
-      <div class="metric"><div class="num">${collection}%</div><div class="lbl">Fee collection rate</div></div>
-      <div class="metric"><div class="num">KSh ${outstanding.toLocaleString()}</div><div class="lbl">Fees outstanding</div></div>
+      <div class="metric"><div class="num">${collection}%</div><div class="lbl">Fee collection</div></div>
+      <div class="metric"><div class="num" style="font-size:1.6rem">KSh ${outstanding.toLocaleString()}</div><div class="lbl">Fees outstanding</div></div>
       <div class="metric"><div class="num">${leave.count||0}</div><div class="lbl">Leave pending</div></div>
     </div>
-    <div class="row" style="margin-top:1.5rem;align-items:flex-start;gap:1.25rem">
+    <div class="row" style="margin-top:.75rem;align-items:flex-start;gap:1rem">
       <div style="flex:2;min-width:0">
         <div class="card">
           <div class="section-title"><h3>Recent notices</h3><a href="#" class="sub" data-route="notices">View all</a></div>
           ${(notices.data||[]).length?(notices.data||[]).map(n=>`
-            <div style="padding:.65rem 0;border-bottom:1px solid var(--stone)">
-              <div style="display:flex;align-items:center;gap:.5rem">
-                <span style="font-weight:500">${esc(n.title)}</span>
-                <span class="badge amber" style="font-size:.7rem">${esc(n.audience)}</span>
+            <div style="padding:.6rem 0;border-bottom:1px solid var(--stone)">
+              <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+                <span style="font-weight:500;font-size:.9rem">${esc(n.title)}</span>
+                <span class="badge amber" style="font-size:.68rem">${esc(n.audience)}</span>
               </div>
               <div class="small muted">${new Date(n.created_at).toLocaleDateString('en-KE',{day:'numeric',month:'short'})}</div>
-              <div class="small" style="margin-top:.15rem">${esc((n.body||'').slice(0,140))}</div>
+              <div class="small" style="margin-top:.1rem;color:var(--ink-2)">${esc((n.body||'').slice(0,120))}</div>
             </div>`).join(''):`<div class="empty"><i class="ti ti-news"></i><div>No notices yet.</div></div>`}
         </div>
       </div>
-      <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:1rem">
-        <div class="card" style="cursor:pointer" onclick="navigate('fees')">
+      <div style="flex:1;min-width:180px;display:flex;flex-direction:column;gap:.85rem">
+        <div class="card" style="cursor:pointer;margin-bottom:0" onclick="navigate('fees')">
           <div class="small muted">Fee collection</div>
-          <div style="font-size:2rem;font-family:'Fraunces',serif;color:var(--green);line-height:1.1">${collection}%</div>
+          <div style="font-size:1.8rem;font-family:'Fraunces',serif;color:var(--green);line-height:1.1">${collection}%</div>
           <div class="small muted">KSh ${paid.toLocaleString()} of ${due.toLocaleString()}</div>
-          <div style="height:6px;background:var(--stone);border-radius:3px;margin-top:.6rem">
+          <div style="height:5px;background:var(--stone);border-radius:3px;margin-top:.5rem">
             <div style="height:100%;width:${Math.min(collection,100)}%;background:var(--green);border-radius:3px"></div>
           </div>
         </div>
-        <div class="card" style="cursor:pointer" onclick="navigate('leave')">
-          <div class="small muted">Leave requests pending</div>
-          <div style="font-size:2rem;font-family:'Fraunces',serif;color:${(leave.count||0)>0?'var(--terracotta)':'var(--green)'};line-height:1.1">${leave.count||0}</div>
+        <div class="card" style="cursor:pointer;margin-bottom:0" onclick="navigate('leave')">
+          <div class="small muted">Leave pending</div>
+          <div style="font-size:1.8rem;font-family:'Fraunces',serif;color:${(leave.count||0)>0?'var(--terracotta)':'var(--green)'};line-height:1.1">${leave.count||0}</div>
+          <div class="small muted">requests awaiting approval</div>
         </div>
       </div>
     </div>`;
@@ -1606,6 +1651,44 @@ function averageScore(scores){
   return Math.round((parts.reduce((a,b)=>a+b,0)/parts.length)*10)/10;
 }
 
+/* --- GRADING HELPERS --- */
+function renderGradeRows(students, displayAreas, amap, testCol, testNum){
+  return students.map((stu,si)=>`
+    <tr data-sid="${stu.id}">
+      <td>
+        <div style="font-weight:500;font-size:.85rem">${esc(stu.full_name)}</div>
+        <div class="small muted">${esc(stu.admission_number||'')}</div>
+      </td>
+      ${displayAreas.map(la=>{
+        const ex=amap[stu.id]?.[la];
+        const val=ex?.[testCol]??'';
+        const rc=val!==''&&val!=null?pctToRubricCode(+val):null;
+        const pts=rc?RUBRIC_BANDS.find(b=>b.code===rc)?.points||'':'';
+        return `<td style="text-align:center;padding:.3rem .35rem">
+          <input type="number" min="0" max="100"
+            class="pct-inp" data-la="${esc(la)}"
+            value="${val!==''&&val!=null?val:''}"
+            placeholder="—">
+          <div class="rc-badge" style="color:${rc?levelColor(rc):'var(--muted)'};font-size:.7rem">
+            ${rc?`${rc}<span style="color:var(--muted);font-weight:400"> (${pts})</span>`:''}
+          </div>
+        </td>`;
+      }).join('')}
+    </tr>`).join('');
+}
+
+function wireRubricBadges(){
+  document.querySelectorAll('.pct-inp').forEach(inp=>inp.oninput=()=>{
+    const v=inp.value.trim();
+    const badge=inp.parentElement.querySelector('.rc-badge');
+    if(v===''||isNaN(+v)){ badge.innerHTML=''; badge.style.color='var(--muted)'; return; }
+    const rc=pctToRubricCode(+v);
+    const pts=rc?RUBRIC_BANDS.find(b=>b.code===rc)?.points||'':'';
+    badge.style.color=rc?levelColor(rc):'var(--muted)';
+    badge.innerHTML=rc?`${rc} <span style="color:var(--muted)">(${pts})</span>`:'';
+  });
+}
+
 /* --- CBC GRADING MODULE --- */
 // New model (per teacher feedback & KNEC guidelines):
 // - No strands/sub-strands in grading
@@ -1620,38 +1703,35 @@ modules.grading = async (m)=>{
   const TESTS=['First Test','Second Test','Third Test'];
 
   m.innerHTML=`
-    <div class="section-title" style="margin-bottom:1.25rem">
+    <div class="section-title" style="margin-bottom:.85rem">
       <div>
         <h1 style="margin:0">CBC Grading</h1>
-        <p class="muted small" style="margin-top:.2rem">
-          Enter raw percentage marks per learning area. The system automatically classifies each mark
-          into the correct rubric band (EE1–BE2) and points. No strands required.
-        </p>
+        <p class="muted small" style="margin-top:.2rem">Enter percentage marks per learning area. Rubric code auto-fills.</p>
       </div>
     </div>
 
-    <div class="card" style="margin-bottom:1.25rem">
-      <div class="toolbar" style="margin-bottom:.5rem">
-        <div class="field"><label>Grade *</label>
+    <div class="card" style="margin-bottom:1rem">
+      <div class="toolbar">
+        <div class="field"><label>Grade</label>
           <select id="g">${GRADES.map(g=>`<option>${g}</option>`).join('')}</select></div>
         <div class="field"><label>Stream</label>
-          <input id="s" placeholder="e.g. A, B or leave blank"></div>
-        <div class="field"><label>Test *</label>
+          <input id="s" placeholder="A, B or blank"></div>
+        <div class="field"><label>Test</label>
           <select id="testSel">
             <option value="1">First Test</option>
             <option value="2">Second Test</option>
             <option value="3">Third Test</option>
           </select></div>
-        <div class="field"><label>Term *</label>
+        <div class="field"><label>Term</label>
           <select id="t"><option value="1">Term 1</option><option value="2">Term 2</option><option value="3">Term 3</option></select></div>
-        <div class="field"><label>Year *</label>
-          <input id="y" type="number" value="${new Date().getFullYear()}" style="width:90px"></div>
-        <button class="btn primary" id="load" style="align-self:flex-end">
-          <i class="ti ti-table"></i> Load class</button>
+        <div class="field"><label>Year</label>
+          <input id="y" type="number" value="${new Date().getFullYear()}"></div>
       </div>
-      <div class="small muted">
-        Rubric: EE1=90–99 &middot; EE2=75–89 &middot; ME1=58–74 &middot; ME2=41–57 &middot;
-        AE1=31–40 &middot; AE2=21–30 &middot; BE1=11–20 &middot; BE2=1–10
+      <button class="btn primary" id="load" style="width:100%">
+        <i class="ti ti-table"></i> Load class</button>
+      <div class="small muted" style="margin-top:.5rem;line-height:1.6">
+        EE1=90–99% &middot; EE2=75–89% &middot; ME1=58–74% &middot; ME2=41–57% &middot;
+        AE1=31–40% &middot; AE2=21–30% &middot; BE1=11–20% &middot; BE2=1–10%
       </div>
     </div>
 
@@ -1691,107 +1771,95 @@ modules.grading = async (m)=>{
       amap[a.student_id][a.learning_area]=a;
     });
 
+    // Which column stores this test's scores
     const testCol=testNum===1?'cat1':testNum===2?'cat2':'endterm_score';
 
-    // Get teacher id
+    // Get logged-in teacher record
     const {data:tch}=await sb.from('teachers').select('id,full_name')
       .eq('school_id',sid).eq('user_id',state.profile.id).maybeSingle();
 
+    // Get teacher's assigned subjects from their timetable (if they are a teacher role)
+    // This restricts the Learning Area columns to only their subjects
+    let teacherSubjects=null;
+    if(tch && state.profile.role==='teacher'){
+      const {data:slots=[]}=await sb.from('timetables')
+        .select('subject').eq('teacher_id',tch.id).eq('school_id',sid);
+      if(slots.length){
+        teacherSubjects=[...new Set(slots.map(s=>s.subject).filter(Boolean))];
+      }
+    }
+
+    // If teacher has assigned subjects, filter LA list to only those they teach
+    // Admin/headteacher always see all learning areas
+    let displayAreas=learningAreas;
+    if(teacherSubjects&&teacherSubjects.length){
+      // Fuzzy match: check if any timetable subject is contained in or matches the LA name
+      displayAreas=learningAreas.filter(la=>
+        teacherSubjects.some(subj=>
+          la.toLowerCase().includes(subj.toLowerCase().split('/')[0].trim())||
+          subj.toLowerCase().includes(la.toLowerCase().split('/')[0].trim())
+        )
+      );
+      // Fallback: if nothing matched, show all (teacher may not have timetable set yet)
+      if(!displayAreas.length) displayAreas=learningAreas;
+    }
+
     $('#gradingBody').innerHTML=`
       <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;flex-wrap:wrap;gap:.5rem">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.85rem;flex-wrap:wrap;gap:.5rem">
           <div>
-            <h3 style="margin:0">${esc(grade)}${stream?' — '+esc(stream):''}</h3>
-            <div class="small muted">${esc(testLabel)} &nbsp;&middot;&nbsp; Term ${term} ${year} &nbsp;&middot;&nbsp; ${students.length} learner${students.length>1?'s':''}</div>
+            <div style="font-weight:600;font-size:.95rem">${esc(grade)}${stream?' — '+esc(stream):''} <span class="badge amber" style="font-size:.72rem">Term ${term} ${year}</span></div>
+            <div class="small muted">${esc(testLabel)} &nbsp;&middot;&nbsp; ${students.length} learner${students.length>1?'s':''}${teacherSubjects&&teacherSubjects.length?' &middot; Your subjects: <b>'+teacherSubjects.join(', ')+'</b>':''}</div>
           </div>
-          <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-            <button class="btn secondary" id="fillAll">Set all to — (blank)</button>
-            <button class="btn primary" id="saveGrades"><i class="ti ti-device-floppy"></i> Save scores</button>
-          </div>
+          <button class="btn primary" id="saveGrades"><i class="ti ti-device-floppy"></i> Save</button>
         </div>
-
-        <div style="overflow-x:auto">
-        <table id="gradeTable" style="font-size:.85rem">
-          <thead>
-            <tr>
-              <th style="min-width:160px;position:sticky;left:0;background:var(--surface);z-index:2">Learner</th>
-              ${learningAreas.map(la=>`
-                <th style="min-width:100px;text-align:center">
-                  <div style="font-size:.75rem;line-height:1.2">${esc(la.length>18?la.slice(0,17)+'…':la)}</div>
-                </th>`).join('')}
-            </tr>
-          </thead>
-          <tbody>
-            ${students.map((s,si)=>`
-              <tr data-sid="${s.id}" style="${si%2?'background:var(--bg)':''}">
-                <td style="font-weight:500;position:sticky;left:0;background:${si%2?'var(--bg)':'var(--surface)'};z-index:1">
-                  ${esc(s.full_name)}
-                  <div class="small muted">${esc(s.admission_number||'')}</div>
-                </td>
-                ${learningAreas.map(la=>{
-                  const ex=amap[s.id]?.[la];
-                  const val=ex?.[testCol]??'';
-                  const rc=val!==''&&val!=null?pctToRubricCode(+val):null;
-                  const pts=rc?RUBRIC_BANDS.find(b=>b.code===rc)?.points||'':'' ;
-                  return `<td style="text-align:center;padding:.3rem .4rem">
-                    <input type="number" min="0" max="100"
-                      class="pct-inp" data-la="${esc(la)}"
-                      value="${val!==''&&val!=null?val:''}"
-                      placeholder="—"
-                      style="width:58px;text-align:center;font-size:.9rem;padding:.3rem .35rem;border-radius:4px;border:1px solid var(--stone)">
-                    <div class="rc-badge" style="margin-top:.2rem;font-size:.72rem;font-weight:600;color:${rc?levelColor(rc):'var(--muted)'};min-height:14px">
-                      ${rc?`${rc} <span style="color:var(--muted)">(${pts})</span>`:''}
-                    </div>
-                  </td>`;
-                }).join('')}
-              </tr>`).join('')}
-          </tbody>
-        </table>
+        <div class="field" style="margin-bottom:.75rem">
+          <input id="stuFilter" placeholder="Search learner by name or admission number...">
         </div>
-
-        <div class="small muted" style="margin-top:.75rem">
-          Type a percentage (0–100) in each cell. The rubric code and points appear automatically below the mark.
-          Only filled cells are saved — leave blank to skip a learning area.
+        <div class="grading-wrap">
+          <table id="gradeTable">
+            <thead><tr>
+              <th>Learner</th>
+              ${displayAreas.map(la=>`<th style="text-align:center">${esc(la.length>16?la.slice(0,15)+'…':la)}</th>`).join('')}
+            </tr></thead>
+            <tbody id="gradeBody">
+              ${renderGradeRows(students, displayAreas, amap, testCol, testNum)}
+            </tbody>
+          </table>
         </div>
+        <div class="small muted" style="margin-top:.5rem">Enter 0–100. Rubric updates live. Blank cells are skipped on save.</div>
       </div>`;
 
-    // Live rubric badge update
-    document.querySelectorAll('.pct-inp').forEach(inp=>inp.oninput=()=>{
-      const v=inp.value.trim();
-      const badge=inp.parentElement.querySelector('.rc-badge');
-      if(v===''||isNaN(+v)){ badge.innerHTML=''; return; }
-      const rc=pctToRubricCode(+v);
-      const pts=rc?RUBRIC_BANDS.find(b=>b.code===rc)?.points||'':'';
-      badge.style.color=rc?levelColor(rc):'var(--muted)';
-      badge.innerHTML=rc?`${rc} <span style="color:var(--muted)">(${pts})</span>`:'';
-    });
-
-    $('#fillAll').onclick=()=>{
-      document.querySelectorAll('.pct-inp').forEach(inp=>{
-        inp.value='';
-        inp.parentElement.querySelector('.rc-badge').innerHTML='';
-      });
+    // Student filter
+    $('#stuFilter').oninput=e=>{
+      const q=e.target.value.toLowerCase();
+      const filtered=q?students.filter(s=>(s.full_name||'').toLowerCase().includes(q)||(s.admission_number||'').toLowerCase().includes(q)):students;
+      $('#gradeBody').innerHTML=renderGradeRows(filtered, displayAreas, amap, testCol, testNum);
+      wireRubricBadges();
     };
 
+    wireRubricBadges();
+
     $('#saveGrades').onclick=async()=>{
-      const rows=[...document.querySelectorAll('#gradeTable tbody tr')];
+      const tableRows=[...document.querySelectorAll('#gradeTable tbody tr')];
       const toUpsert=[];
 
-      rows.forEach(row=>{
-        const studentId=row.dataset.sid;
-        learningAreas.forEach(la=>{
-          const inp=row.querySelector(`.pct-inp[data-la="${CSS.escape(la)}"]`);
+      tableRows.forEach(tableRow=>{
+        const studentId=tableRow.dataset.sid;
+        if(!studentId) return;
+        displayAreas.forEach(la=>{
+          const inp=tableRow.querySelector(`.pct-inp[data-la="${CSS.escape(la)}"]`);
           if(!inp) return;
           const raw=inp.value.trim();
           if(raw==='') return;
 
           const pct=+raw;
           if(isNaN(pct)||pct<0||pct>100){ toast(`Invalid score for ${la}: must be 0–100`,true); return; }
-          const existing=amap[studentId]?.[la];
+          const existingRow=amap[studentId]?.[la];
 
-          const t1=testNum===1?pct:(existing?.cat1??null);
-          const t2=testNum===2?pct:(existing?.cat2??null);
-          const t3=testNum===3?pct:(existing?.endterm_score??null);
+          const t1=testNum===1?pct:(existingRow?.cat1??null);
+          const t2=testNum===2?pct:(existingRow?.cat2??null);
+          const t3=testNum===3?pct:(existingRow?.endterm_score??null);
           const parts=[t1,t2,t3].filter(v=>v!=null);
           const avg=parts.length?Math.round(parts.reduce((a,b)=>a+b,0)/parts.length*10)/10:pct;
 
@@ -1805,7 +1873,7 @@ modules.grading = async (m)=>{
             cat1:t1,
             cat2:t2,
             endterm_score:t3,
-            remarks:existing?.remarks||null,
+            remarks:existingRow?.remarks||null,
           });
         });
       });
@@ -1816,17 +1884,17 @@ modules.grading = async (m)=>{
       btn.disabled=true; btn.textContent='Saving...';
 
       const {error}=await sb.from('assessments')
-        .upsert(toUpsert, {onConflict:'student_id,learning_area,term,year', ignoreDuplicates:false});
+        .upsert(toUpsert,{onConflict:'student_id,learning_area,term,year',ignoreDuplicates:false});
 
       btn.disabled=false; btn.innerHTML='<i class="ti ti-device-floppy"></i> Save scores';
 
       if(error){
-        console.error('Save error:', error);
+        console.error('Save error:',error);
         toast('Save failed: '+error.message,true);
         return;
       }
       toast(`Saved ${toUpsert.length} score${toUpsert.length>1?'s':''} for ${testLabel}.`);
-      $('#load').click(); // Reload to refresh amap with saved values
+      $('#load').click();
     };
   };
 };
@@ -2893,15 +2961,17 @@ modules.reports = async (m)=>{
     if(!sidu){ toast('Select a learner first.',true); return; }
     $('#rep').innerHTML=`<div class="muted small" style="padding:1rem">Generating report card...</div>`;
 
-    const [{data:s},{data:allAss=[]},{data:att=[]},{data:health=[]},{data:allStudents=[]}]=await Promise.all([
-      sb.from('students').select('*').eq('id',sidu).single(),
-      // Load strand-free assessments (strand_id is null)
+    // Load student first so we can use grade/stream for ranking query
+    const {data:s}=await sb.from('students').select('*').eq('id',sidu).single();
+    if(!s){ toast('Could not load learner record.',true); $('#rep').innerHTML=''; return; }
+
+    const [{data:allAss=[]},{data:att=[]},{data:health=[]},{data:allStudents=[]}]=await Promise.all([
       sb.from('assessments').select('learning_area,cat1,cat2,endterm_score,weighted_score,score,remarks,teachers(full_name)')
-        .eq('student_id',sidu).eq('term',term).eq('year',year).is('strand_id',null),
+        .eq('student_id',sidu).eq('term',term).eq('year',year).is('strand_id',null)
+        .not('learning_area','is',null),
       sb.from('student_attendance').select('status').eq('student_id',sidu),
       sb.from('student_health').select('condition_name,severity').eq('student_id',sidu),
-      // All students in same grade+stream for ranking
-      sb.from('students').select('id,full_name').eq('school_id',sid).eq('grade',s?.grade||'').eq('stream',s?.stream||''),
+      sb.from('students').select('id,full_name').eq('school_id',sid).eq('grade',s.grade||'').eq('stream',s.stream||''),
     ]);
 
     const daysPresent=att.filter(x=>x.status==='present').length;
@@ -2958,10 +3028,11 @@ modules.reports = async (m)=>{
 
     $('#rep').innerHTML=`<div id="reportPreview">
       <div class="card" style="padding:0;overflow:hidden">
-        <iframe id="reportFrame" style="width:100%;border:none;min-height:700px"></iframe>
+        <iframe id="reportFrame" style="width:100%;border:none;min-height:600px;display:block"></iframe>
       </div>
-      <div style="margin-top:.75rem;display:flex;gap:.5rem">
-        <button class="btn primary" id="prn2"><i class="ti ti-printer"></i> Print report card</button>
+      <div style="margin-top:.75rem;display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn primary" id="prn2"><i class="ti ti-printer"></i> Print / Save as PDF</button>
+        <p class="small muted" style="align-self:center;margin:0">On phone: use your browser's Share &rarr; Print option</p>
       </div>
     </div>`;
 
