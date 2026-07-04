@@ -643,6 +643,7 @@ on conflict (school_code) do nothing;
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 /* ============================================================================
  * CONFIG
@@ -1134,12 +1135,11 @@ modules.dashboard = async (m)=>{
 async function dashboardAdmin(m){
   const sid=state.profile.school_id;
   const today=new Date().toISOString().slice(0,10);
-  const [students,teachers,attToday,fees,notices,leave]=await Promise.all([
+  const [students,teachers,attToday,fees,leave]=await Promise.all([
     sb.from('students').select('id',{count:'exact',head:true}).eq('school_id',sid),
     sb.from('teachers').select('id',{count:'exact',head:true}).eq('school_id',sid).eq('employment_status','active'),
     sb.from('student_attendance').select('status').eq('school_id',sid).eq('date',today),
     sb.from('fee_balances').select('amount_due,amount_paid').eq('school_id',sid),
-    sb.from('notices').select('id,title,body,created_at,audience').eq('school_id',sid).order('created_at',{ascending:false}).limit(4),
     sb.from('leave_requests').select('id',{count:'exact',head:true}).eq('school_id',sid).eq('status','pending'),
   ]);
   const present=(attToday.data||[]).filter(r=>r.status==='present').length;
@@ -1163,16 +1163,15 @@ async function dashboardAdmin(m){
     <div class="row" style="margin-top:.75rem;align-items:flex-start;gap:1rem">
       <div style="flex:2;min-width:0">
         <div class="card">
-          <div class="section-title"><h3>Recent notices</h3><a href="#" class="sub" data-route="notices">View all</a></div>
-          ${(notices.data||[]).length?(notices.data||[]).map(n=>`
-            <div style="padding:.6rem 0;border-bottom:1px solid var(--stone)">
-              <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
-                <span style="font-weight:500;font-size:.9rem">${esc(n.title)}</span>
-                <span class="badge amber" style="font-size:.68rem">${esc(n.audience)}</span>
-              </div>
-              <div class="small muted">${new Date(n.created_at).toLocaleDateString('en-KE',{day:'numeric',month:'short'})}</div>
-              <div class="small" style="margin-top:.1rem;color:var(--ink-2)">${esc((n.body||'').slice(0,120))}</div>
-            </div>`).join(''):`<div class="empty"><i class="ti ti-news"></i><div>No notices yet.</div></div>`}
+          <div class="section-title"><h3>Quick school work</h3></div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.75rem">
+            <button class="btn secondary block" data-route="students"><i class="ti ti-users"></i> Register learners</button>
+            <button class="btn secondary block" data-route="grading"><i class="ti ti-clipboard-check"></i> CBC grading</button>
+            <button class="btn secondary block" data-route="reports"><i class="ti ti-file-text"></i> Report cards</button>
+            <button class="btn secondary block" data-route="knec"><i class="ti ti-table-export"></i> KNEC SBA export</button>
+            <button class="btn secondary block" data-route="fees"><i class="ti ti-wallet"></i> Fee tracking</button>
+            <button class="btn secondary block" data-route="timetable"><i class="ti ti-calendar"></i> Timetable</button>
+          </div>
         </div>
       </div>
       <div style="flex:1;min-width:180px;display:flex;flex-direction:column;gap:.85rem">
@@ -1199,11 +1198,10 @@ async function dashboardTeacher(m){
   const {data:tch}=await sb.from('teachers').select('id,full_name,specialisation').eq('school_id',sid).eq('user_id',state.profile.id).maybeSingle();
   const DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const todayDay=DAYS[new Date().getDay()];
-  const [myTimetable,myPlans,myAssignments,notices]=await Promise.all([
+  const [myTimetable,myPlans,myAssignments]=await Promise.all([
     tch?sb.from('timetables').select('grade,stream,subject,day_of_week,start_time,end_time').eq('teacher_id',tch.id).order('start_time'):{data:[]},
     tch?sb.from('lesson_plans').select('id,grade,planned_topic,delivery_date,status').eq('teacher_id',tch.id).order('delivery_date',{ascending:false}).limit(5):{data:[]},
     tch?sb.from('assignments').select('id,title,grade,due_date').eq('teacher_id',tch.id).order('due_date',{ascending:false}).limit(5):{data:[]},
-    sb.from('notices').select('id,title,body,created_at').eq('school_id',sid).in('audience',['all','teachers']).order('created_at',{ascending:false}).limit(3),
   ]);
   const todaySlots=(myTimetable.data||[]).filter(r=>r.day_of_week===todayDay);
   m.innerHTML=`
@@ -1229,12 +1227,12 @@ async function dashboardTeacher(m){
       </div>
       <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:1rem">
         <div class="card">
-          <h3>Notices</h3>
-          ${(notices.data||[]).length?(notices.data||[]).map(n=>`
-            <div style="padding:.4rem 0;border-bottom:1px solid var(--stone)">
-              <div style="font-weight:500;font-size:.88rem">${esc(n.title)}</div>
-              <div class="small muted">${new Date(n.created_at).toLocaleDateString('en-KE',{day:'numeric',month:'short'})}</div>
-            </div>`).join(''):`<div class="muted small">No notices.</div>`}
+          <h3>Class teacher tools</h3>
+          <div style="display:flex;flex-direction:column;gap:.5rem">
+            <button class="btn secondary block" data-route="students"><i class="ti ti-users"></i> Learner records</button>
+            <button class="btn secondary block" data-route="grading"><i class="ti ti-clipboard-check"></i> Enter CBC marks</button>
+            <button class="btn secondary block" data-route="reports"><i class="ti ti-file-text"></i> Report cards</button>
+          </div>
         </div>
         <div class="card">
           <h3>My assignments</h3>
@@ -1326,6 +1324,8 @@ modules.students = async (m)=>{
   m.innerHTML = `
     <div class="section-title"><h1 style="margin:0">Students</h1>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        ${canManage?`<button class="btn secondary" id="importStu"><i class="ti ti-upload"></i> Import Excel</button>`:''}
+        ${canManage?`<button class="btn secondary" id="tplStu"><i class="ti ti-file-spreadsheet"></i> Template</button>`:''}
         ${canManage?`<button class="btn secondary" id="dlXls"><i class="ti ti-file-spreadsheet"></i> Download list</button>`:''}
         ${canManage?`<button class="btn primary" id="addStu"><i class="ti ti-plus"></i> Add learner</button>`:''}
       </div>
@@ -1340,7 +1340,8 @@ modules.students = async (m)=>{
     </div>
     <div class="card" id="stuTable">
       ${renderStudentTable(students, 'All', '')}
-    </div>`;
+    </div>
+    <input type="file" id="studentImportFile" accept=".xlsx,.xls,.csv" style="display:none">`;
 
   const refresh = ()=>{
     const g=$('#gradeFilter').value, q=$('#search').value.toLowerCase();
@@ -1352,6 +1353,15 @@ modules.students = async (m)=>{
   refresh();
 
   if($('#addStu')) $('#addStu').onclick = ()=>studentForm(null);
+  if($('#importStu')) $('#importStu').onclick = ()=>$('#studentImportFile').click();
+  if($('#studentImportFile')) $('#studentImportFile').onchange = async (e)=>{
+    const file=e.target.files?.[0];
+    if(!file) return;
+    await importStudentsFile(file, sid, students);
+    e.target.value='';
+    navigate('students');
+  };
+  if($('#tplStu')) $('#tplStu').onclick = downloadStudentImportTemplate;
   if($('#dlXls')) $('#dlXls').onclick = ()=>{
     const g=$('#gradeFilter').value, q=$('#search').value.toLowerCase();
     const filtered = students.filter(s=>(g==='All'||s.grade===g)&&(!q||s.full_name.toLowerCase().includes(q)||( s.admission_number||'').toLowerCase().includes(q)));
@@ -1376,9 +1386,108 @@ function renderStudentTable(students, grade, query){
   </tr>`).join('')}</tbody></table>`;
 }
 
+function downloadStudentImportTemplate(){
+  const rows=[
+    ['Admission No','Full Name','Grade','Stream','Gender','Date of Birth','Parent Phone','Parent Email','Home County'],
+    ['ADM/001','Mary Wanjiku','Grade 4','A','Female','2015-02-14','0712345678','parent@example.com','Nairobi'],
+  ];
+  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='student-import-template.csv';
+  a.click();
+}
+
+function normalizeHeader(h){
+  return (h||'').toString().trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+}
+function pick(row, names){
+  for(const name of names){
+    const v=row[name];
+    if(v!==undefined && v!==null && String(v).trim()!=='') return String(v).trim();
+  }
+  return '';
+}
+function excelDateToISO(value){
+  if(!value) return '';
+  if(value instanceof Date && !isNaN(value)) return value.toISOString().slice(0,10);
+  if(typeof value==='number' && window.XLSX){
+    const d=XLSX.SSF.parse_date_code(value);
+    if(d) return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+  }
+  const s=String(value).trim();
+  const d=new Date(s);
+  return isNaN(d) ? s : d.toISOString().slice(0,10);
+}
+function parseCsv(text){
+  const rows=[]; let row=[], cur='', quoted=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i], next=text[i+1];
+    if(ch==='"' && quoted && next==='"'){ cur+='"'; i++; continue; }
+    if(ch==='"'){ quoted=!quoted; continue; }
+    if(ch===',' && !quoted){ row.push(cur); cur=''; continue; }
+    if((ch==='\n'||ch==='\r') && !quoted){
+      if(ch==='\r' && next==='\n') i++;
+      row.push(cur); cur='';
+      if(row.some(v=>String(v).trim()!=='')) rows.push(row);
+      row=[]; continue;
+    }
+    cur+=ch;
+  }
+  row.push(cur);
+  if(row.some(v=>String(v).trim()!=='')) rows.push(row);
+  return rows;
+}
+async function readStudentImportRows(file){
+  const ext=(file.name.split('.').pop()||'').toLowerCase();
+  let rows=[];
+  if(['xlsx','xls'].includes(ext)){
+    if(!window.XLSX) throw new Error('Excel reader is still loading. Refresh and try again.');
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array',cellDates:true});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+  } else {
+    rows=parseCsv(await file.text());
+  }
+  const headers=(rows.shift()||[]).map(normalizeHeader);
+  return rows.map(r=>{
+    const obj={};
+    headers.forEach((h,i)=>obj[h]=r[i]);
+    return obj;
+  });
+}
+async function importStudentsFile(file, schoolId, existingStudents=[]){
+  try{
+    const rawRows=await readStudentImportRows(file);
+    const existingAdm=new Set((existingStudents||[]).map(s=>(s.admission_number||'').trim().toLowerCase()).filter(Boolean));
+    const rows=rawRows.map(r=>({
+      school_id:schoolId,
+      admission_number:pick(r,['admission_no','admission_number','adm','adm_no','adm_number']),
+      full_name:pick(r,['full_name','name','learner_name','student_name','pupil_name']),
+      grade:pick(r,['grade','class']),
+      stream:pick(r,['stream','class_stream']),
+      gender:pick(r,['gender','sex']),
+      date_of_birth:excelDateToISO(r.date_of_birth||r.dob||r.birth_date),
+      contact_phone:pick(r,['parent_phone','guardian_phone','contact_phone','phone']),
+      contact_email:pick(r,['parent_email','guardian_email','contact_email','email']),
+      home_county:pick(r,['home_county','county']),
+    })).filter(r=>r.full_name);
+    const newRows=rows.filter(r=>!r.admission_number || !existingAdm.has(r.admission_number.toLowerCase()));
+    if(!newRows.length){ toast('No new learners found. Existing admission numbers were skipped.',true); return; }
+    newRows.forEach(r=>Object.keys(r).forEach(k=>{ if(r[k]==='') delete r[k]; }));
+    const {error}=await sb.from('students').insert(newRows);
+    if(error){ toast('Import failed: '+error.message,true); return; }
+    toast(`Imported ${newRows.length} learner${newRows.length!==1?'s':''}. You can edit details anytime.`);
+  }catch(err){
+    toast(err.message||String(err),true);
+  }
+}
+
 function studentForm(existing){
   const m=$('#main');
-  const GRADES=['PP1','PP2','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6','Grade 7','Grade 8','Grade 9'];
+  const GRADES=DEFAULT_GRADES;
   m.innerHTML = `<div class="card" style="max-width:700px">
     <a href="#" id="back" class="small"><i class="ti ti-arrow-left"></i> Back</a>
     <h2 style="margin-top:1rem">${existing?'Edit learner':'Enrol a new learner'}</h2>
@@ -1400,8 +1509,9 @@ function studentForm(existing){
 
       <h3 style="border-bottom:1px solid var(--stone);padding-bottom:.5rem;margin-top:.5rem">Academic placement</h3>
       <div class="row">
-        <div class="col field"><label>Grade</label>
-          <select name="grade">${GRADES.map(g=>`<option ${existing?.grade===g?'selected':''}>${g}</option>`).join('')}</select></div>
+        <div class="col field"><label>Grade / Class</label>
+          <input name="grade" list="gradeOptions" value="${esc(existing?.grade||'')}" placeholder="e.g. Grade 4">
+          <datalist id="gradeOptions">${GRADES.map(g=>`<option value="${esc(g)}"></option>`).join('')}</datalist></div>
         <div class="col field"><label>Stream / Class</label><input name="stream" value="${esc(existing?.stream||'')}"></div>
         <div class="col field"><label>Enrolment date</label><input type="date" name="enrolment_date" value="${esc(existing?.enrolment_date||'')}"></div>
       </div>
@@ -1623,6 +1733,54 @@ const CBC_LEARNING_AREAS = {
   'Grade 9':['English','Kiswahili / KSL','Mathematics','Integrated Science','Pre-Technical Studies','Agriculture and Nutrition','Social Studies','Creative Arts and Sports','Religious Education'],
 };
 
+const DEFAULT_GRADES = ['PP1','PP2','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6','Grade 7','Grade 8','Grade 9'];
+function gradeSortValue(grade){
+  const g=(grade||'').trim();
+  if(g==='PP1') return 1;
+  if(g==='PP2') return 2;
+  const m=g.match(/Grade\s+(\d+)/i);
+  return m ? 10 + Number(m[1]) : 999;
+}
+function sortGrades(grades){
+  return [...new Set((grades||[]).filter(Boolean))].sort((a,b)=>gradeSortValue(a)-gradeSortValue(b)||a.localeCompare(b));
+}
+function schoolGradeList(students=[], strands=[]){
+  return sortGrades([...DEFAULT_GRADES, ...students.map(s=>s.grade), ...strands.map(s=>s.grade)]);
+}
+function schoolLearningAreas(grade, strands=[]){
+  const custom=[...new Set((strands||[])
+    .filter(s=>!grade || s.grade===grade)
+    .map(s=>s.subject)
+    .filter(Boolean))];
+  const defaults=CBC_LEARNING_AREAS[grade]||[];
+  return [...new Set([...custom, ...defaults])];
+}
+function autoLearningAreaRemark(area, avg){
+  if(avg==null) return '';
+  if(avg>=75) return `Strong performance in ${area}. Keep extending the learner with more challenging tasks.`;
+  if(avg>=58) return `Good progress in ${area}. Continue regular practice to strengthen mastery.`;
+  if(avg>=41) return `Fair progress in ${area}. The learner needs guided practice and closer follow-up.`;
+  if(avg>=21) return `The learner is approaching expectations in ${area}. Provide extra support and frequent practice.`;
+  return `The learner needs targeted support in ${area}. Arrange remedial activities and close monitoring.`;
+}
+function autoOverallComment(avg, learnerName='The learner'){
+  const name=(learnerName||'The learner').split(' ')[0]||'The learner';
+  if(avg==null) return 'Assessment records are incomplete. Please update the learner scores before issuing this report.';
+  if(avg>=75) return `${name} has shown excellent mastery of the learning areas and should keep up the strong effort.`;
+  if(avg>=58) return `${name} is making good progress and should continue practising consistently.`;
+  if(avg>=41) return `${name} has made fair progress but needs more support in weaker learning areas.`;
+  if(avg>=21) return `${name} is improving gradually and requires regular guidance from teachers and guardians.`;
+  return `${name} requires urgent academic support, close monitoring, and consistent remedial work.`;
+}
+function autoHoiComment(avg){
+  if(avg==null) return 'Report reviewed. Complete assessment data is required for final issuance.';
+  if(avg>=75) return 'Excellent work. The school encourages continued discipline, confidence and consistency.';
+  if(avg>=58) return 'Good effort. Maintain the positive attitude and keep improving steadily.';
+  if(avg>=41) return 'Fair effort. More commitment and guided practice will improve the next results.';
+  if(avg>=21) return 'More support is needed. The school will work with the learner and parent to improve outcomes.';
+  return 'Immediate intervention is recommended. Parent, class teacher and school leadership should follow up closely.';
+}
+
 // CBC Core Competencies (tracked on every report)
 const CORE_COMPETENCIES = [
   'Communication and Collaboration',
@@ -1699,15 +1857,21 @@ function wireRubricBadges(){
 
 modules.grading = async (m)=>{
   const sid=state.profile.school_id;
-  const GRADES=['PP1','PP2','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6','Grade 7','Grade 8','Grade 9'];
   const TESTS=['First Test','Second Test','Third Test'];
+  const [{data:allStudents=[]},{data:allStrands=[]}]=await Promise.all([
+    sb.from('students').select('grade').eq('school_id',sid),
+    sb.from('cbc_strands').select('id,grade,subject,strand,sub_strand').eq('school_id',sid).order('grade').order('subject'),
+  ]);
+  const GRADES=schoolGradeList(allStudents, allStrands);
+  const canManageSubjects=['admin','headteacher'].includes(state.profile.role);
 
   m.innerHTML=`
     <div class="section-title" style="margin-bottom:.85rem">
       <div>
         <h1 style="margin:0">CBC Grading</h1>
-        <p class="muted small" style="margin-top:.2rem">Enter percentage marks per learning area. Rubric code auto-fills.</p>
+        <p class="muted small" style="margin-top:.2rem">Enter marks per learning area. Schools can add their own classes and subjects.</p>
       </div>
+      ${canManageSubjects?`<button class="btn secondary" id="manageAreas"><i class="ti ti-settings"></i> Manage subjects</button>`:''}
     </div>
 
     <div class="card" style="margin-bottom:1rem">
@@ -1741,7 +1905,7 @@ modules.grading = async (m)=>{
     const grade=$('#g').value, stream=$('#s').value.trim(),
           testNum=+$('#testSel').value, term=+$('#t').value, year=+$('#y').value;
     const testLabel=TESTS[testNum-1];
-    const learningAreas=CBC_LEARNING_AREAS[grade]||[];
+    const learningAreas=schoolLearningAreas(grade, allStrands);
 
     // Load students
     let sq=sb.from('students').select('id,full_name,admission_number')
@@ -1789,7 +1953,7 @@ modules.grading = async (m)=>{
       }
     }
 
-    // If teacher has assigned subjects, filter LA list to only those they teach
+    // If teacher has assigned subjects, filter learning areas to only those they teach
     // Admin/headteacher always see all learning areas
     let displayAreas=learningAreas;
     if(teacherSubjects&&teacherSubjects.length){
@@ -1897,7 +2061,89 @@ modules.grading = async (m)=>{
       $('#load').click();
     };
   };
+  if($('#manageAreas')) $('#manageAreas').onclick=()=>openLearningAreaManager();
 };
+
+async function openLearningAreaManager(){
+  const m=$('#main');
+  const sid=state.profile.school_id;
+  const [{data:students=[]},{data:strands=[]}]=await Promise.all([
+    sb.from('students').select('grade').eq('school_id',sid),
+    sb.from('cbc_strands').select('*').eq('school_id',sid).order('grade').order('subject'),
+  ]);
+  const grades=schoolGradeList(students, strands);
+  const selected=state._areaGrade||grades[0]||'Grade 1';
+  const areas=schoolLearningAreas(selected, strands);
+  m.innerHTML=`
+    <a href="#" id="backGrade" class="small"><i class="ti ti-arrow-left"></i> Back to CBC grading</a>
+    <div class="section-title" style="margin-top:1rem">
+      <div>
+        <h1 style="margin:0">Manage CBC subjects</h1>
+        <p class="muted small" style="margin-top:.2rem">Add the learning areas your school uses. They will appear in grading, report cards and KNEC export.</p>
+      </div>
+    </div>
+    <div class="row" style="align-items:flex-start">
+      <div class="col card" style="min-width:260px">
+        <h3>Class / Grade</h3>
+        <div class="field">
+          <label>Choose existing class</label>
+          <select id="areaGrade">${grades.map(g=>`<option ${g===selected?'selected':''}>${esc(g)}</option>`).join('')}</select>
+        </div>
+        <div class="field">
+          <label>Or type a new class</label>
+          <input id="newGrade" placeholder="e.g. Grade 10 or Class 8">
+        </div>
+        <button class="btn secondary block" id="useNewGrade">Use this class</button>
+      </div>
+      <div class="col card" style="min-width:280px">
+        <h3>${esc(selected)} subjects</h3>
+        ${areas.length?`<table><thead><tr><th>Learning area</th><th></th></tr></thead><tbody>
+          ${areas.map(a=>{
+            const custom=strands.find(s=>s.grade===selected&&s.subject===a);
+            return `<tr><td>${esc(a)}</td><td>${custom?`<a href="#" class="small del-area" data-id="${custom.id}" style="color:var(--terracotta)">Remove</a>`:'<span class="small muted">CBC default</span>'}</td></tr>`;
+          }).join('')}
+        </tbody></table>`:`<div class="muted small">No subjects yet.</div>`}
+      </div>
+      <div class="col card" style="min-width:260px">
+        <h3>Add subject</h3>
+        <form id="areaForm" class="stack">
+          <div class="field"><label>Learning area / Subject</label><input name="subject" required placeholder="e.g. Computer Studies"></div>
+          <div class="field"><label>Strand / Topic</label><input name="strand" placeholder="General"></div>
+          <div class="field"><label>Sub-strand</label><input name="sub_strand" placeholder="School configured"></div>
+          <button class="btn primary">Add subject</button>
+        </form>
+      </div>
+    </div>`;
+  $('#backGrade').onclick=(e)=>{e.preventDefault();navigate('grading');};
+  $('#areaGrade').onchange=()=>{state._areaGrade=$('#areaGrade').value;openLearningAreaManager();};
+  $('#useNewGrade').onclick=()=>{
+    const g=$('#newGrade').value.trim();
+    if(!g){ toast('Type the class name first.',true); return; }
+    state._areaGrade=g; openLearningAreaManager();
+  };
+  $$('.del-area').forEach(a=>a.onclick=async(e)=>{
+    e.preventDefault();
+    if(!confirm('Remove this school-added subject? Existing scores will remain, but the subject will stop showing as a configured option.')) return;
+    const {error}=await sb.from('cbc_strands').delete().eq('id',a.dataset.id);
+    if(error){ toast(error.message,true); return; }
+    toast('Subject removed'); openLearningAreaManager();
+  });
+  $('#areaForm').onsubmit=async(e)=>{
+    e.preventDefault();
+    const f=Object.fromEntries(new FormData(e.target));
+    const grade=state._areaGrade||$('#areaGrade')?.value||selected;
+    const payload={
+      school_id:sid,
+      grade,
+      subject:f.subject.trim(),
+      strand:(f.strand||'General').trim(),
+      sub_strand:(f.sub_strand||'School configured').trim(),
+    };
+    const {error}=await sb.from('cbc_strands').insert(payload);
+    if(error){ toast('Could not add subject: '+error.message,true); return; }
+    toast('Subject added'); openLearningAreaManager();
+  };
+}
 
 
 /* --- ASSIGNMENTS --- */
@@ -2328,12 +2574,16 @@ modules.timetable = async (m)=>{
   const { data:rows=[] } = await sb.from('timetables').select('*, teachers(full_name)').eq('school_id',sid);
   const DAYS=['Mon','Tue','Wed','Thu','Fri'];
   m.innerHTML = `<div class="section-title"><h1 style="margin:0">Timetable</h1>
-    ${['admin','headteacher'].includes(state.profile.role)?`<button class="btn primary" id="add">Add slot</button>`:''}</div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      <button class="btn secondary" id="printTimetable"><i class="ti ti-printer"></i> Print timetable</button>
+      ${['admin','headteacher'].includes(state.profile.role)?`<button class="btn primary" id="add">Add slot</button>`:''}
+    </div></div>
     <div class="card">${rows.length?`
       <table><thead><tr><th>Day</th><th>Time</th><th>Grade</th><th>Stream</th><th>Subject</th><th>Teacher</th></tr></thead>
       <tbody>${rows.sort((a,b)=>DAYS.indexOf(a.day_of_week)-DAYS.indexOf(b.day_of_week) || (a.start_time||'').localeCompare(b.start_time||'')).map(r=>`
         <tr><td>${esc(r.day_of_week)}</td><td>${esc(r.start_time||'')} \u2013 ${esc(r.end_time||'')}</td><td>${esc(r.grade)}</td><td>${esc(r.stream||'')}</td><td>${esc(r.subject)}</td><td>${esc(r.teachers?.full_name||'')}</td></tr>`).join('')}</tbody></table>
       `:`<div class="empty"><i class="ti ti-calendar-time"></i><div>No timetable entries yet.</div></div>`}</div>`;
+  $('#printTimetable').onclick=()=>printTimetable(rows);
   if($('#add')) $('#add').onclick = async ()=>{
     const { data:teachers=[] } = await sb.from('teachers').select('id,full_name').eq('school_id',sid);
     m.innerHTML = `<div class="card" style="max-width:560px"><h2>Add timetable slot</h2>
@@ -2365,6 +2615,61 @@ modules.timetable = async (m)=>{
     };
   };
 };
+
+function printTimetable(rows=[]){
+  const school=state.school||{};
+  const DAYS=['Mon','Tue','Wed','Thu','Fri'];
+  const sorted=[...rows].sort((a,b)=>
+    (a.grade||'').localeCompare(b.grade||'') ||
+    (a.stream||'').localeCompare(b.stream||'') ||
+    DAYS.indexOf(a.day_of_week)-DAYS.indexOf(b.day_of_week) ||
+    (a.start_time||'').localeCompare(b.start_time||'')
+  );
+  const groups={};
+  sorted.forEach(r=>{
+    const key=`${r.grade||'Class'} ${r.stream||''}`.trim();
+    if(!groups[key]) groups[key]=[];
+    groups[key].push(r);
+  });
+  const html=`<!doctype html><html><head><meta charset="utf-8"><title>Timetable</title>
+  <style>
+    @page{size:A4 landscape;margin:1cm}
+    *{box-sizing:border-box}
+    body{font-family:Arial,Helvetica,sans-serif;color:#152018;margin:0;background:#fff;font-size:12px}
+    .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1a3c2a;padding-bottom:10px;margin-bottom:14px}
+    .school{font-size:22px;font-weight:800;text-transform:uppercase;color:#1a3c2a}
+    .sub{font-size:12px;color:#555;margin-top:3px}
+    .date{text-align:right;font-size:11px;color:#555}
+    h2{font-size:15px;margin:18px 0 8px;color:#1a3c2a}
+    table{width:100%;border-collapse:collapse;margin-bottom:12px;page-break-inside:avoid}
+    th{background:#1a3c2a;color:#fff;text-align:left;padding:7px;font-size:11px}
+    td{border:1px solid #d8ded8;padding:7px;vertical-align:top}
+    tr:nth-child(even) td{background:#f7fbf7}
+    .time{font-weight:700;white-space:nowrap}
+    .empty{border:1px dashed #aaa;padding:20px;text-align:center;color:#777}
+    @media(max-width:700px){body{font-size:11px}.school{font-size:17px}th,td{padding:5px}}
+  </style></head><body>
+    <div class="head">
+      <div><div class="school">${esc(school.name||'School Timetable')}</div><div class="sub">Printable weekly timetable</div></div>
+      <div class="date">Generated ${new Date().toLocaleDateString('en-KE',{day:'numeric',month:'long',year:'numeric'})}</div>
+    </div>
+    ${Object.keys(groups).length?Object.entries(groups).map(([klass,items])=>`
+      <h2>${esc(klass)}</h2>
+      <table>
+        <thead><tr><th>Day</th><th>Time</th><th>Learning Area</th><th>Teacher</th></tr></thead>
+        <tbody>${items.map(r=>`<tr>
+          <td>${esc(r.day_of_week||'')}</td>
+          <td class="time">${esc(r.start_time||'')} - ${esc(r.end_time||'')}</td>
+          <td>${esc(r.subject||'')}</td>
+          <td>${esc(r.teachers?.full_name||'')}</td>
+        </tr>`).join('')}</tbody>
+      </table>`).join(''):'<div class="empty">No timetable entries yet.</div>'}
+    <script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script>
+  </body></html>`;
+  const w=window.open('','_blank');
+  w.document.write(html);
+  w.document.close();
+}
 
 /* --- TEACHERS --- */
 modules.teachers = async (m)=>{
@@ -2965,13 +3270,14 @@ modules.reports = async (m)=>{
     const {data:s}=await sb.from('students').select('*').eq('id',sidu).single();
     if(!s){ toast('Could not load learner record.',true); $('#rep').innerHTML=''; return; }
 
-    const [{data:allAss=[]},{data:att=[]},{data:health=[]},{data:allStudents=[]}]=await Promise.all([
+    const [{data:allAss=[]},{data:att=[]},{data:health=[]},{data:allStudents=[]},{data:allStrands=[]}]=await Promise.all([
       sb.from('assessments').select('learning_area,cat1,cat2,endterm_score,weighted_score,score,remarks,teachers(full_name)')
         .eq('student_id',sidu).eq('term',term).eq('year',year).is('strand_id',null)
         .not('learning_area','is',null),
       sb.from('student_attendance').select('status').eq('student_id',sidu),
       sb.from('student_health').select('condition_name,severity').eq('student_id',sidu),
       sb.from('students').select('id,full_name').eq('school_id',sid).eq('grade',s.grade||'').eq('stream',s.stream||''),
+      sb.from('cbc_strands').select('grade,subject').eq('school_id',sid),
     ]);
 
     const daysPresent=att.filter(x=>x.status==='present').length;
@@ -2981,7 +3287,7 @@ modules.reports = async (m)=>{
     const laMap={};
     allAss.forEach(a=>{ laMap[a.learning_area]=a; });
 
-    const laOrder=(CBC_LEARNING_AREAS[s.grade||'']||Object.keys(laMap));
+    const laOrder=(schoolLearningAreas(s.grade||'', allStrands).length?schoolLearningAreas(s.grade||'', allStrands):Object.keys(laMap));
     const laRows=laOrder.map(la=>{
       const a=laMap[la];
       if(!a) return {la,t1:null,t2:null,t3:null,avg:null,rc:null,pts:null,remarks:'',instructor:''};
@@ -2992,7 +3298,7 @@ modules.reports = async (m)=>{
       const avg=parts.length?Math.round(parts.reduce((p,c)=>p+c,0)/parts.length*10)/10:null;
       const rc=avg!=null?pctToRubricCode(avg):null;
       const pts=rc?RUBRIC_BANDS.find(b=>b.code===rc)?.points||null:null;
-      return {la,t1,t2,t3,avg,rc,pts,remarks:a.remarks||'',instructor:a.teachers?.full_name||''};
+      return {la,t1,t2,t3,avg,rc,pts,remarks:a.remarks||autoLearningAreaRemark(la, avg),instructor:a.teachers?.full_name||''};
     }).filter(r=>r.avg!=null||r.t1!=null||r.t2!=null||r.t3!=null);
 
     // Summary stats
@@ -3050,6 +3356,8 @@ modules.reports = async (m)=>{
 function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMarks,maxMarks,overallAvg,overallRc,overallPts,myRank,streamSize,health,school}){
   const BAND_COLOR={EE1:'#1b5e20',EE2:'#2e7d32',ME1:'#1565c0',ME2:'#1976d2',AE1:'#e65100',AE2:'#f57c00',BE1:'#b71c1c',BE2:'#c62828'};
   const rcColor=rc=>BAND_COLOR[rc]||'#333';
+  const classTeacherComment=autoOverallComment(overallAvg, s.full_name);
+  const hoiComment=autoHoiComment(overallAvg);
   const fmt=v=>v!=null?v:'—';
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -3222,11 +3530,11 @@ function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMar
   <!-- Facilitator remarks -->
   <div class="remarks-section">
     <div class="r-lbl">Class Teacher's comments:</div>
-    <div class="r-body">&nbsp;</div>
+    <div class="r-body">${esc(classTeacherComment)}</div>
   </div>
   <div class="remarks-section">
     <div class="r-lbl">HOI's comments:</div>
-    <div class="r-body">&nbsp;</div>
+    <div class="r-body">${esc(hoiComment)}</div>
   </div>
 
   <!-- Signatures -->
@@ -3303,11 +3611,13 @@ modules.notices = async (m)=>{
 /* --- KNEC SBA EXPORT --- */
 modules.knec = async (m)=>{
   const sid = state.profile.school_id;
+  const {data:allStudents=[]}=await sb.from('students').select('grade').eq('school_id',sid);
+  const grades=sortGrades(allStudents.map(s=>s.grade));
   m.innerHTML = `<h1>KNEC SBA export</h1>
     <div class="card" style="max-width:640px">
       <p class="muted">Export learner CBC scores in the format expected by the KNEC SBA portal.</p>
       <div class="toolbar">
-        <div class="field"><label>Grade</label><input id="g" required></div>
+        <div class="field"><label>Grade / Class</label><select id="g">${grades.map(g=>`<option>${esc(g)}</option>`).join('')}</select></div>
         <div class="field"><label>Term</label><select id="t"><option>1</option><option>2</option><option>3</option></select></div>
         <div class="field"><label>Year</label><input id="y" type="number" value="${new Date().getFullYear()}"></div>
         <button class="btn primary" id="dl">Download CSV</button>
@@ -3317,11 +3627,14 @@ modules.knec = async (m)=>{
     const grade=$('#g').value, term=+$('#t').value, year=+$('#y').value;
     const { data:students=[] } = await sb.from('students').select('id,full_name,admission_number,gender,grade').eq('school_id',sid).eq('grade',grade);
     const ids = students.map(s=>s.id); if(!ids.length){ toast('No learners in that grade',true); return; }
-    const { data:a=[] } = await sb.from('assessments').select('student_id,score, cbc_strands(subject,strand,sub_strand)').in('student_id',ids).eq('term',term).eq('year',year);
-    const rows = [['KNEC_Code','Admission_No','Learner_Name','Gender','Grade','Subject','Strand','Sub_Strand','Term','Year','Performance_Level']];
+    const { data:a=[] } = await sb.from('assessments')
+      .select('student_id,learning_area,score,weighted_score,cat1,cat2,endterm_score')
+      .in('student_id',ids).eq('term',term).eq('year',year)
+      .is('strand_id',null).not('learning_area','is',null);
+    const rows = [['KNEC_Code','Admission_No','Learner_Name','Gender','Grade','Learning_Area','Term','Year','First_Test','Second_Test','Third_Test','Average','Performance_Level']];
     a.forEach(x=>{
       const s = students.find(st=>st.id===x.student_id);
-      rows.push([state.school?.knec_code||'',s.admission_number||'',s.full_name,s.gender||'',s.grade,x.cbc_strands?.subject||'',x.cbc_strands?.strand||'',x.cbc_strands?.sub_strand||'',term,year,x.score]);
+      rows.push([state.school?.knec_code||'',s?.admission_number||'',s?.full_name||'',s?.gender||'',s?.grade||'',x.learning_area||'',term,year,x.cat1??'',x.cat2??'',x.endterm_score??'',x.weighted_score??'',x.score||'']);
     });
     const csv = rows.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], {type:'text/csv'});
