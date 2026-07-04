@@ -692,6 +692,43 @@ const TAGLINE  = 'A school management system built for Kenya\u2019s CBC classroo
   alter table public.students add column if not exists emergency_relationship text;
   alter table public.students add column if not exists emergency_phone text;
 
+  -- Fee payment automation settings. Keep Daraja secrets in Edge Function secrets,
+  -- not inside this browser app.
+  -- Manual Paybill flow:
+  -- Validation URL:    /functions/v1/fee-payment-validation
+  -- Confirmation URL:  /functions/v1/fee-payment-callback
+  -- Parent account no: learner admission number, unless you set a prefix below.
+  alter table public.schools add column if not exists daraja_environment text default 'sandbox';
+  alter table public.schools add column if not exists fee_paybill text;
+  alter table public.schools add column if not exists fee_transaction_type text default 'CustomerPayBillOnline';
+  alter table public.schools add column if not exists fee_account_mode text default 'admission_number';
+  alter table public.schools add column if not exists fee_account_prefix text default '';
+  alter table public.schools add column if not exists fee_auto_allocate_excess boolean default true;
+  alter table public.schools add column if not exists fee_payment_instructions text;
+
+  alter table public.mpesa_payments add column if not exists fee_balance_id uuid references public.fee_balances(id) on delete set null;
+  alter table public.mpesa_payments add column if not exists checkout_request_id text;
+  alter table public.mpesa_payments add column if not exists merchant_request_id text;
+  alter table public.mpesa_payments add column if not exists account_reference text;
+  alter table public.mpesa_payments add column if not exists result_code text;
+  alter table public.mpesa_payments add column if not exists result_description text;
+  alter table public.mpesa_payments add column if not exists allocation_status text default 'pending';
+  alter table public.mpesa_payments add column if not exists excess_amount numeric default 0;
+  alter table public.mpesa_payments add column if not exists raw_callback jsonb;
+  create unique index if not exists mpesa_payments_checkout_unique on public.mpesa_payments(checkout_request_id) where checkout_request_id is not null;
+
+  create table if not exists public.fee_credits (
+    id uuid primary key default gen_random_uuid(),
+    student_id uuid references public.students(id) on delete cascade,
+    school_id uuid references public.schools(id) on delete cascade,
+    source_payment_id uuid references public.mpesa_payments(id) on delete set null,
+    amount numeric not null default 0,
+    remaining_amount numeric not null default 0,
+    status text default 'open',
+    notes text,
+    created_at timestamptz default now()
+  );
+
   -- Create storage bucket for assignment PDFs (run in Supabase dashboard > Storage)
   -- Bucket name: school-files
   -- Public: true
@@ -2819,34 +2856,91 @@ modules.leave = async (m)=>{
 };
 
 /* --- FEES --- */
+function feeAccountReference(student={}, balance={}, school=state.school||{}){
+  const mode=school.fee_account_mode||'admission_number';
+  const prefix=school.fee_account_prefix||'';
+  const base = mode==='student_id' ? student.id : (student.admission_number||student.id||'');
+  return `${prefix}${base}`.trim();
+}
+function feeStatusText(balance){
+  const bal=+balance||0;
+  return bal>0 ? `KSh ${bal.toLocaleString()} outstanding` : 'Cleared';
+}
+function normalizeKePhone(phone){
+  let p=(phone||'').replace(/\D/g,'');
+  if(p.startsWith('0')) p='254'+p.slice(1);
+  if(p.startsWith('7')||p.startsWith('1')) p='254'+p;
+  return p;
+}
+async function startParentFeePayment({fee_balance_id, student_id, amount, phone}){
+  const cleanPhone=normalizeKePhone(phone);
+  if(!/^254(7|1)\d{8}$/.test(cleanPhone)){
+    toast('Enter a valid Safaricom phone number, for example 0712345678.', true);
+    return;
+  }
+  const {data,error}=await sb.functions.invoke('start-fee-payment',{
+    body:{fee_balance_id, student_id, amount:Number(amount), phone:cleanPhone}
+  });
+  if(error){
+    toast('Payment prompt failed: '+(error.message||'Edge Function error'), true);
+    return;
+  }
+  if(!data?.ok){
+    toast(data?.message||'Payment prompt was not accepted.', true);
+    return;
+  }
+  toast('M-Pesa prompt sent. Enter PIN on the phone, then refresh Fees after confirmation.');
+}
+
 modules.fees = async (m)=>{
   const sid = state.profile.school_id;
   const role = state.profile.role;
   if(role==='parent'){
-    const { data:kids=[] } = await sb.from('students').select('id,full_name,grade').eq('parent_id',state.profile.id);
+    const { data:kids=[] } = await sb.from('students').select('id,full_name,grade,admission_number').eq('parent_id',state.profile.id);
     const ids = kids.map(k=>k.id);
     const { data:bals=[] } = ids.length? await sb.from('fee_balances').select('*').in('student_id',ids) : {data:[]};
+    const { data:recent=[] } = ids.length ? await sb.from('mpesa_payments').select('*').in('student_id',ids).order('created_at',{ascending:false}).limit(8) : {data:[]};
     m.innerHTML = `<h1>School fees</h1>
+      <div class="card" style="background:var(--green-50);border-color:var(--green);font-size:.9rem;line-height:1.7">
+        ${state.school?.fee_payment_instructions
+          ? esc(state.school.fee_payment_instructions)
+          : `Pay school fees using Paybill ${esc(state.school?.fee_paybill||'')} and your child's admission number as the account number. You may also use the Pay via M-Pesa button for a phone prompt.`}
+      </div>
       ${kids.length? kids.map(k=>{
         const b = bals.filter(x=>x.student_id===k.id);
         return `<div class="card"><h3>${esc(k.full_name)} <span class="small muted">${esc(k.grade||'')}</span></h3>
           ${b.length?`<table><thead><tr><th>Term</th><th>Year</th><th>Due</th><th>Paid</th><th>Balance</th><th></th></tr></thead>
-          <tbody>${b.map(x=>`<tr><td>${esc(x.term)}</td><td>${esc(x.year)}</td><td>KSh ${(+x.amount_due).toLocaleString()}</td><td>KSh ${(+x.amount_paid).toLocaleString()}</td><td>${+x.balance>0?`<span class="badge terra">KSh ${(+x.balance).toLocaleString()}</span>`:`<span class="badge">Cleared</span>`}</td><td>${+x.balance>0?`<button class="btn primary" style="height:32px;font-size:.82rem">Pay via M-Pesa</button>`:''}</td></tr>`).join('')}</tbody></table>`:'<div class="muted small">No fee records yet.</div>'}
+          <tbody>${b.map(x=>`<tr><td>${esc(x.term)}</td><td>${esc(x.year)}</td><td>KSh ${(+x.amount_due).toLocaleString()}</td><td>KSh ${(+x.amount_paid).toLocaleString()}</td><td>${+x.balance>0?`<span class="badge terra">${feeStatusText(x.balance)}</span>`:`<span class="badge">Cleared</span>`}</td><td>${+x.balance>0?`<button class="btn primary" style="height:32px;font-size:.82rem" data-pay="${x.id}" data-student="${k.id}" data-name="${esc(k.full_name)}" data-amount="${Math.max(0,+x.balance)}">Pay via M-Pesa</button>`:''}</td></tr>`).join('')}</tbody></table>`:'<div class="muted small">No fee records yet.</div>'}
+          ${recent.filter(p=>p.student_id===k.id).length?`<div style="margin-top:.8rem"><div class="small muted" style="margin-bottom:.35rem">Recent payments</div>
+            ${recent.filter(p=>p.student_id===k.id).map(p=>`<div class="small" style="display:flex;justify-content:space-between;border-top:1px solid var(--stone);padding:.35rem 0">
+              <span>${esc(p.mpesa_ref||p.checkout_request_id||'Pending')}</span>
+              <span><b>KSh ${(+p.amount||0).toLocaleString()}</b> - ${esc(p.allocation_status||p.status||'pending')}</span>
+            </div>`).join('')}</div>`:''}
           <button class="btn secondary" style="margin-top:.75rem;height:34px;font-size:.82rem" data-pdf="${k.id}" data-name="${esc(k.full_name)}"><i class="ti ti-file-text"></i> Download fee statement</button>
         </div>`;
       }).join('') : `<div class="card empty"><i class="ti ti-user-question"></i><div>No learners linked to your account yet.</div></div>`}`;
     m.querySelectorAll('[data-pdf]').forEach(b=>b.onclick=()=>printFeeStatement(b.dataset.pdf, b.dataset.name, bals.filter(x=>x.student_id===b.dataset.pdf)));
-    m.querySelectorAll('[data-pay]').forEach(b=>b.onclick=()=>toast('M-Pesa STK push will trigger once Daraja keys are configured.'));
+    m.querySelectorAll('[data-pay]').forEach(b=>b.onclick=async()=>{
+      const phone=prompt(`Enter Safaricom phone number to pay KSh ${Number(b.dataset.amount).toLocaleString()} for ${b.dataset.name}`);
+      if(!phone) return;
+      b.disabled=true; b.textContent='Sending prompt...';
+      await startParentFeePayment({fee_balance_id:b.dataset.pay, student_id:b.dataset.student, amount:b.dataset.amount, phone});
+      b.disabled=false; b.textContent='Pay via M-Pesa';
+    });
     return;
   }
 
-  const [{data:structs=[]},{data:allBals=[]}] = await Promise.all([
+  const [{data:structs=[]},{data:allBals=[]},{data:payments=[]},{data:credits=[]}] = await Promise.all([
     sb.from('fee_structures').select('*').eq('school_id',sid).order('grade'),
     sb.from('fee_balances').select('*, students(full_name,grade,admission_number)').eq('school_id',sid),
+    sb.from('mpesa_payments').select('*, students(full_name,admission_number,grade)').eq('school_id',sid).order('created_at',{ascending:false}).limit(20),
+    sb.from('fee_credits').select('*, students(full_name,admission_number,grade)').eq('school_id',sid).gt('remaining_amount',0).order('created_at',{ascending:false}).limit(20),
   ]);
 
   const due = allBals.reduce((a,b)=>a+(+b.amount_due||0),0);
   const paid = allBals.reduce((a,b)=>a+(+b.amount_paid||0),0);
+  const recentPayments=payments||[];
+  const openCredits=credits||[];
   const grades = ['All',...new Set(allBals.map(b=>b.students?.grade).filter(Boolean).sort())];
   const years = ['All',...new Set(allBals.map(b=>String(b.year)).filter(Boolean).sort().reverse())];
   const terms = ['All','1','2','3'];
@@ -2875,6 +2969,23 @@ modules.fees = async (m)=>{
         <div class="field"><label>Search</label><input id="qf" placeholder="Name or adm. no."></div>
       </div>
       <div id="feeTable">${renderFeeTable(allBals,'All','All','All','All','')}</div>
+    </div>
+    <div class="card"><div class="section-title"><h3>Recent M-Pesa / fee payments</h3></div>
+      ${recentPayments.length?`<table><thead><tr><th>Date</th><th>Learner</th><th>Reference</th><th>Amount</th><th>Status</th><th>Allocation</th></tr></thead><tbody>${recentPayments.map(p=>`<tr>
+        <td class="small muted">${new Date(p.payment_date||p.created_at).toLocaleString('en-KE')}</td>
+        <td>${esc(p.students?.full_name||'')}<div class="small muted">${esc(p.students?.admission_number||'')}</div></td>
+        <td>${esc(p.mpesa_ref||p.checkout_request_id||'')}</td>
+        <td>KSh ${(+p.amount||0).toLocaleString()}</td>
+        <td><span class="badge ${p.status==='completed'?'':'amber'}">${esc(p.status||'pending')}</span></td>
+        <td>${esc(p.allocation_status||'pending')}${+p.excess_amount>0?`<div class="small muted">Credit: KSh ${(+p.excess_amount).toLocaleString()}</div>`:''}</td>
+      </tr>`).join('')}</tbody></table>`:'<div class="muted small">No payment records yet.</div>'}
+    </div>
+    <div class="card"><div class="section-title"><h3>Fee credits carried forward</h3></div>
+      ${openCredits.length?`<table><thead><tr><th>Learner</th><th>Credit left</th><th>Notes</th></tr></thead><tbody>${openCredits.map(c=>`<tr>
+        <td>${esc(c.students?.full_name||'')}<div class="small muted">${esc(c.students?.admission_number||'')}</div></td>
+        <td><b style="color:var(--green)">KSh ${(+c.remaining_amount||0).toLocaleString()}</b></td>
+        <td class="small muted">${esc(c.notes||'Use on the next term balance')}</td>
+      </tr>`).join('')}</tbody></table>`:'<div class="muted small">No carried-forward credits.</div>'}
     </div>
     <div class="card"><div class="section-title"><h3>Fee structures</h3></div>
       ${structs.length?`<table><thead><tr><th>Grade</th><th>Term</th><th>Year</th><th>Amount</th><th>Description</th></tr></thead><tbody>${structs.map(s=>`<tr><td>${esc(s.grade)}</td><td>Term ${esc(s.term)}</td><td>${esc(s.year)}</td><td>KSh ${(+s.amount).toLocaleString()}</td><td>${esc(s.description||'')}</td></tr>`).join('')}</tbody></table>`:'<div class="muted small">No fee structures yet.</div>'}
@@ -3843,6 +3954,51 @@ modules.settings = async (m)=>{
       <p class="small muted">${esc(state.school?.name||'No school linked.')}</p>
       ${state.school?`<p class="small">School code: <b>${esc(state.school.school_code)}</b> &mdash; share this with teachers and parents joining your school.</p>`:''}
     </div>
+    ${isAdmin&&state.school?`<div class="card" style="max-width:640px">
+      <h3>Fee payments via M-Pesa</h3>
+      <p class="small muted">Main flow: parents pay manually using Paybill + admission number. Optional flow: parents can also click Pay via M-Pesa for an STK prompt. Consumer key, consumer secret and passkey must be saved as Supabase Edge Function secrets.</p>
+      <form id="feePaySettings" class="stack">
+        <div class="row">
+          <div class="col field"><label>Daraja mode</label>
+            <select name="daraja_environment">
+              <option value="sandbox" ${state.school.daraja_environment==='sandbox'?'selected':''}>Sandbox testing</option>
+              <option value="production" ${state.school.daraja_environment==='production'?'selected':''}>Production live</option>
+            </select></div>
+          <div class="col field"><label>Paybill / shortcode</label>
+            <input name="fee_paybill" value="${esc(state.school.fee_paybill||'')}" placeholder="e.g. 4024241"></div>
+        </div>
+        <div class="row">
+          <div class="col field"><label>Transaction type</label>
+            <select name="fee_transaction_type">
+              <option ${state.school.fee_transaction_type==='CustomerPayBillOnline'?'selected':''}>CustomerPayBillOnline</option>
+              <option ${state.school.fee_transaction_type==='CustomerBuyGoodsOnline'?'selected':''}>CustomerBuyGoodsOnline</option>
+            </select></div>
+          <div class="col field"><label>Account reference</label>
+            <select name="fee_account_mode">
+              <option value="admission_number" ${state.school.fee_account_mode!=='student_id'?'selected':''}>Use admission number</option>
+              <option value="student_id" ${state.school.fee_account_mode==='student_id'?'selected':''}>Use internal student ID</option>
+            </select></div>
+        </div>
+        <div class="row">
+          <div class="col field"><label>Account prefix (optional)</label>
+            <input name="fee_account_prefix" value="${esc(state.school.fee_account_prefix||'')}" placeholder="e.g. RADARI-"></div>
+          <div class="col field"><label>Overpayment handling</label>
+            <select name="fee_auto_allocate_excess">
+              <option value="true" ${state.school.fee_auto_allocate_excess!==false?'selected':''}>Keep as credit for next term</option>
+              <option value="false" ${state.school.fee_auto_allocate_excess===false?'selected':''}>Leave for manual allocation</option>
+            </select></div>
+        </div>
+        <div class="field"><label>Message shown to parents</label>
+          <textarea name="fee_payment_instructions" rows="3" placeholder="Example: Pay fees using the school Paybill and your child's admission number as the account number. Extra payment will be carried forward.">${esc(state.school.fee_payment_instructions||'')}</textarea></div>
+        <div class="small muted" style="line-height:1.6">
+          C2B validation URL: <code>${SUPABASE_URL}/functions/v1/fee-payment-validation</code><br>
+          C2B confirmation URL: <code>${SUPABASE_URL}/functions/v1/fee-payment-callback</code><br>
+          STK start URL: <code>${SUPABASE_URL}/functions/v1/start-fee-payment</code><br>
+          Register URLs helper: <code>${SUPABASE_URL}/functions/v1/fee-register-urls</code>
+        </div>
+        <button class="btn primary">Save payment settings</button>
+      </form>
+    </div>`:''}
     ${isAdmin?`<div class="card" style="max-width:560px;border:1px solid var(--amber)">
       <h3>Demo data</h3>
       <p class="small muted">Populate this school with sample students, teachers, assessments, attendance, fees, notices, and incidents so you can explore every feature immediately.</p>
@@ -3856,6 +4012,17 @@ modules.settings = async (m)=>{
     if(error) toast(error.message,true); else { toast('Saved'); Object.assign(state.profile, f); }
   };
   if($('#seedBtn')) $('#seedBtn').onclick = ()=>window.seedDemoData();
+  if($('#feePaySettings')) $('#feePaySettings').onsubmit=async(e)=>{
+    e.preventDefault();
+    const f=Object.fromEntries(new FormData(e.target));
+    f.fee_auto_allocate_excess = f.fee_auto_allocate_excess === 'true';
+    Object.keys(f).forEach(k=>{ if(f[k]==='') f[k]=null; });
+    const {data,error}=await sb.from('schools').update(f).eq('id',state.school.id).select('*').single();
+    if(error){ toast('Save failed. Run the fee payment SQL upgrade first: '+error.message,true); return; }
+    state.school=data;
+    toast('Fee payment settings saved');
+    navigate('settings');
+  };
 };
 
 /* ============================================================================
