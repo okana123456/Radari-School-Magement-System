@@ -353,6 +353,14 @@ on conflict (school_code) do nothing;
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Radari — CBC School Management</title>
+  <meta name="application-name" content="Radari" />
+  <meta name="apple-mobile-web-app-title" content="Radari" />
+  <meta name="theme-color" content="#1f4434" />
+  <meta name="msapplication-TileColor" content="#1f4434" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="/assets/radari-icon.svg" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/assets/radari-icon-192.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/assets/apple-touch-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Fraunces:wght@500;600&display=swap" rel="stylesheet" />
@@ -654,6 +662,12 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const APP_NAME = 'Radari';
 const TAGLINE  = 'A school management system built for Kenya\u2019s CBC classroom.';
+
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}
 
 /*
   ADDITIONAL SQL — run these in Supabase SQL editor if upgrading from an earlier version:

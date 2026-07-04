@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Radari">
+  <rect width="512" height="512" rx="112" fill="#1f4434"/>
+  <path d="M140 148c0-24 20-44 44-44h144c24 0 44 20 44 44v216c0 24-20 44-44 44H184c-24 0-44-20-44-44V148z" fill="#f7f4ee"/>
+  <path d="M184 144h144c5 0 8 4 8 8v212c0 5-3 8-8 8H184c-5 0-8-3-8-8V152c0-4 3-8 8-8z" fill="#ffffff"/>
+  <path d="M204 188h104M204 232h104M204 276h76" stroke="#1f4434" stroke-width="22" stroke-linecap="round"/>
+  <circle cx="322" cy="318" r="56" fill="#b9802a"/>
+  <path d="M299 318l16 16 33-38" fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M148 132l108-54 108 54-108 54-108-54z" fill="#d8d2c2"/>
+  <path d="M256 78l108 54-108 54-108-54 108-54z" fill="#f6e9c8"/>
+  <path d="M364 132v92" stroke="#b9802a" stroke-width="14" stroke-linecap="round"/>
+</svg>
