@@ -29,6 +29,20 @@ What you can control per school or individual teacher:
 - Discount or owner note
 
 
+What the owner dashboard shows:
+
+- Total workspaces
+- Active subscriptions
+- Expired or locked subscriptions
+- Schools
+- Individual teacher workspaces
+- Total users
+- Total learners
+- User signups this month
+- Expected monthly revenue
+- Subscription money collected this month
+
+
 How to identify a customer:
 
 Each school or individual teacher workspace shows an Owner ID.
@@ -39,4 +53,3 @@ Recommended owner login:
 
 Use your normal business email as the owner email.
 Do not put a plain password inside the app code.
-

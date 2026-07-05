@@ -4108,28 +4108,77 @@ modules.owner = async (m)=>{
 
   const load=async()=>{
     const term=($('#ownerSearch')?.value||'').trim().toLowerCase();
-    const {data:schools=[],error}=await sb.from('schools').select(`
-      id,name,type,school_code,created_at,
-      teacher_subscription_amount,school_monthly_price,
-      service_paid_until,service_status,service_last_paid_at,service_last_receipt,
-      service_discount_note,service_customer_code
-    `).order('created_at',{ascending:false});
+    const [schoolRes,userRes,learnerRes,paymentRes] = await Promise.all([
+      sb.from('schools').select(`
+        id,name,type,school_code,created_at,
+        teacher_subscription_amount,school_monthly_price,
+        service_paid_until,service_status,service_last_paid_at,service_last_receipt,
+        service_discount_note,service_customer_code
+      `).order('created_at',{ascending:false}),
+      sb.from('users').select('id,school_id,role,created_at'),
+      sb.from('students').select('id,school_id,created_at'),
+      sb.from('service_subscription_payments').select('id,school_id,amount,status,paid_at,created_at,receipt_number'),
+    ]);
+    const schools = schoolRes.data || [];
+    const users = userRes.data || [];
+    const learners = learnerRes.data || [];
+    const payments = paymentRes.data || [];
+    const error = schoolRes.error || userRes.error || learnerRes.error || paymentRes.error;
     if(error){ $('#ownerList').innerHTML=`<div class="card"><p class="muted">Could not load subscriptions. Run the owner SQL first: ${esc(error.message)}</p></div>`; return; }
+    const schoolIds = new Set(schools.map(s=>s.id));
+    const ownerUsers = users.filter(u=>schoolIds.has(u.school_id));
+    const ownerLearners = learners.filter(s=>schoolIds.has(s.school_id));
+    const completedPayments = payments.filter(p=>p.status==='completed');
+    const thisMonth = new Date().toISOString().slice(0,7);
+    const isIndividual = s=>String(s.type||'').toLowerCase().includes('individual');
+    const isExpired = s=>!s.service_paid_until || new Date(`${s.service_paid_until}T23:59:59`) < new Date() || s.service_status==='locked';
+    const planPrice = s=>isIndividual(s) ? Number(s.teacher_subscription_amount||300) : Number(s.school_monthly_price||3000);
+    const activeCount = schools.filter(s=>!isExpired(s)).length;
+    const expiredCount = schools.length - activeCount;
+    const expectedRevenue = schools.reduce((sum,s)=>sum+planPrice(s),0);
+    const revenueThisMonth = completedPayments
+      .filter(p=>String(p.paid_at||p.created_at||'').slice(0,7)===thisMonth)
+      .reduce((sum,p)=>sum+Number(p.amount||0),0);
+    const signupsThisMonth = ownerUsers.filter(u=>String(u.created_at||'').slice(0,7)===thisMonth).length;
+    const userCountBySchool = ownerUsers.reduce((acc,u)=>{ acc[u.school_id]=(acc[u.school_id]||0)+1; return acc; },{});
+    const learnerCountBySchool = ownerLearners.reduce((acc,s)=>{ acc[s.school_id]=(acc[s.school_id]||0)+1; return acc; },{});
+    const latestPaymentBySchool = completedPayments.reduce((acc,p)=>{
+      if(!p.school_id) return acc;
+      if(!acc[p.school_id] || String(p.paid_at||p.created_at||'') > String(acc[p.school_id].paid_at||acc[p.school_id].created_at||'')) acc[p.school_id]=p;
+      return acc;
+    },{});
     const rows=schools.filter(s=>{
       if(!term) return true;
       return [s.id,s.name,s.type,s.school_code,s.service_customer_code].some(v=>String(v||'').toLowerCase().includes(term));
     });
-    $('#ownerList').innerHTML = `<div class="card">
-      ${rows.length?`<table><thead><tr><th>Workspace</th><th>Owner ID</th><th>Plan price</th><th>Paid until</th><th>Status</th><th></th></tr></thead><tbody>
+    $('#ownerList').innerHTML = `
+    <div class="metrics" style="margin-bottom:1rem">
+      <div class="metric"><div class="num">${schools.length}</div><div class="lbl">Total workspaces</div></div>
+      <div class="metric"><div class="num">${activeCount}</div><div class="lbl">Active subscriptions</div></div>
+      <div class="metric"><div class="num">${expiredCount}</div><div class="lbl">Expired or locked</div></div>
+      <div class="metric"><div class="num">${schools.filter(isIndividual).length}</div><div class="lbl">Individual teachers</div></div>
+      <div class="metric"><div class="num">${schools.filter(s=>!isIndividual(s)).length}</div><div class="lbl">Schools</div></div>
+      <div class="metric"><div class="num">${ownerUsers.length}</div><div class="lbl">Total users</div></div>
+      <div class="metric"><div class="num">${ownerLearners.length}</div><div class="lbl">Total learners</div></div>
+      <div class="metric"><div class="num">${signupsThisMonth}</div><div class="lbl">User signups this month</div></div>
+      <div class="metric"><div class="num">${serviceCurrency(expectedRevenue)}</div><div class="lbl">Expected monthly revenue</div></div>
+      <div class="metric"><div class="num">${serviceCurrency(revenueThisMonth)}</div><div class="lbl">Collected this month</div></div>
+    </div>
+    <div class="card">
+      ${rows.length?`<table><thead><tr><th>Workspace</th><th>Owner ID</th><th>Users</th><th>Learners</th><th>Plan price</th><th>Paid until</th><th>Last paid</th><th>Status</th><th></th></tr></thead><tbody>
         ${rows.map(s=>{
-          const individual = String(s.type||'').toLowerCase().includes('individual');
-          const price = individual ? Number(s.teacher_subscription_amount||300) : Number(s.school_monthly_price||3000);
-          const expired = !s.service_paid_until || new Date(`${s.service_paid_until}T23:59:59`) < new Date();
+          const individual = isIndividual(s);
+          const price = planPrice(s);
+          const expired = isExpired(s);
+          const lastPayment = latestPaymentBySchool[s.id];
           return `<tr>
             <td><b>${esc(s.name||'Unnamed workspace')}</b><div class="small muted">${esc(s.type||'School')} &middot; ${esc(s.school_code||'No code')}</div>${s.service_discount_note?`<div class="small muted">Note: ${esc(s.service_discount_note)}</div>`:''}</td>
             <td><code>${esc(s.service_customer_code||String(s.id).slice(0,8).toUpperCase())}</code><div class="small muted">${esc(s.id)}</div></td>
+            <td>${userCountBySchool[s.id]||0}</td>
+            <td>${learnerCountBySchool[s.id]||0}</td>
             <td>${serviceCurrency(price)}</td>
             <td>${esc(s.service_paid_until||'Not active')}</td>
+            <td>${lastPayment?`${serviceCurrency(lastPayment.amount)}<div class="small muted">${esc(String(lastPayment.paid_at||lastPayment.created_at||'').slice(0,10))}</div>`:'-'}</td>
             <td><span class="badge ${expired||s.service_status==='locked'?'terra':''}">${expired?'expired':esc(s.service_status||'active')}</span></td>
             <td><button class="btn secondary owner-edit" data-id="${esc(s.id)}">Edit</button></td>
           </tr>`;

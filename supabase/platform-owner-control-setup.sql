@@ -37,6 +37,7 @@ $$;
 
 grant select on public.platform_owner_emails to authenticated;
 grant all on public.schools to authenticated;
+grant select on public.users, public.students, public.service_subscription_payments to authenticated;
 
 drop policy if exists schools_platform_owner_update on public.schools;
 create policy schools_platform_owner_update
@@ -53,3 +54,16 @@ for select
 to authenticated
 using (public.is_platform_owner());
 
+drop policy if exists users_platform_owner_read on public.users;
+create policy users_platform_owner_read
+on public.users
+for select
+to authenticated
+using (public.is_platform_owner());
+
+drop policy if exists students_platform_owner_read on public.students;
+create policy students_platform_owner_read
+on public.students
+for select
+to authenticated
+using (public.is_platform_owner());
