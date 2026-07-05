@@ -1116,6 +1116,12 @@ function viewSetPassword(){
 /* ============================================================================
  * APP SHELL
  * ==========================================================================*/
+const PLATFORM_OWNER_EMAILS = ['brucedataanalytics@gmail.com','rudderresearch@gmail.com'];
+
+function isPlatformOwner(){
+  return PLATFORM_OWNER_EMAILS.includes(String(state.profile?.email||'').toLowerCase());
+}
+
 const NAV_GROUPS = [
   { label:'Overview', items:[
     { id:'dashboard',   label:'Dashboard',       icon:'ti-layout-dashboard', roles:['admin','headteacher','teacher','parent'] },
@@ -1150,7 +1156,7 @@ const NAV_GROUPS = [
 ];
 
 function buildNav(role, currentRoute){
-  return NAV_GROUPS.map(group=>{
+  const baseNav = NAV_GROUPS.map(group=>{
     const visible = group.items.filter(n=>n.roles.includes(role));
     if(!visible.length) return '';
     return `<div class="nav-group">
@@ -1162,6 +1168,15 @@ function buildNav(role, currentRoute){
       </nav>
     </div>`;
   }).join('');
+  const ownerNav = isPlatformOwner()?`<div class="nav-group">
+    <div class="nav-group-label">Owner</div>
+    <nav class="nav">
+      <a href="#owner" data-route="owner" class="${currentRoute==='owner'?'active':''}">
+        <i class="ti ti-adjustments-dollar"></i>Subscriptions
+      </a>
+    </nav>
+  </div>`:'';
+  return baseNav + ownerNav;
 }
 
 function viewShell(){
@@ -1209,6 +1224,7 @@ function navigate(route){
 }
 
 function findNavItem(id){
+  if(id==='owner' && isPlatformOwner()) return { id:'owner', label:'Subscriptions', icon:'ti-adjustments-dollar', roles:[state.profile?.role||'admin'] };
   for(const g of NAV_GROUPS){ const f=g.items.find(n=>n.id===id); if(f) return f; }
   return null;
 }
@@ -4077,11 +4093,111 @@ modules.revision = async (m)=>{
   };
 };
 
+/* --- PLATFORM OWNER SUBSCRIPTIONS --- */
+modules.owner = async (m)=>{
+  if(!isPlatformOwner()){
+    m.innerHTML = `<div class="card"><h3>Not available</h3><p class="muted small">This area is only for the platform owner.</p></div>`;
+    return;
+  }
+  m.innerHTML = `<div class="section-title"><div><h1>Subscription Control</h1><p class="muted">Manage each school or individual teacher workspace from one place.</p></div></div>
+    <div class="toolbar">
+      <div class="field" style="min-width:280px"><label>Search</label><input id="ownerSearch" placeholder="School, teacher workspace, code, or ID"></div>
+      <button class="btn secondary" id="ownerRefresh"><i class="ti ti-refresh"></i> Refresh</button>
+    </div>
+    <div id="ownerList"></div>`;
+
+  const load=async()=>{
+    const term=($('#ownerSearch')?.value||'').trim().toLowerCase();
+    const {data:schools=[],error}=await sb.from('schools').select(`
+      id,name,type,school_code,created_at,
+      teacher_subscription_amount,school_monthly_price,
+      service_paid_until,service_status,service_last_paid_at,service_last_receipt,
+      service_discount_note,service_customer_code
+    `).order('created_at',{ascending:false});
+    if(error){ $('#ownerList').innerHTML=`<div class="card"><p class="muted">Could not load subscriptions. Run the owner SQL first: ${esc(error.message)}</p></div>`; return; }
+    const rows=schools.filter(s=>{
+      if(!term) return true;
+      return [s.id,s.name,s.type,s.school_code,s.service_customer_code].some(v=>String(v||'').toLowerCase().includes(term));
+    });
+    $('#ownerList').innerHTML = `<div class="card">
+      ${rows.length?`<table><thead><tr><th>Workspace</th><th>Owner ID</th><th>Plan price</th><th>Paid until</th><th>Status</th><th></th></tr></thead><tbody>
+        ${rows.map(s=>{
+          const individual = String(s.type||'').toLowerCase().includes('individual');
+          const price = individual ? Number(s.teacher_subscription_amount||300) : Number(s.school_monthly_price||3000);
+          const expired = !s.service_paid_until || new Date(`${s.service_paid_until}T23:59:59`) < new Date();
+          return `<tr>
+            <td><b>${esc(s.name||'Unnamed workspace')}</b><div class="small muted">${esc(s.type||'School')} &middot; ${esc(s.school_code||'No code')}</div>${s.service_discount_note?`<div class="small muted">Note: ${esc(s.service_discount_note)}</div>`:''}</td>
+            <td><code>${esc(s.service_customer_code||String(s.id).slice(0,8).toUpperCase())}</code><div class="small muted">${esc(s.id)}</div></td>
+            <td>${serviceCurrency(price)}</td>
+            <td>${esc(s.service_paid_until||'Not active')}</td>
+            <td><span class="badge ${expired||s.service_status==='locked'?'terra':''}">${expired?'expired':esc(s.service_status||'active')}</span></td>
+            <td><button class="btn secondary owner-edit" data-id="${esc(s.id)}">Edit</button></td>
+          </tr>`;
+        }).join('')}
+      </tbody></table>`:`<div class="empty"><i class="ti ti-search"></i><div>No matching workspaces.</div></div>`}
+    </div>`;
+    $$('.owner-edit').forEach(btn=>btn.onclick=()=>openOwnerEdit(rows.find(s=>s.id===btn.dataset.id)));
+  };
+
+  const openOwnerEdit=(s)=>{
+    const individual = String(s.type||'').toLowerCase().includes('individual');
+    const currentPrice = individual ? Number(s.teacher_subscription_amount||300) : Number(s.school_monthly_price||3000);
+    const box=el(`<div class="modal-backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9998;display:flex;align-items:center;justify-content:center;padding:1rem">
+      <div class="card" style="max-width:620px;width:100%;max-height:90vh;overflow:auto">
+        <div class="section-title"><h3>Edit subscription</h3><button class="btn secondary" id="closeOwnerEdit">Close</button></div>
+        <p class="small muted">${esc(s.name)} &middot; ID ${esc(s.service_customer_code||String(s.id).slice(0,8).toUpperCase())}</p>
+        <form id="ownerEditForm" class="stack">
+          <div class="row">
+            <div class="col field"><label>${individual?'Teacher monthly price':'School monthly price'} (KSh)</label><input type="number" name="price" value="${esc(currentPrice)}"></div>
+            <div class="col field"><label>Paid until</label><input type="date" name="service_paid_until" value="${esc(s.service_paid_until||'')}"></div>
+          </div>
+          <div class="row">
+            <div class="col field"><label>Status</label><select name="service_status"><option value="active" ${s.service_status!=='locked'?'selected':''}>Active</option><option value="locked" ${s.service_status==='locked'?'selected':''}>Locked</option><option value="manual" ${s.service_status==='manual'?'selected':''}>Manual</option><option value="trial" ${s.service_status==='trial'?'selected':''}>Trial</option></select></div>
+            <div class="col field"><label>Add free days</label><input type="number" name="free_days" placeholder="e.g. 30"></div>
+          </div>
+          <div class="field"><label>Discount / owner note</label><textarea name="service_discount_note" rows="2" placeholder="e.g. Discounted for first term">${esc(s.service_discount_note||'')}</textarea></div>
+          <button class="btn primary">Save subscription</button>
+        </form>
+      </div>
+    </div>`);
+    document.body.appendChild(box);
+    $('#closeOwnerEdit').onclick=()=>box.remove();
+    $('#ownerEditForm').onsubmit=async(e)=>{
+      e.preventDefault();
+      const f=Object.fromEntries(new FormData(e.target));
+      let paidUntil=f.service_paid_until||null;
+      const freeDays=Number(f.free_days||0);
+      if(freeDays>0){
+        const base=paidUntil?new Date(`${paidUntil}T00:00:00`):new Date();
+        const today=new Date(); today.setHours(0,0,0,0);
+        const start=base>today?base:today;
+        start.setDate(start.getDate()+freeDays);
+        paidUntil=start.toISOString().slice(0,10);
+      }
+      const update={
+        service_paid_until:paidUntil,
+        service_status:f.service_status,
+        service_discount_note:f.service_discount_note||null,
+      };
+      if(individual) update.teacher_subscription_amount=Number(f.price||300);
+      else update.school_monthly_price=Number(f.price||3000);
+      const {error}=await sb.from('schools').update(update).eq('id',s.id);
+      if(error){ toast('Save failed. Run the owner SQL first: '+error.message,true); return; }
+      toast('Subscription updated');
+      box.remove();
+      load();
+    };
+  };
+
+  $('#ownerRefresh').onclick=load;
+  $('#ownerSearch').oninput=load;
+  await load();
+};
+
 /* --- SETTINGS --- */
 modules.settings = async (m)=>{
   const isAdmin = ['admin','headteacher'].includes(state.profile.role);
-  const platformOwners = ['brucedataanalytics@gmail.com','rudderresearch@gmail.com'];
-  const isPlatformOwner = platformOwners.includes(String(state.profile.email||'').toLowerCase());
+  const owner = isPlatformOwner();
   m.innerHTML = `<h1>Settings</h1>
     <div class="card" style="max-width:560px">
       <h3>Your profile</h3>
@@ -4135,8 +4251,8 @@ modules.settings = async (m)=>{
         <button class="btn primary">Save payment settings</button>
       </form>
     </div>`:''}
-    ${isPlatformOwner&&state.school?`<div class="card" style="max-width:640px"><h3>Platform owner controls</h3><p class="small muted">Only the system owner should see these controls. They manage Radari subscription pricing and access policy.</p><form id="businessSettings" class="stack"><div class="row"><div class="col field"><label>Individual teacher monthly fee (KSh)</label><input type="number" name="teacher_subscription_amount" value="${esc(state.school.teacher_subscription_amount||300)}"></div><div class="col field"><label>School monthly price (KSh)</label><input type="number" name="school_monthly_price" value="${esc(state.school.school_monthly_price||3000)}"></div></div><div class="row"><div class="col field"><label>Teacher device policy</label><select name="teacher_device_policy"><option value="one_browser" ${state.school.teacher_device_policy!=='open'?'selected':''}>One browser/device per teacher</option><option value="open" ${state.school.teacher_device_policy==='open'?'selected':''}>Allow multiple devices</option></select></div><div class="col field"><label>Parent access</label><select name="parent_access_mode"><option value="login_required" ${state.school.parent_access_mode!=='link_lookup'?'selected':''}>Parent login required</option><option value="link_lookup" ${state.school.parent_access_mode==='link_lookup'?'selected':''}>Secure link lookup later</option></select></div></div><button class="btn primary">Save platform settings</button></form></div>`:''}
-    ${isPlatformOwner?`<div class="card" style="max-width:560px;border:1px solid var(--amber)">
+    ${owner&&state.school?`<div class="card" style="max-width:640px"><h3>Platform owner controls</h3><p class="small muted">Open the owner subscriptions page to adjust prices, free months, locks, and discounts for any school or individual teacher.</p><button class="btn primary" id="openOwnerPage">Open subscription control</button></div>`:''}
+    ${owner?`<div class="card" style="max-width:560px;border:1px solid var(--amber)">
       <h3>Demo data</h3>
       <p class="small muted">Populate this school with sample students, teachers, assessments, attendance, fees, notices, and incidents so you can explore every feature immediately.</p>
       <p class="small muted">Only run this once. Running it again will create duplicate records.</p>
@@ -4148,6 +4264,7 @@ modules.settings = async (m)=>{
     const { error } = await sb.from('users').update(f).eq('id',state.profile.id);
     if(error) toast(error.message,true); else { toast('Saved'); Object.assign(state.profile, f); }
   };
+  if($('#openOwnerPage')) $('#openOwnerPage').onclick=()=>navigate('owner');
   if($('#secretGuide')) $('#secretGuide').onclick=()=>{ const mask=v=>v?String(v).slice(0,4)+'...'+String(v).slice(-4)+' ('+String(v).length+' chars)':'not pasted'; $('#secretOut').style.display='block'; $('#secretOut').textContent='School fee payment secrets:\n\nDARAJA_CONSUMER_KEY = '+mask($('#secretConsumerKey').value)+'\nDARAJA_CONSUMER_SECRET = '+mask($('#secretConsumerSecret').value)+'\nDARAJA_PASSKEY = '+mask($('#secretPasskey').value)+'\nDARAJA_SHORTCODE = '+mask($('#secretShortcode').value)+'\n\nYour Radari subscription payment secrets:\n\nSERVICE_CONSUMER_KEY = '+mask($('#secretConsumerKey').value)+'\nSERVICE_CONSUMER_SECRET = '+mask($('#secretConsumerSecret').value)+'\nSERVICE_PASSKEY = '+mask($('#secretPasskey').value)+'\nSERVICE_SHORTCODE = '+mask($('#secretShortcode').value)+'\n\nUse SERVICE_* for the system subscription lock so it stays separate from school fee payments.'; };
   if($('#businessSettings')) $('#businessSettings').onsubmit=async(e)=>{ e.preventDefault(); const f=Object.fromEntries(new FormData(e.target)); f.teacher_subscription_amount=+f.teacher_subscription_amount||300; f.school_monthly_price=+f.school_monthly_price||3000; const {data,error}=await sb.from('schools').update(f).eq('id',state.school.id).select('*').single(); if(error){ toast('Save failed. Run the business SQL upgrade first: '+error.message,true); return; } state.school=data; toast('Business settings saved'); navigate('settings'); };
   if($('#seedBtn')) $('#seedBtn').onclick = ()=>window.seedDemoData();
