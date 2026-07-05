@@ -644,6 +644,13 @@ on conflict (school_code) do nothing;
     @media(max-width:720px){
       body{font-size:14px}.card{padding:.9rem;border-radius:10px}.section-title{align-items:flex-start;gap:.75rem}.section-title>div:last-child{width:100%;justify-content:flex-start}.toolbar{display:grid;grid-template-columns:1fr;gap:.65rem}.toolbar .field{min-width:0;width:100%}.metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem}.metric{padding:.85rem}.metric .num{font-size:1.35rem}.row{flex-direction:column}.col{width:100%;min-width:0}table{font-size:.82rem}th,td{padding:.55rem .5rem}.card table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}.btn{min-height:40px}input,select,textarea{font-size:16px}.auth-form .inner{padding:1.2rem}.parent-summary{display:grid;grid-template-columns:1fr;gap:.75rem}
     }
+    .service-lock{position:fixed;inset:0;z-index:9999;background:rgba(17,24,39,.72);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:1rem}
+    .service-lock-card{width:min(560px,100%);background:#fff;border-radius:18px;box-shadow:0 24px 70px rgba(0,0,0,.28);padding:1.25rem;border:1px solid rgba(255,255,255,.45)}
+    .service-lock-card h2{margin:.25rem 0 .35rem;font-size:1.35rem}
+    .service-lock-card .amount{font-size:2rem;font-weight:800;color:var(--green);letter-spacing:0;margin:.75rem 0}
+    .service-lock-actions{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1rem}
+    .service-lock-actions .btn{flex:1;min-width:160px}
+    @media(max-width:520px){.service-lock{align-items:flex-end;padding:.75rem}.service-lock-card{border-radius:16px;padding:1rem}.service-lock-card .amount{font-size:1.6rem}.service-lock-actions{display:grid;grid-template-columns:1fr}.service-lock-actions .btn{width:100%}}
   </style>
 </head>
 <body>
@@ -859,6 +866,7 @@ const state = {
   session:null,
   profile:null,  // row from public.users
   school:null,
+  serviceAccess:null,
   route:'dashboard',
 };
 
@@ -891,15 +899,6 @@ function viewLogin(){
       </form>
       <div class="divider">or</div>
       <button class="btn secondary block" id="toSignup">Create an account</button>
-      <div style="margin-top:1.5rem;padding:1rem;background:var(--green-50);border-radius:var(--radius);font-size:.82rem">
-        <div style="font-weight:600;margin-bottom:.5rem;color:var(--green)">Demo credentials</div>
-        <div style="display:flex;flex-direction:column;gap:.35rem;color:var(--ink-2)">
-          <div><b>Admin</b> &nbsp; admin@radari.ke &nbsp; / &nbsp; Radari2025!</div>
-          <div><b>Teacher</b> &nbsp; teacher@radari.ke &nbsp; / &nbsp; Radari2025!</div>
-          <div><b>Parent</b> &nbsp; parent@radari.ke &nbsp; / &nbsp; Radari2025!</div>
-        </div>
-        <div class="muted" style="margin-top:.5rem;font-size:.78rem">School code for new signups: <b>RADARI01</b></div>
-      </div>
     </div></div>
   </div>`;
   $('#toSignup').onclick = viewSignup;
@@ -935,18 +934,26 @@ function viewSignup(){
       <div class="mobile-brand"><div class="brand-mark" style="color:var(--green)">${APP_NAME}</div></div>
       <h2 style="margin-bottom:1.25rem">Create an account</h2>
       <form id="signupForm" class="stack" novalidate>
+        <div class="field"><label>Account type</label>
+          <select name="signup_type" id="signupType">
+            <option value="join_school">Join an existing school</option>
+            <option value="school_owner">Register a school</option>
+            <option value="individual_teacher">Individual teacher</option>
+          </select>
+        </div>
+        <div id="signupHint" class="small muted" style="line-height:1.5"></div>
         <div class="field"><label>Full name</label><input name="full_name" required></div>
         <div class="field"><label>Email address</label><input name="email" type="email" required></div>
         <div class="field"><label>Phone number</label><input name="phone" type="tel" placeholder="07XX XXX XXX"></div>
-        <div class="field"><label>School code</label><input name="school_code" required placeholder="Provided by your school admin">
-          <span class="small muted">No code yet? Try <b>RADARI01</b> to explore the demo school.</span>
+        <div class="field" id="schoolCodeWrap"><label>School code</label><input name="school_code" id="schoolCode" placeholder="Provided by the school admin">
         </div>
-        <div class="field"><label>I am a</label>
-          <select name="role">
+        <div class="field" id="schoolNameWrap" style="display:none"><label>School or workspace name</label><input name="school_name" id="schoolName" placeholder="e.g. Green Valley Primary">
+        </div>
+        <div class="field" id="roleWrap"><label>I am a</label>
+          <select name="role" id="signupRole">
             <option value="parent">Parent</option>
             <option value="teacher">Teacher</option>
             <option value="headteacher">Headteacher</option>
-            <option value="admin">Admin</option>
           </select>
         </div>
         <div class="field"><label>Password</label><input name="password" type="password" id="pwd" required>
@@ -964,6 +971,28 @@ function viewSignup(){
     </div></div>
   </div>`;
   $('#toLogin').onclick=viewLogin;
+  const syncSignupMode=()=>{
+    const type=$('#signupType').value;
+    $('#schoolCodeWrap').style.display = type==='join_school' ? '' : 'none';
+    $('#schoolNameWrap').style.display = type==='join_school' ? 'none' : '';
+    $('#roleWrap').style.display = type==='join_school' ? '' : 'none';
+    $('#schoolCode').required = type==='join_school';
+    $('#schoolName').required = type!=='join_school';
+    if(type==='join_school'){
+      $('#signupHint').textContent = 'Use this when a school has already registered and shared its school code with you.';
+      $('#signupRole').disabled = false;
+    }else if(type==='school_owner'){
+      $('#signupHint').textContent = 'Use this when a headteacher, director, or school admin is opening Radari for the whole school.';
+      $('#signupRole').value = 'admin';
+      $('#signupRole').disabled = true;
+    }else{
+      $('#signupHint').textContent = 'Use this when one teacher wants a personal CBC grading and report-card workspace. This uses the individual teacher monthly plan.';
+      $('#signupRole').value = 'teacher';
+      $('#signupRole').disabled = true;
+    }
+  };
+  $('#signupType').onchange=syncSignupMode;
+  syncSignupMode();
   $('#pwd').oninput = (e)=>{
     const c=pwdChecklist(e.target.value);
     $$('#pwdCheck span').forEach(s=>s.classList.toggle('ok', c[s.dataset.k]));
@@ -975,15 +1004,27 @@ function viewSignup(){
     const c=pwdChecklist(pwd);
     if(!c.len||!c.up||!c.num){ toast('Password does not meet the requirements.', true); return; }
     if(pwd!==f.get('password2')){ toast('Passwords do not match.', true); return; }
-    // verify school code exists
-    const { data:school, error:schErr } = await sb.from('schools').select('id,name').eq('school_code', f.get('school_code').trim()).maybeSingle();
-    if(schErr||!school){ toast('That school code is not recognised.', true); return; }
+    const signupType=f.get('signup_type');
+    let role=f.get('role');
+    if(signupType==='school_owner') role='admin';
+    if(signupType==='individual_teacher') role='teacher';
+    if(signupType==='join_school'){
+      const code = String(f.get('school_code')||'').trim();
+      if(!code){ toast('Enter the school code.', true); return; }
+      const { data:school, error:schErr } = await sb.from('schools').select('id,name').eq('school_code', code).maybeSingle();
+      if(schErr||!school){ toast('That school code is not recognised.', true); return; }
+    }else if(!String(f.get('school_name')||'').trim()){
+      toast('Enter the school or workspace name.', true); return;
+    }
     const btn=$('#signupBtn'); btn.disabled=true; btn.textContent='Creating account';
     const { error } = await sb.auth.signUp({
       email:f.get('email'), password:pwd,
       options:{ data:{
         full_name:f.get('full_name'), phone:f.get('phone'),
-        school_code:f.get('school_code').trim(), role:f.get('role')
+        school_code:String(f.get('school_code')||'').trim(),
+        school_name:String(f.get('school_name')||'').trim(),
+        signup_type:signupType,
+        role
       }, emailRedirectTo: window.location.href.split('#')[0] }
     });
     btn.disabled=false; btn.textContent='Create account';
@@ -4039,6 +4080,8 @@ modules.revision = async (m)=>{
 /* --- SETTINGS --- */
 modules.settings = async (m)=>{
   const isAdmin = ['admin','headteacher'].includes(state.profile.role);
+  const platformOwners = ['brucedataanalytics@gmail.com','rudderresearch@gmail.com'];
+  const isPlatformOwner = platformOwners.includes(String(state.profile.email||'').toLowerCase());
   m.innerHTML = `<h1>Settings</h1>
     <div class="card" style="max-width:560px">
       <h3>Your profile</h3>
@@ -4088,18 +4131,12 @@ modules.settings = async (m)=>{
             </select></div>
         </div>
         <div class="field"><label>Message shown to parents</label>
-          <textarea name="fee_payment_instructions" rows="3" placeholder="Example: Pay fees using the school Paybill and your child's admission number as the account number. Extra payment will be carried forward.">${esc(state.school.fee_payment_instructions||'')}</textarea></div>
-        <div class="small muted" style="line-height:1.6">
-          C2B validation URL: <code>${SUPABASE_URL}/functions/v1/fee-payment-validation</code><br>
-          C2B confirmation URL: <code>${SUPABASE_URL}/functions/v1/fee-payment-callback</code><br>
-          STK start URL: <code>${SUPABASE_URL}/functions/v1/start-fee-payment</code><br>
-          Register URLs helper: <code>${SUPABASE_URL}/functions/v1/fee-register-urls</code>
-        </div>
+          <textarea name="fee_payment_instructions" rows="3" placeholder="Pay fees using the school Paybill and the learner admission number as the account number.">${esc(state.school.fee_payment_instructions||'')}</textarea></div>
         <button class="btn primary">Save payment settings</button>
       </form>
     </div>`:''}
-    ${isAdmin&&state.school?`<div class="card" style="max-width:640px"><h3>Daraja secret deployment helper</h3><p class="small muted">Paste keys here only while setting up. They are masked and are not saved in Radari. Save the real values in Supabase Edge Function Secrets.</p><div class="row"><div class="col field"><label>Consumer key</label><input type="password" id="secretConsumerKey" autocomplete="off"></div><div class="col field"><label>Consumer secret</label><input type="password" id="secretConsumerSecret" autocomplete="off"></div></div><div class="row"><div class="col field"><label>Passkey</label><input type="password" id="secretPasskey" autocomplete="off"></div><div class="col field"><label>Shortcode / Paybill</label><input type="password" id="secretShortcode" autocomplete="off"></div></div><button class="btn secondary" type="button" id="secretGuide">Show secret names</button><pre id="secretOut" class="small" style="white-space:pre-wrap;background:var(--green-50);padding:.75rem;border-radius:var(--radius);display:none;margin-top:.75rem"></pre></div><div class="card" style="max-width:640px"><h3>Business subscription controls</h3><p class="small muted">Prepare pricing for individual teachers and full schools. The actual payment lock can be activated after testing.</p><form id="businessSettings" class="stack"><div class="row"><div class="col field"><label>Individual teacher monthly fee (KSh)</label><input type="number" name="teacher_subscription_amount" value="${esc(state.school.teacher_subscription_amount||300)}"></div><div class="col field"><label>School monthly price (KSh)</label><input type="number" name="school_monthly_price" value="${esc(state.school.school_monthly_price||3000)}"></div></div><div class="row"><div class="col field"><label>Teacher device policy</label><select name="teacher_device_policy"><option value="one_browser" ${state.school.teacher_device_policy!=='open'?'selected':''}>One browser/device per teacher</option><option value="open" ${state.school.teacher_device_policy==='open'?'selected':''}>Allow multiple devices</option></select></div><div class="col field"><label>Parent access</label><select name="parent_access_mode"><option value="login_required" ${state.school.parent_access_mode!=='link_lookup'?'selected':''}>Parent login required</option><option value="link_lookup" ${state.school.parent_access_mode==='link_lookup'?'selected':''}>Secure link lookup later</option></select></div></div><button class="btn primary">Save business settings</button></form></div><div class="card" style="max-width:640px;background:var(--green-50);border-color:var(--green)"><h3>Parent sharing recommendation</h3><p class="small muted">For now, keep parent access login-based. A public WhatsApp link that only asks for admission number can expose learner data. The safer version is a WhatsApp link plus a parent phone OTP or parent login.</p></div>`:''}
-    ${isAdmin?`<div class="card" style="max-width:560px;border:1px solid var(--amber)">
+    ${isPlatformOwner&&state.school?`<div class="card" style="max-width:640px"><h3>Platform owner controls</h3><p class="small muted">Only the system owner should see these controls. They manage Radari subscription pricing and access policy.</p><form id="businessSettings" class="stack"><div class="row"><div class="col field"><label>Individual teacher monthly fee (KSh)</label><input type="number" name="teacher_subscription_amount" value="${esc(state.school.teacher_subscription_amount||300)}"></div><div class="col field"><label>School monthly price (KSh)</label><input type="number" name="school_monthly_price" value="${esc(state.school.school_monthly_price||3000)}"></div></div><div class="row"><div class="col field"><label>Teacher device policy</label><select name="teacher_device_policy"><option value="one_browser" ${state.school.teacher_device_policy!=='open'?'selected':''}>One browser/device per teacher</option><option value="open" ${state.school.teacher_device_policy==='open'?'selected':''}>Allow multiple devices</option></select></div><div class="col field"><label>Parent access</label><select name="parent_access_mode"><option value="login_required" ${state.school.parent_access_mode!=='link_lookup'?'selected':''}>Parent login required</option><option value="link_lookup" ${state.school.parent_access_mode==='link_lookup'?'selected':''}>Secure link lookup later</option></select></div></div><button class="btn primary">Save platform settings</button></form></div>`:''}
+    ${isPlatformOwner?`<div class="card" style="max-width:560px;border:1px solid var(--amber)">
       <h3>Demo data</h3>
       <p class="small muted">Populate this school with sample students, teachers, assessments, attendance, fees, notices, and incidents so you can explore every feature immediately.</p>
       <p class="small muted">Only run this once. Running it again will create duplicate records.</p>
@@ -4111,7 +4148,7 @@ modules.settings = async (m)=>{
     const { error } = await sb.from('users').update(f).eq('id',state.profile.id);
     if(error) toast(error.message,true); else { toast('Saved'); Object.assign(state.profile, f); }
   };
-  if($('#secretGuide')) $('#secretGuide').onclick=()=>{ const mask=v=>v?String(v).slice(0,4)+'...'+String(v).slice(-4)+' ('+String(v).length+' chars)':'not pasted'; $('#secretOut').style.display='block'; $('#secretOut').textContent='Add these in Supabase > Edge Functions > Secrets:\n\nDARAJA_CONSUMER_KEY = '+mask($('#secretConsumerKey').value)+'\nDARAJA_CONSUMER_SECRET = '+mask($('#secretConsumerSecret').value)+'\nDARAJA_PASSKEY = '+mask($('#secretPasskey').value)+'\nDARAJA_SHORTCODE = '+mask($('#secretShortcode').value); };
+  if($('#secretGuide')) $('#secretGuide').onclick=()=>{ const mask=v=>v?String(v).slice(0,4)+'...'+String(v).slice(-4)+' ('+String(v).length+' chars)':'not pasted'; $('#secretOut').style.display='block'; $('#secretOut').textContent='School fee payment secrets:\n\nDARAJA_CONSUMER_KEY = '+mask($('#secretConsumerKey').value)+'\nDARAJA_CONSUMER_SECRET = '+mask($('#secretConsumerSecret').value)+'\nDARAJA_PASSKEY = '+mask($('#secretPasskey').value)+'\nDARAJA_SHORTCODE = '+mask($('#secretShortcode').value)+'\n\nYour Radari subscription payment secrets:\n\nSERVICE_CONSUMER_KEY = '+mask($('#secretConsumerKey').value)+'\nSERVICE_CONSUMER_SECRET = '+mask($('#secretConsumerSecret').value)+'\nSERVICE_PASSKEY = '+mask($('#secretPasskey').value)+'\nSERVICE_SHORTCODE = '+mask($('#secretShortcode').value)+'\n\nUse SERVICE_* for the system subscription lock so it stays separate from school fee payments.'; };
   if($('#businessSettings')) $('#businessSettings').onsubmit=async(e)=>{ e.preventDefault(); const f=Object.fromEntries(new FormData(e.target)); f.teacher_subscription_amount=+f.teacher_subscription_amount||300; f.school_monthly_price=+f.school_monthly_price||3000; const {data,error}=await sb.from('schools').update(f).eq('id',state.school.id).select('*').single(); if(error){ toast('Save failed. Run the business SQL upgrade first: '+error.message,true); return; } state.school=data; toast('Business settings saved'); navigate('settings'); };
   if($('#seedBtn')) $('#seedBtn').onclick = ()=>window.seedDemoData();
   if($('#feePaySettings')) $('#feePaySettings').onsubmit=async(e)=>{
@@ -4147,6 +4184,106 @@ async function ensureTeacherDevicePolicy(){
   return true;
 }
 
+function serviceCurrency(amount){
+  return `KSh ${Number(amount||0).toLocaleString()}`;
+}
+
+function serviceAmountForProfile(){
+  if(!state.school) return 300;
+  if(state.profile?.role==='teacher') return Number(state.school.teacher_subscription_amount||300);
+  return Number(state.school.school_monthly_price||3000);
+}
+
+function serviceAccessStatus(){
+  if(!state.school || !('service_paid_until' in state.school)) {
+    return { configured:false, locked:false, dueSoon:false, daysLeft:null, paidUntil:null };
+  }
+  const paidUntilText = state.school.service_paid_until;
+  const paidUntil = paidUntilText ? new Date(`${paidUntilText}T23:59:59`) : null;
+  const today = new Date();
+  const daysLeft = paidUntil ? Math.ceil((paidUntil - today) / 86400000) : -1;
+  const locked = state.school.service_status === 'locked' || !paidUntil || daysLeft < 0;
+  const dueSoon = !locked && daysLeft <= 7;
+  return { configured:true, locked, dueSoon, daysLeft, paidUntil:paidUntilText };
+}
+
+async function refreshServiceAccess(){
+  if(!state.profile?.school_id) return null;
+  try{
+    const {data}=await sb.from('schools').select('*').eq('id',state.profile.school_id).maybeSingle();
+    if(data) state.school=data;
+  }catch(e){ console.warn('Service access refresh skipped', e); }
+  state.serviceAccess = serviceAccessStatus();
+  return state.serviceAccess;
+}
+
+async function startServiceSubscriptionPayment(phone){
+  const amount = serviceAmountForProfile();
+  const {data,error}=await sb.functions.invoke('start-service-subscription-payment',{
+    body:{
+      school_id:state.profile.school_id,
+      user_id:state.profile.id,
+      phone,
+      amount,
+      role:state.profile.role
+    }
+  });
+  if(error) throw error;
+  if(!data?.ok) throw new Error(data?.message||'Payment prompt was not accepted.');
+  return data;
+}
+
+function removeServiceNotice(){
+  $('#serviceLock')?.remove();
+}
+
+function showServiceNotice(access){
+  if(!access?.configured || (!access.locked && !access.dueSoon)) return;
+  removeServiceNotice();
+  const canPay = ['admin','headteacher','teacher'].includes(state.profile?.role);
+  const amount = serviceAmountForProfile();
+  const title = access.locked ? 'Subscription renewal required' : 'Subscription renewal reminder';
+  const message = access.locked
+    ? 'This Radari account is locked because the 30-day access period has ended. Renew to continue using the system.'
+    : `This Radari account has ${access.daysLeft} day${access.daysLeft===1?'':'s'} remaining. Renew now to reset another 30 days.`;
+  const overlay = el(`<div class="service-lock" id="serviceLock">
+    <div class="service-lock-card">
+      <h2>${title}</h2>
+      <p class="muted">${message}</p>
+      <div class="amount">${serviceCurrency(amount)}</div>
+      <div class="small muted">Paid until: ${esc(access.paidUntil||'Not active')}</div>
+      ${canPay?`<div class="field" style="margin-top:1rem"><label>Safaricom phone number</label><input id="servicePhone" placeholder="07XXXXXXXX" inputmode="tel"></div>`:`<p class="muted small" style="margin-top:1rem">Please ask the school administrator to renew the account.</p>`}
+      <div class="service-lock-actions">
+        ${canPay?`<button class="btn primary" id="servicePay"><i class="ti ti-device-mobile"></i> Pay ${serviceCurrency(amount)}</button>`:''}
+        <button class="btn secondary" id="serviceCheck"><i class="ti ti-refresh"></i> Check payment</button>
+        ${access.locked?'':`<button class="btn secondary" id="serviceLater">Later</button>`}
+        <button class="btn secondary" id="serviceSignOut">Sign out</button>
+      </div>
+    </div>
+  </div>`);
+  document.body.appendChild(overlay);
+  if($('#serviceLater')) $('#serviceLater').onclick=removeServiceNotice;
+  $('#serviceSignOut').onclick=async()=>{ await sb.auth.signOut(); location.reload(); };
+  $('#serviceCheck').onclick=async()=>{
+    const fresh = await refreshServiceAccess();
+    if(!fresh?.locked){ toast('Subscription is active.'); removeServiceNotice(); }
+    else toast('Payment has not reflected yet. Try again after confirmation.', true);
+  };
+  if($('#servicePay')) $('#servicePay').onclick=async()=>{
+    const phone = $('#servicePhone').value.trim();
+    if(!/^(\+?254|0)?(7|1)\d{8}$/.test(phone.replace(/\s/g,''))){ toast('Enter a valid Safaricom phone number.', true); return; }
+    $('#servicePay').disabled=true;
+    try{
+      const res = await startServiceSubscriptionPayment(phone);
+      toast(res.message||'M-Pesa prompt sent. Enter PIN on the phone.');
+    }catch(e){
+      toast('Payment prompt failed: '+(e.message||String(e)), true);
+    }finally{
+      $('#servicePay').disabled=false;
+    }
+  };
+}
+
 async function loadProfile(){
   const { data:{ user } } = await sb.auth.getUser();
   if(!user) return null;
@@ -4177,9 +4314,13 @@ async function boot(){
     const { data:school } = await sb.from('schools').select('*').eq('id',state.profile.school_id).maybeSingle();
     state.school = school;
   }
+  const deviceOk = await ensureTeacherDevicePolicy();
+  if(!deviceOk) return;
+  state.serviceAccess = await refreshServiceAccess();
   const h = location.hash.replace('#','');
   if(h && findNavItem(h)) state.route = h;
   viewShell();
+  showServiceNotice(state.serviceAccess);
 }
 
 window.addEventListener('hashchange', ()=>{
