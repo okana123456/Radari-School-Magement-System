@@ -641,6 +641,9 @@ on conflict (school_code) do nothing;
       main{ padding:.5cm!important; max-width:100%!important; }
       .card{ box-shadow:none!important; border:1px solid #ddd!important; }
     }
+    @media(max-width:720px){
+      body{font-size:14px}.card{padding:.9rem;border-radius:10px}.section-title{align-items:flex-start;gap:.75rem}.section-title>div:last-child{width:100%;justify-content:flex-start}.toolbar{display:grid;grid-template-columns:1fr;gap:.65rem}.toolbar .field{min-width:0;width:100%}.metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem}.metric{padding:.85rem}.metric .num{font-size:1.35rem}.row{flex-direction:column}.col{width:100%;min-width:0}table{font-size:.82rem}th,td{padding:.55rem .5rem}.card table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}.btn{min-height:40px}input,select,textarea{font-size:16px}.auth-form .inner{padding:1.2rem}.parent-summary{display:grid;grid-template-columns:1fr;gap:.75rem}
+    }
   </style>
 </head>
 <body>
@@ -719,6 +722,22 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
   alter table public.schools add column if not exists fee_account_prefix text default '';
   alter table public.schools add column if not exists fee_auto_allocate_excess boolean default true;
   alter table public.schools add column if not exists fee_payment_instructions text;
+  alter table public.schools add column if not exists teacher_subscription_amount numeric default 300;
+  alter table public.schools add column if not exists school_monthly_price numeric default 3000;
+  alter table public.schools add column if not exists teacher_device_policy text default 'one_browser';
+  alter table public.schools add column if not exists parent_access_mode text default 'login_required';
+
+  create table if not exists public.teacher_device_sessions (
+    id uuid primary key default gen_random_uuid(),
+    user_id uuid references public.users(id) on delete cascade,
+    school_id uuid references public.schools(id) on delete cascade,
+    browser_id text not null,
+    device_label text,
+    status text default 'active',
+    first_seen timestamptz default now(),
+    last_seen timestamptz default now(),
+    unique(user_id, browser_id)
+  );
 
   alter table public.mpesa_payments add column if not exists fee_balance_id uuid references public.fee_balances(id) on delete set null;
   alter table public.mpesa_payments add column if not exists checkout_request_id text;
@@ -1613,16 +1632,36 @@ function studentForm(existing){
 async function student360(id){
   const m=$('#main');
   m.innerHTML = `<div class="muted">Loading learner\u2026</div>`;
-  const [{data:s},{data:health=[]},{data:att=[]},{data:fees=[]},{data:assess=[]},{data:inc=[]}] = await Promise.all([
+  const [{data:s},{data:health=[]},{data:att=[]},{data:fees=[]},{data:pay=[]},{data:credits=[]},{data:assess=[]},{data:inc=[]}] = await Promise.all([
     sb.from('students').select('*').eq('id',id).single(),
     sb.from('student_health').select('*').eq('student_id',id),
     sb.from('student_attendance').select('date,status').eq('student_id',id).order('date',{ascending:false}).limit(60),
     sb.from('fee_balances').select('*').eq('student_id',id),
+    sb.from('mpesa_payments').select('*').eq('student_id',id).order('payment_date',{ascending:false}).limit(12),
+    sb.from('fee_credits').select('*').eq('student_id',id).order('created_at',{ascending:false}).limit(8),
     sb.from('assessments').select('*, cbc_strands(subject,strand,sub_strand)').eq('student_id',id),
     sb.from('incidents').select('*').eq('student_id',id).order('incident_date',{ascending:false}),
   ]);
+  const money=v=>`KSh ${Number(v||0).toLocaleString()}`;
+  const scoreNum=a=>{
+    const weighted=Number(a.weighted_score);
+    if(Number.isFinite(weighted) && weighted>0) return weighted;
+    return ({EE:88,ME:68,AE:48,BE:28}[a.score]||0);
+  };
+  const groupBy=(rows,keyFn)=>rows.reduce((acc,row)=>{ const k=keyFn(row)||'General'; (acc[k]||(acc[k]=[])).push(row); return acc; },{});
   const present = att.filter(a=>a.status==='present').length;
   const attPct = att.length? Math.round(present/att.length*100):null;
+  const totalDue=fees.reduce((sum,f)=>sum+Number(f.amount_due||0),0);
+  const totalPaid=fees.reduce((sum,f)=>sum+Number(f.amount_paid||0),0);
+  const totalBalance=fees.reduce((sum,f)=>sum+Number(f.balance||0),0);
+  const availableCredit=credits.reduce((sum,c)=>sum+Number(c.remaining_amount||0),0);
+  const bySubject=Object.entries(groupBy(assess,a=>a.learning_area || a.cbc_strands?.subject)).map(([subject,rows])=>{
+    const avg=Math.round(rows.reduce((sum,a)=>sum+scoreNum(a),0)/Math.max(rows.length,1));
+    const latest=rows.slice().sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')))[0]||{};
+    return {subject,avg,count:rows.length,latest};
+  }).sort((a,b)=>b.avg-a.avg);
+  const overall=bySubject.length?Math.round(bySubject.reduce((sum,x)=>sum+x.avg,0)/bySubject.length):null;
+  const lastPayment=pay[0];
   m.innerHTML = `
     <a href="#" id="back" class="small"><i class="ti ti-arrow-left"></i> Back to students</a>
     <div style="display:flex;gap:1.25rem;align-items:flex-end;margin:1rem 0 2rem">
@@ -1634,6 +1673,56 @@ async function student360(id){
     </div>
 
     <div class="row">
+      <div class="col metric"><div class="num">${overall===null?'No results':overall+'%'}</div><div class="lbl">Academic average</div></div>
+      <div class="col metric"><div class="num">${totalBalance>0?money(totalBalance):'Cleared'}</div><div class="lbl">Fee balance</div></div>
+      <div class="col metric"><div class="num">${attPct===null?'No register':attPct+'%'}</div><div class="lbl">Attendance rate</div></div>
+    </div>
+
+    <div class="row">
+      <div class="col card"><h3>Academic progress</h3>
+        ${bySubject.length?`<table><thead><tr><th>Learning area</th><th>Average</th><th>Latest level</th><th>Records</th></tr></thead><tbody>
+          ${bySubject.map(x=>`<tr><td>${esc(x.subject)}</td><td><b>${x.avg}%</b></td><td><span class="badge ${x.latest.score==='BE'?'terra':x.latest.score==='AE'?'amber':''}">${esc(x.latest.score||'Recorded')}</span></td><td>${x.count}</td></tr>`).join('')}
+        </tbody></table>`:`<div class="muted small">No academic records yet.</div>`}
+        ${overall!==null?`<div class="small muted" style="margin-top:.65rem">${esc(autoOverallComment(s.full_name,overall))}</div>`:''}
+      </div>
+      <div class="col card"><h3>Fees and payments</h3>
+        <div class="row" style="margin-bottom:.75rem">
+          <div class="col"><div class="small muted">Billed</div><b>${money(totalDue)}</b></div>
+          <div class="col"><div class="small muted">Received</div><b>${money(totalPaid)}</b></div>
+          <div class="col"><div class="small muted">Credit</div><b>${money(availableCredit)}</b></div>
+        </div>
+        ${fees.length? `<table><thead><tr><th>Term</th><th>Due</th><th>Paid</th><th>Balance</th></tr></thead><tbody>${fees.map(f=>`<tr><td>Term ${esc(f.term)} ${esc(f.year)}</td><td>${money(f.amount_due)}</td><td>${money(f.amount_paid)}</td><td>${Number(f.balance||0)>0?`<span class="badge terra">${money(f.balance)}</span>`:`<span class="badge">Cleared</span>`}</td></tr>`).join('')}</tbody></table>`:`<div class="muted small">No fee records yet.</div>`}
+        ${lastPayment?`<div class="small muted" style="margin-top:.65rem">Last payment: ${money(lastPayment.amount)} on ${new Date(lastPayment.payment_date||lastPayment.created_at).toLocaleString('en-KE')}</div>`:''}
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col card"><h3>Recent payment history</h3>
+        ${pay.length?`<table><thead><tr><th>Date</th><th>Amount</th><th>Reference</th><th>Status</th></tr></thead><tbody>
+          ${pay.map(p=>`<tr><td class="small muted">${new Date(p.payment_date||p.created_at).toLocaleString('en-KE')}</td><td>${money(p.amount)}</td><td>${esc(p.mpesa_ref||p.account_reference||'Manual record')}</td><td>${esc(p.allocation_status||p.status||'recorded')}</td></tr>`).join('')}
+        </tbody></table>`:`<div class="muted small">No payment history yet.</div>`}
+      </div>
+      <div class="col card"><h3>Attendance pattern</h3>
+        <div class="metric" style="padding:0;box-shadow:none">
+          <div class="num">${attPct===null?'\u2014':attPct+'%'}</div>
+          <div class="lbl">Attendance rate from recent register entries</div>
+        </div>
+        ${att.length?`<div class="chips" style="margin-top:.75rem">${['present','late','excused','absent'].map(st=>`<span class="badge ${st==='absent'?'terra':st==='late'?'amber':''}">${st}: ${att.filter(a=>a.status===st).length}</span>`).join('')}</div>`:''}
+        ${attPct!==null && attPct<75?`<div class="badge terra" style="margin-top:.5rem">Below 75% - intervention recommended</div>`:''}
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col card"><h3>Parent and emergency contacts</h3>
+        <table><tbody>
+          <tr><td>Father</td><td>${esc(s.father_name||'Not recorded')}</td></tr>
+          <tr><td>Mother</td><td>${esc(s.mother_name||'Not recorded')}</td></tr>
+          <tr><td>Primary phone</td><td>${esc(s.contact_phone||'Not recorded')}</td></tr>
+          <tr><td>Secondary phone</td><td>${esc(s.contact_phone2||'Not recorded')}</td></tr>
+          <tr><td>Email</td><td>${esc(s.contact_email||'Not recorded')}</td></tr>
+          <tr><td>Emergency</td><td>${esc([s.emergency_name,s.emergency_relationship,s.emergency_phone].filter(Boolean).join(' - ')||'Not recorded')}</td></tr>
+        </tbody></table>
+      </div>
       <div class="col card"><h3>Health</h3>
         ${health.length? health.map(h=>`<div class="health-card ${esc(h.severity||'mild')}">
           <div class="title">${esc(h.condition_name)} <span class="small" style="opacity:.7">&middot; ${esc(h.severity)}</span></div>
@@ -1641,16 +1730,6 @@ async function student360(id){
           ${h.emergency_action?`<div class="small" style="margin-top:.3rem"><b>If urgent:</b> ${esc(h.emergency_action)}</div>`:''}
         </div>`).join('') : `<div class="muted small">No health conditions recorded.</div>`}
         <button class="btn secondary" id="addHealth" style="margin-top:.75rem">Add condition</button>
-      </div>
-      <div class="col card"><h3>Attendance</h3>
-        <div class="metric" style="padding:0;box-shadow:none">
-          <div class="num">${attPct===null?'\u2014':attPct+'%'}</div>
-          <div class="lbl">Attendance rate (last ${att.length} days)</div>
-        </div>
-        ${attPct!==null && attPct<75?`<div class="badge terra" style="margin-top:.5rem">Below 75% \u2014 intervention recommended</div>`:''}
-      </div>
-      <div class="col card"><h3>Fees</h3>
-        ${fees.length? `<table><tbody>${fees.map(f=>`<tr><td>Term ${esc(f.term)} ${esc(f.year)}</td><td>KSh ${esc(f.amount_due)}</td><td>${esc(f.balance)} bal.</td></tr>`).join('')}</tbody></table>`:`<div class="muted small">No fee records yet.</div>`}
       </div>
     </div>
 
@@ -1806,30 +1885,36 @@ function schoolLearningAreas(grade, strands=[]){
   const defaults=CBC_LEARNING_AREAS[grade]||[];
   return [...new Set([...custom, ...defaults])];
 }
+function remarkVariant(seed, choices){
+  const text=String(seed||'');
+  const n=[...text].reduce((a,ch)=>a+ch.charCodeAt(0),0);
+  return choices[n % choices.length];
+}
 function autoLearningAreaRemark(area, avg){
   if(avg==null) return '';
-  if(avg>=75) return `Strong performance in ${area}. Keep extending the learner with more challenging tasks.`;
-  if(avg>=58) return `Good progress in ${area}. Continue regular practice to strengthen mastery.`;
-  if(avg>=41) return `Fair progress in ${area}. The learner needs guided practice and closer follow-up.`;
-  if(avg>=21) return `The learner is approaching expectations in ${area}. Provide extra support and frequent practice.`;
-  return `The learner needs targeted support in ${area}. Arrange remedial activities and close monitoring.`;
+  const a=area||'this learning area';
+  if(avg>=75) return remarkVariant(a+avg,[`Shows strong mastery in ${a} and can handle more challenging tasks.`,`Excellent progress in ${a}. Keep encouraging deeper practice and confidence.`,`Very good achievement in ${a}; the learner should maintain the same focus.`]);
+  if(avg>=58) return remarkVariant(a+avg,[`Good progress in ${a}. More regular practice will strengthen mastery.`,`The learner is performing well in ${a} and should keep practising consistently.`,`Shows sound understanding in ${a}; a little more revision will improve confidence.`]);
+  if(avg>=41) return remarkVariant(a+avg,[`Fair progress in ${a}. Guided practice and correction of mistakes are needed.`,`The learner is developing in ${a} but needs closer follow-up.`,`Some concepts in ${a} need reinforcement through regular revision.`]);
+  if(avg>=21) return remarkVariant(a+avg,[`Approaching expectations in ${a}. Extra support and short daily practice are recommended.`,`The learner needs more confidence and teacher guidance in ${a}.`,`More remedial work is required in ${a} to build the basics.`]);
+  return remarkVariant(a+avg,[`Needs targeted support in ${a}. Plan remedial activities and monitor closely.`,`Serious support is required in ${a}; involve the parent and class teacher.`,`The learner is struggling in ${a} and needs step-by-step reinforcement.`]);
 }
 function autoOverallComment(avg, learnerName='The learner'){
   const name=(learnerName||'The learner').split(' ')[0]||'The learner';
   if(avg==null) return 'Assessment records are incomplete. Please update the learner scores before issuing this report.';
-  if(avg>=75) return `${name} has shown excellent mastery of the learning areas and should keep up the strong effort.`;
-  if(avg>=58) return `${name} is making good progress and should continue practising consistently.`;
-  if(avg>=41) return `${name} has made fair progress but needs more support in weaker learning areas.`;
-  if(avg>=21) return `${name} is improving gradually and requires regular guidance from teachers and guardians.`;
-  return `${name} requires urgent academic support, close monitoring, and consistent remedial work.`;
+  if(avg>=75) return remarkVariant(name+avg,[`${name} has performed very well and should keep up the discipline and confidence.`,`${name} shows excellent effort across the learning areas. Keep supporting this progress.`,`${name} has strong learning habits and should continue aiming higher.`]);
+  if(avg>=58) return remarkVariant(name+avg,[`${name} is making good progress and should continue practising consistently.`,`${name} has worked well this term. More revision will improve the next results.`,`${name} is steadily improving and should maintain regular study habits.`]);
+  if(avg>=41) return remarkVariant(name+avg,[`${name} has made fair progress but needs more support in weaker areas.`,`${name} can improve further with closer supervision and regular practice.`,`${name} needs to revise more consistently and seek help when work is difficult.`]);
+  if(avg>=21) return remarkVariant(name+avg,[`${name} requires regular guidance and remedial practice to improve.`,`${name} is improving gradually but needs more support from both teacher and parent.`,`${name} should be supported with simple daily practice and close follow-up.`]);
+  return remarkVariant(name+avg,[`${name} needs urgent academic support and close monitoring.`,`${name} should receive immediate remedial work and parent follow-up.`,`${name} is below the expected level and needs a clear support plan.`]);
 }
 function autoHoiComment(avg){
   if(avg==null) return 'Report reviewed. Complete assessment data is required for final issuance.';
-  if(avg>=75) return 'Excellent work. The school encourages continued discipline, confidence and consistency.';
-  if(avg>=58) return 'Good effort. Maintain the positive attitude and keep improving steadily.';
-  if(avg>=41) return 'Fair effort. More commitment and guided practice will improve the next results.';
-  if(avg>=21) return 'More support is needed. The school will work with the learner and parent to improve outcomes.';
-  return 'Immediate intervention is recommended. Parent, class teacher and school leadership should follow up closely.';
+  if(avg>=75) return remarkVariant(avg,['Excellent work. Maintain discipline, confidence and consistency.','A strong result. Keep working hard and supporting others positively.','Very good performance. Continue with the same commitment.']);
+  if(avg>=58) return remarkVariant(avg,['Good effort. Maintain the positive attitude and keep improving steadily.','A good report. More revision will lead to even better achievement.','Well tried. Continue working closely with your teachers.']);
+  if(avg>=41) return remarkVariant(avg,['Fair effort. More commitment and guided practice will improve the next results.','Improvement is possible with better preparation and regular revision.','The learner should make better use of teacher support and study time.']);
+  if(avg>=21) return remarkVariant(avg,['More support is needed. The school will work with the learner and parent to improve outcomes.','The learner needs close follow-up and a consistent remedial plan.','Regular support at school and home is recommended.']);
+  return remarkVariant(avg,['Immediate intervention is recommended. Parent, class teacher and school leadership should follow up closely.','A support meeting is recommended to agree on remedial action.','The learner requires urgent support and close monitoring.']);
 }
 
 // CBC Core Competencies (tracked on every report)
@@ -2969,7 +3054,7 @@ modules.fees = async (m)=>{
     <div class="card">
       <div class="section-title"><h3>Fee balances</h3>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-          <button class="btn primary" id="recPay"><i class="ti ti-cash"></i> Record payment</button>
+          <button class="btn primary" id="recPay"><i class="ti ti-cash"></i> Finance: record payment</button>
           <button class="btn secondary" id="addS"><i class="ti ti-plus"></i> Add structure</button>
           <button class="btn secondary" id="addBal"><i class="ti ti-plus"></i> Add balance</button>
           <button class="btn secondary" id="dlFee"><i class="ti ti-table-export"></i> Export CSV</button>
@@ -4013,6 +4098,7 @@ modules.settings = async (m)=>{
         <button class="btn primary">Save payment settings</button>
       </form>
     </div>`:''}
+    ${isAdmin&&state.school?`<div class="card" style="max-width:640px"><h3>Daraja secret deployment helper</h3><p class="small muted">Paste keys here only while setting up. They are masked and are not saved in Radari. Save the real values in Supabase Edge Function Secrets.</p><div class="row"><div class="col field"><label>Consumer key</label><input type="password" id="secretConsumerKey" autocomplete="off"></div><div class="col field"><label>Consumer secret</label><input type="password" id="secretConsumerSecret" autocomplete="off"></div></div><div class="row"><div class="col field"><label>Passkey</label><input type="password" id="secretPasskey" autocomplete="off"></div><div class="col field"><label>Shortcode / Paybill</label><input type="password" id="secretShortcode" autocomplete="off"></div></div><button class="btn secondary" type="button" id="secretGuide">Show secret names</button><pre id="secretOut" class="small" style="white-space:pre-wrap;background:var(--green-50);padding:.75rem;border-radius:var(--radius);display:none;margin-top:.75rem"></pre></div><div class="card" style="max-width:640px"><h3>Business subscription controls</h3><p class="small muted">Prepare pricing for individual teachers and full schools. The actual payment lock can be activated after testing.</p><form id="businessSettings" class="stack"><div class="row"><div class="col field"><label>Individual teacher monthly fee (KSh)</label><input type="number" name="teacher_subscription_amount" value="${esc(state.school.teacher_subscription_amount||300)}"></div><div class="col field"><label>School monthly price (KSh)</label><input type="number" name="school_monthly_price" value="${esc(state.school.school_monthly_price||3000)}"></div></div><div class="row"><div class="col field"><label>Teacher device policy</label><select name="teacher_device_policy"><option value="one_browser" ${state.school.teacher_device_policy!=='open'?'selected':''}>One browser/device per teacher</option><option value="open" ${state.school.teacher_device_policy==='open'?'selected':''}>Allow multiple devices</option></select></div><div class="col field"><label>Parent access</label><select name="parent_access_mode"><option value="login_required" ${state.school.parent_access_mode!=='link_lookup'?'selected':''}>Parent login required</option><option value="link_lookup" ${state.school.parent_access_mode==='link_lookup'?'selected':''}>Secure link lookup later</option></select></div></div><button class="btn primary">Save business settings</button></form></div><div class="card" style="max-width:640px;background:var(--green-50);border-color:var(--green)"><h3>Parent sharing recommendation</h3><p class="small muted">For now, keep parent access login-based. A public WhatsApp link that only asks for admission number can expose learner data. The safer version is a WhatsApp link plus a parent phone OTP or parent login.</p></div>`:''}
     ${isAdmin?`<div class="card" style="max-width:560px;border:1px solid var(--amber)">
       <h3>Demo data</h3>
       <p class="small muted">Populate this school with sample students, teachers, assessments, attendance, fees, notices, and incidents so you can explore every feature immediately.</p>
@@ -4025,6 +4111,8 @@ modules.settings = async (m)=>{
     const { error } = await sb.from('users').update(f).eq('id',state.profile.id);
     if(error) toast(error.message,true); else { toast('Saved'); Object.assign(state.profile, f); }
   };
+  if($('#secretGuide')) $('#secretGuide').onclick=()=>{ const mask=v=>v?String(v).slice(0,4)+'...'+String(v).slice(-4)+' ('+String(v).length+' chars)':'not pasted'; $('#secretOut').style.display='block'; $('#secretOut').textContent='Add these in Supabase > Edge Functions > Secrets:\n\nDARAJA_CONSUMER_KEY = '+mask($('#secretConsumerKey').value)+'\nDARAJA_CONSUMER_SECRET = '+mask($('#secretConsumerSecret').value)+'\nDARAJA_PASSKEY = '+mask($('#secretPasskey').value)+'\nDARAJA_SHORTCODE = '+mask($('#secretShortcode').value); };
+  if($('#businessSettings')) $('#businessSettings').onsubmit=async(e)=>{ e.preventDefault(); const f=Object.fromEntries(new FormData(e.target)); f.teacher_subscription_amount=+f.teacher_subscription_amount||300; f.school_monthly_price=+f.school_monthly_price||3000; const {data,error}=await sb.from('schools').update(f).eq('id',state.school.id).select('*').single(); if(error){ toast('Save failed. Run the business SQL upgrade first: '+error.message,true); return; } state.school=data; toast('Business settings saved'); navigate('settings'); };
   if($('#seedBtn')) $('#seedBtn').onclick = ()=>window.seedDemoData();
   if($('#feePaySettings')) $('#feePaySettings').onsubmit=async(e)=>{
     e.preventDefault();
@@ -4042,6 +4130,23 @@ modules.settings = async (m)=>{
 /* ============================================================================
  * BOOT
  * ==========================================================================*/
+async function ensureTeacherDevicePolicy(){
+  try{
+    if(state.profile?.role!=='teacher') return true;
+    if(state.school?.teacher_device_policy==='open') return true;
+    const key='radari_browser_id';
+    let browserId=localStorage.getItem(key);
+    if(!browserId){ browserId=(crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random()); localStorage.setItem(key,browserId); }
+    const label=[navigator.platform,navigator.userAgent.split(')')[0].replace('(','')].filter(Boolean).join(' - ').slice(0,120);
+    const {data:existing=[]}=await sb.from('teacher_device_sessions').select('*').eq('user_id',state.profile.id).eq('status','active');
+    const mine=existing.find(x=>x.browser_id===browserId);
+    if(existing.length && !mine){ toast('This teacher account is already active on another browser. Ask the admin to reset device access.', true); await sb.auth.signOut(); return false; }
+    if(mine){ await sb.from('teacher_device_sessions').update({last_seen:new Date().toISOString(),device_label:label}).eq('id',mine.id); }
+    else { await sb.from('teacher_device_sessions').insert({user_id:state.profile.id,school_id:state.profile.school_id,browser_id:browserId,device_label:label,status:'active'}); }
+  }catch(e){ console.warn('Device policy skipped', e); }
+  return true;
+}
+
 async function loadProfile(){
   const { data:{ user } } = await sb.auth.getUser();
   if(!user) return null;
