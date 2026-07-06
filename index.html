@@ -102,6 +102,8 @@ create table if not exists public.cbc_strands (
   id uuid primary key default gen_random_uuid(),
   school_id uuid references public.schools(id) on delete cascade,
   grade text, subject text, strand text, sub_strand text,
+  teacher_id uuid references public.teachers(id) on delete set null,
+  instructor_name text,
   created_at timestamptz default now()
 );
 
@@ -725,6 +727,8 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
   alter table public.lesson_plans add column if not exists year int;
 
   alter table public.assignments add column if not exists attachment_url text;
+  alter table public.cbc_strands add column if not exists teacher_id uuid references public.teachers(id) on delete set null;
+  alter table public.cbc_strands add column if not exists instructor_name text;
   alter table public.students add column if not exists nationality text;
   alter table public.students add column if not exists religion text;
   alter table public.students add column if not exists home_county text;
@@ -2172,13 +2176,37 @@ function sortGrades(grades){
 function schoolGradeList(students=[], strands=[]){
   return sortGrades([...DEFAULT_GRADES, ...students.map(s=>s.grade), ...strands.map(s=>s.grade)]);
 }
-function schoolLearningAreas(grade, strands=[]){
-  const custom=[...new Set((strands||[])
+function gradeSubjectRows(grade, strands=[]){
+  const custom=(strands||[])
     .filter(s=>!grade || s.grade===grade)
-    .map(s=>s.subject)
-    .filter(Boolean))];
-  const defaults=CBC_LEARNING_AREAS[grade]||[];
-  return [...new Set([...custom, ...defaults])];
+    .filter(s=>s.subject)
+    .map(s=>({
+      id:s.id,
+      subject:s.subject,
+      strand:s.strand||'General',
+      sub_strand:s.sub_strand||'School configured',
+      teacher_id:s.teacher_id||'',
+      instructor_name:s.instructor_name||'',
+      custom:true,
+    }));
+  if(custom.length) return custom;
+  return (CBC_LEARNING_AREAS[grade]||[]).map(subject=>({
+    id:`default:${subject}`,
+    subject,
+    strand:'General',
+    sub_strand:'CBC default',
+    teacher_id:'',
+    instructor_name:'',
+    custom:false,
+  }));
+}
+function schoolLearningAreas(grade, strands=[]){
+  return [...new Set(gradeSubjectRows(grade, strands).map(s=>s.subject).filter(Boolean))];
+}
+function subjectInstructorMap(grade, strands=[]){
+  return Object.fromEntries(gradeSubjectRows(grade, strands)
+    .filter(s=>s.instructor_name)
+    .map(s=>[s.subject, s.instructor_name]));
 }
 function remarkVariant(seed, choices){
   const text=String(seed||'');
@@ -2530,13 +2558,15 @@ function downloadGradedExamExcel(students, displayAreas, amap, testCol, term, ye
 async function openLearningAreaManager(backRoute='grading'){
   const m=$('#main');
   const sid=state.profile.school_id;
-  const [{data:students=[]},{data:strands=[]}]=await Promise.all([
+  const [{data:students=[]},{data:strands=[]},{data:teachers=[]}]=await Promise.all([
     sb.from('students').select('grade').eq('school_id',sid),
     sb.from('cbc_strands').select('*').eq('school_id',sid).order('grade').order('subject'),
+    sb.from('teachers').select('id,full_name').eq('school_id',sid).eq('employment_status','active').order('full_name'),
   ]);
   const grades=schoolGradeList(students, strands);
   const selected=state._areaGrade||grades[0]||'Grade 1';
-  const areas=schoolLearningAreas(selected, strands);
+  const subjectRows=gradeSubjectRows(selected, strands);
+  const hasCustomRows=subjectRows.some(s=>s.custom);
   m.innerHTML=`
     <a href="#" id="backGrade" class="small"><i class="ti ti-arrow-left"></i> Back to ${backRoute==='subjects'?'subjects':'CBC grading'}</a>
     <div class="section-title" style="margin-top:1rem">
@@ -2560,10 +2590,14 @@ async function openLearningAreaManager(backRoute='grading'){
       </div>
       <div class="col card" style="min-width:280px">
         <h3>${esc(selected)} subjects</h3>
-        ${areas.length?`<table><thead><tr><th>Learning area</th><th></th></tr></thead><tbody>
-          ${areas.map(a=>{
-            const custom=strands.find(s=>s.grade===selected&&s.subject===a);
-            return `<tr><td>${esc(a)}</td><td>${custom?`<a href="#" class="small edit-area" data-id="${custom.id}">Edit</a> &nbsp; <a href="#" class="small del-area" data-id="${custom.id}" style="color:var(--terracotta)">Remove</a>`:'<span class="small muted">CBC default</span>'}</td></tr>`;
+        ${!hasCustomRows?`<p class="small muted">This grade is still using CBC defaults. Editing any subject will create a school-specific subject list for this grade.</p>`:''}
+        ${subjectRows.length?`<table><thead><tr><th>Learning area</th><th>Instructor</th><th></th></tr></thead><tbody>
+          ${subjectRows.map(a=>{
+            return `<tr>
+              <td>${esc(a.subject)}${a.custom?'':'<div class="small muted">CBC default</div>'}</td>
+              <td class="small muted">${esc(a.instructor_name||'Not set')}</td>
+              <td><a href="#" class="small edit-area" data-id="${a.custom?esc(a.id):''}" data-subject="${esc(a.subject)}" data-strand="${esc(a.strand)}" data-sub="${esc(a.sub_strand)}" data-teacher="${esc(a.teacher_id||'')}" data-instructor="${esc(a.instructor_name||'')}">Edit</a>${a.custom?` &nbsp; <a href="#" class="small del-area" data-id="${esc(a.id)}" style="color:var(--terracotta)">Remove</a>`:''}</td>
+            </tr>`;
           }).join('')}
         </tbody></table>`:`<div class="muted small">No subjects yet.</div>`}
       </div>
@@ -2571,9 +2605,12 @@ async function openLearningAreaManager(backRoute='grading'){
         <h3>Add subject</h3>
         <form id="areaForm" class="stack">
           <div class="field"><label>Learning area / Subject</label><input name="subject" required placeholder="e.g. Computer Studies"></div>
+          <div class="field"><label>Instructor from teacher list</label><select name="teacher_id" id="subjectTeacher"><option value="">Not linked</option>${teachers.map(t=>`<option value="${esc(t.id)}">${esc(t.full_name)}</option>`).join('')}</select></div>
+          <div class="field"><label>Instructor name on report card</label><input name="instructor_name" id="subjectInstructor" placeholder="e.g. Madam Akinyi"></div>
           <div class="field"><label>Strand / Topic</label><input name="strand" placeholder="General"></div>
           <div class="field"><label>Sub-strand</label><input name="sub_strand" placeholder="School configured"></div>
           <input type="hidden" name="id" id="areaEditId">
+          <input type="hidden" name="original_subject" id="areaOriginalSubject">
           <button class="btn primary" id="areaSubmit">Add subject</button>
           <button class="btn secondary hide" type="button" id="cancelAreaEdit">Cancel edit</button>
         </form>
@@ -2595,18 +2632,24 @@ async function openLearningAreaManager(backRoute='grading'){
   });
   $$('.edit-area').forEach(a=>a.onclick=(e)=>{
     e.preventDefault();
-    const row=strands.find(s=>s.id===a.dataset.id);
-    if(!row) return;
-    $('#areaEditId').value=row.id;
-    $('#areaForm').subject.value=row.subject||'';
-    $('#areaForm').strand.value=row.strand||'General';
-    $('#areaForm').sub_strand.value=row.sub_strand||'School configured';
+    $('#areaEditId').value=a.dataset.id||'';
+    $('#areaOriginalSubject').value=a.dataset.subject||'';
+    $('#areaForm').subject.value=a.dataset.subject||'';
+    $('#areaForm').teacher_id.value=a.dataset.teacher||'';
+    $('#areaForm').instructor_name.value=a.dataset.instructor||'';
+    $('#areaForm').strand.value=a.dataset.strand||'General';
+    $('#areaForm').sub_strand.value=a.dataset.sub||'School configured';
     $('#areaSubmit').textContent='Save subject';
     $('#cancelAreaEdit').classList.remove('hide');
     $('#areaForm').subject.focus();
   });
+  $('#subjectTeacher').onchange=()=>{
+    const t=teachers.find(x=>x.id===$('#subjectTeacher').value);
+    if(t && !$('#subjectInstructor').value.trim()) $('#subjectInstructor').value=t.full_name||'';
+  };
   $('#cancelAreaEdit').onclick=()=>{
     $('#areaEditId').value='';
+    $('#areaOriginalSubject').value='';
     $('#areaForm').reset();
     $('#areaSubmit').textContent='Add subject';
     $('#cancelAreaEdit').classList.add('hide');
@@ -2621,8 +2664,23 @@ async function openLearningAreaManager(backRoute='grading'){
       subject:f.subject.trim(),
       strand:(f.strand||'General').trim(),
       sub_strand:(f.sub_strand||'School configured').trim(),
+      teacher_id:f.teacher_id||null,
+      instructor_name:(f.instructor_name||'').trim()||null,
     };
-    const editId=String(f.id||'').trim();
+    let editId=String(f.id||'').trim();
+    const originalSubject=String(f.original_subject||'').trim();
+    const customRows=(strands||[]).filter(s=>s.grade===grade&&s.subject);
+    if(!editId && !customRows.length){
+      const defaults=(CBC_LEARNING_AREAS[grade]||[]);
+      if(defaults.length){
+        const seedRows=defaults.map(subject=>({school_id:sid,grade,subject,strand:'General',sub_strand:'CBC default'}));
+        const {data:seeded=[],error:seedErr}=await sb.from('cbc_strands').insert(seedRows).select('*');
+        if(seedErr){ toast('Could not prepare editable subjects: '+seedErr.message,true); return; }
+        if(originalSubject){
+          editId=(seeded||[]).find(s=>s.subject===originalSubject)?.id||'';
+        }
+      }
+    }
     const req=editId
       ? sb.from('cbc_strands').update(payload).eq('id',editId)
       : sb.from('cbc_strands').insert(payload);
@@ -3838,7 +3896,7 @@ modules.reports = async (m)=>{
       sb.from('student_attendance').select('status').eq('student_id',sidu),
       sb.from('student_health').select('condition_name,severity').eq('student_id',sidu),
       sb.from('students').select('id,full_name').eq('school_id',sid).eq('grade',s.grade||'').eq('stream',s.stream||''),
-      sb.from('cbc_strands').select('grade,subject').eq('school_id',sid),
+      sb.from('cbc_strands').select('grade,subject,instructor_name,teacher_id').eq('school_id',sid),
     ]);
 
     const daysPresent=att.filter(x=>x.status==='present').length;
@@ -3847,6 +3905,7 @@ modules.reports = async (m)=>{
     // Build per-learning-area scores
     const laMap={};
     allAss.forEach(a=>{ laMap[a.learning_area]=a; });
+    const instructorMap=subjectInstructorMap(s.grade||'', allStrands);
 
     const laOrder=(schoolLearningAreas(s.grade||'', allStrands).length?schoolLearningAreas(s.grade||'', allStrands):Object.keys(laMap));
     const laRows=laOrder.map(la=>{
@@ -3859,7 +3918,7 @@ modules.reports = async (m)=>{
       const avg=parts.length?Math.round(parts.reduce((p,c)=>p+c,0)/parts.length*10)/10:null;
       const rc=avg!=null?pctToRubricCode(avg):null;
       const pts=rc?RUBRIC_BANDS.find(b=>b.code===rc)?.points||null:null;
-      return {la,t1,t2,t3,avg,rc,pts,remarks:a.remarks||autoLearningAreaRemark(la, avg),instructor:a.teachers?.full_name||''};
+      return {la,t1,t2,t3,avg,rc,pts,remarks:a.remarks||autoLearningAreaRemark(la, avg),instructor:instructorMap[la]||a.teachers?.full_name||''};
     }).filter(r=>r.avg!=null||r.t1!=null||r.t2!=null||r.t3!=null);
 
     // Summary stats
