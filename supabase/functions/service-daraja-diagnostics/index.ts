@@ -20,6 +20,17 @@ function mask(value: string) {
   return `${value.slice(0, 4)}...${value.slice(-4)} (${value.length} chars)`;
 }
 
+function secretCheck(value: string, expectedLength?: number) {
+  const clean = String(value || "").trim();
+  return {
+    seen: mask(clean),
+    length: clean.length,
+    has_spaces: clean !== String(value || ""),
+    expected_length: expectedLength || null,
+    length_ok: expectedLength ? clean.length === expectedLength : true,
+  };
+}
+
 function normalizePhone(phone: string) {
   let p = String(phone || "").replace(/\D/g, "");
   if (p.startsWith("0")) p = "254" + p.slice(1);
@@ -50,15 +61,15 @@ Deno.serve(async (req) => {
     const report: any = {
       mode,
       secrets_seen: {
-        SERVICE_CONSUMER_KEY: mask(consumerKey),
-        SERVICE_CONSUMER_SECRET: mask(consumerSecret),
-        SERVICE_PASSKEY: mask(passkey),
-        SERVICE_SHORTCODE: mask(String(shortcode || "")),
+        SERVICE_CONSUMER_KEY: secretCheck(consumerKey, 48),
+        SERVICE_CONSUMER_SECRET: secretCheck(consumerSecret, 64),
+        SERVICE_PASSKEY: secretCheck(passkey, 64),
+        SERVICE_SHORTCODE: secretCheck(String(shortcode || ""), 7),
       },
     };
 
     if (!consumerKey || !consumerSecret || !passkey || !shortcode) {
-      return json({ ok: false, message: "Missing service credentials.", report }, 500);
+      return json({ ok: false, message: "Missing service credentials.", report });
     }
 
     const authUrl = mode === "sandbox"
@@ -74,7 +85,7 @@ Deno.serve(async (req) => {
     const oauth = await oauthRes.json();
     report.oauth = { ok: oauthRes.ok, status: oauthRes.status, response: oauth };
     if (!oauthRes.ok || !oauth.access_token) {
-      return json({ ok: false, message: "OAuth failed.", report }, 502);
+      return json({ ok: false, message: "OAuth failed.", report });
     }
 
     if (!phone) return json({ ok: true, message: "OAuth works. Add phone to test STK.", report });
@@ -111,9 +122,8 @@ Deno.serve(async (req) => {
       ok: report.stk.ok,
       message: report.stk.ok ? "STK accepted. Service subscription Daraja setup works." : "STK failed. Check response.",
       report,
-    }, report.stk.ok ? 200 : 502);
+    });
   } catch (error) {
-    return json({ ok: false, message: error?.message || String(error) }, 500);
+    return json({ ok: false, message: error?.message || String(error) });
   }
 });
-

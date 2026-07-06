@@ -4761,7 +4761,17 @@ async function ensureTeacherDevicePolicy(){
     const mine=existing.find(x=>x.browser_id===browserId);
     if(existing.length && !mine){ toast('This teacher account is already active on another browser. Ask the admin to reset device access.', true); await sb.auth.signOut(); return false; }
     if(mine){ await sb.from('teacher_device_sessions').update({last_seen:new Date().toISOString(),device_label:label}).eq('id',mine.id); }
-    else { await sb.from('teacher_device_sessions').insert({user_id:state.profile.id,school_id:state.profile.school_id,browser_id:browserId,device_label:label,status:'active'}); }
+    else {
+      const {error}=await sb.from('teacher_device_sessions').upsert({
+        user_id:state.profile.id,
+        school_id:state.profile.school_id,
+        browser_id:browserId,
+        device_label:label,
+        status:'active',
+        last_seen:new Date().toISOString()
+      }, { onConflict:'user_id,browser_id' });
+      if(error) console.warn('Device session update failed', error);
+    }
   }catch(e){ console.warn('Device policy skipped', e); }
   return true;
 }
@@ -4771,8 +4781,11 @@ function serviceCurrency(amount){
 }
 
 function serviceAmountForProfile(){
-  if(!state.school) return 300;
-  if(state.profile?.role==='teacher') return Number(state.school.teacher_subscription_amount||450);
+  if(!state.school) return 450;
+  if(state.profile?.role==='teacher') {
+    const configured = Number(state.school.teacher_subscription_amount || 0);
+    return configured > 0 ? configured : 450;
+  }
   return Number(state.school.school_monthly_price||3000);
 }
 
@@ -4805,7 +4818,12 @@ async function refreshServiceAccess(){
 
 async function startServiceSubscriptionPayment(phone, months=1, amount=null){
   amount = amount || serviceAmountForProfile();
+  const {data:{session}, error:sessionError}=await sb.auth.getSession();
+  if(sessionError || !session?.access_token){
+    throw new Error('Your login session has expired. Please sign out, sign in again, then try payment.');
+  }
   const {data,error}=await sb.functions.invoke('start-service-subscription-payment',{
+    headers:{ Authorization:`Bearer ${session.access_token}` },
     body:{
       school_id:state.profile.school_id,
       user_id:state.profile.id,
