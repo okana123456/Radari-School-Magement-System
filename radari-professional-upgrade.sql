@@ -1,6 +1,6 @@
 -- Radari professional upgrade: business controls and teacher device policy
 
-alter table public.schools add column if not exists teacher_subscription_amount numeric default 300;
+alter table public.schools add column if not exists teacher_subscription_amount numeric default 450;
 alter table public.schools add column if not exists school_monthly_price numeric default 3000;
 alter table public.schools add column if not exists teacher_device_policy text default 'one_browser';
 alter table public.schools add column if not exists parent_access_mode text default 'login_required';

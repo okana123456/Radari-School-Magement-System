@@ -39,6 +39,9 @@ create table if not exists public.service_subscription_payments (
   created_at timestamptz default now()
 );
 
+alter table public.service_subscription_payments
+  add column if not exists subscription_months int default 1;
+
 create unique index if not exists service_subscription_checkout_unique
   on public.service_subscription_payments(checkout_request_id)
   where checkout_request_id is not null;

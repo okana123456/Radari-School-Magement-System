@@ -729,7 +729,7 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
   alter table public.schools add column if not exists fee_account_prefix text default '';
   alter table public.schools add column if not exists fee_auto_allocate_excess boolean default true;
   alter table public.schools add column if not exists fee_payment_instructions text;
-  alter table public.schools add column if not exists teacher_subscription_amount numeric default 300;
+  alter table public.schools add column if not exists teacher_subscription_amount numeric default 450;
   alter table public.schools add column if not exists school_monthly_price numeric default 3000;
   alter table public.schools add column if not exists teacher_device_policy text default 'one_browser';
   alter table public.schools add column if not exists parent_access_mode text default 'login_required';
@@ -1130,6 +1130,8 @@ function isIndividualTeacher(){
   return state.profile?.role==='teacher' && isIndividualTeacherWorkspace();
 }
 
+const SUPPORT_PHONE = '0708095461';
+
 const NAV_GROUPS = [
   { label:'Overview', items:[
     { id:'dashboard',   label:'Dashboard',       icon:'ti-layout-dashboard', roles:['admin','headteacher','teacher','parent'] },
@@ -1164,6 +1166,15 @@ const NAV_GROUPS = [
 ];
 
 function buildNav(role, currentRoute){
+  if(isPlatformOwner()){
+    const ownerItems=[
+      { id:'owner', label:'Subscriptions', icon:'ti-adjustments-dollar' },
+      { id:'settings', label:'Settings', icon:'ti-settings' },
+    ];
+    return '<div class="nav-group"><div class="nav-group-label">Owner console</div><nav class="nav">'
+      + ownerItems.map(n=>'<a href="#'+n.id+'" data-route="'+n.id+'" class="'+(currentRoute===n.id?'active':'')+'"><i class="ti '+n.icon+'"></i>'+n.label+'</a>').join('')
+      + '</nav></div>';
+  }
   if(role==='teacher' && isIndividualTeacherWorkspace()){
     const teacherItems=[
       { id:'dashboard', label:'Home', icon:'ti-home' },
@@ -1190,15 +1201,7 @@ function buildNav(role, currentRoute){
       </nav>
     </div>`;
   }).join('');
-  const ownerNav = isPlatformOwner()?`<div class="nav-group">
-    <div class="nav-group-label">Owner</div>
-    <nav class="nav">
-      <a href="#owner" data-route="owner" class="${currentRoute==='owner'?'active':''}">
-        <i class="ti ti-adjustments-dollar"></i>Subscriptions
-      </a>
-    </nav>
-  </div>`:'';
-  return baseNav + ownerNav;
+  return baseNav;
 }
 
 function viewShell(){
@@ -1211,7 +1214,7 @@ function viewShell(){
       <div class="sidebar-inner">
         <div>
           <div class="brand">${APP_NAME}</div>
-          <div class="school-name">${esc(state.school?.name||'')}</div>
+          <div class="school-name">${esc(isPlatformOwner()?'Radari Owner Console':(state.school?.name||''))}</div>
         </div>
         <div id="navHolder">${buildNav(role, state.route)}</div>
       </div>
@@ -1224,7 +1227,7 @@ function viewShell(){
     <div class="content-wrap">
       <div class="topbar">
         <button class="menu" id="menuBtn" aria-label="Menu"><i class="ti ti-menu-2"></i></button>
-        <div class="school">${esc(state.school?.name||APP_NAME)}</div>
+        <div class="school">${esc(isPlatformOwner()?'Radari Owner Console':(state.school?.name||APP_NAME))}</div>
         <div class="mod" id="modName"></div>
       </div>
       <main id="main"></main>
@@ -1270,6 +1273,7 @@ const modules = {};
 
 /* --- DASHBOARD --- */
 modules.dashboard = async (m)=>{
+  if(isPlatformOwner()) return modules.owner(m);
   const sid = state.profile.school_id;
   if(!sid){
     m.innerHTML=`<div class="card"><h2>Welcome to ${APP_NAME}</h2>
@@ -1350,6 +1354,7 @@ async function dashboardTeacher(m){
     const access=serviceAccessStatus();
     m.innerHTML=`<h1>Good ${new Date().getHours()<12?'morning':'afternoon'}, ${esc((state.profile.full_name||'Teacher').split(' ')[0])}.</h1>
       <p class="muted" style="margin-top:-.4rem;margin-bottom:1.25rem">Your personal CBC grading workspace</p>
+      <div class="card" style="border-color:var(--green);margin-bottom:1rem"><div class="small muted">Support</div><b>Call ${SUPPORT_PHONE}</b><div class="small muted">For device reset, subscription help, or account support.</div></div>
       <div class="metrics"><div class="metric"><div class="num">${students.length}</div><div class="lbl">Learners</div></div><div class="metric"><div class="num">${access?.locked?'Due':'Active'}</div><div class="lbl">Subscription</div></div><div class="metric"><div class="num">${esc(access?.paidUntil||'--')}</div><div class="lbl">Paid until</div></div></div>
       <div class="card"><h3>Start here</h3><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.75rem"><button class="btn secondary block" data-route="students"><i class="ti ti-users"></i> Add learners</button><button class="btn secondary block" data-route="grading"><i class="ti ti-clipboard-check"></i> Enter marks</button><button class="btn secondary block" data-route="reports"><i class="ti ti-file-text"></i> Reports</button><button class="btn secondary block" data-route="subscription"><i class="ti ti-credit-card"></i> Pay subscription</button></div></div>
       <div class="card"><h3>Recent learners</h3>${students.length?`<table><thead><tr><th>Name</th><th>Admission</th><th>Class</th><th>Gender</th></tr></thead><tbody>${students.map(s=>`<tr><td>${esc(s.full_name)}</td><td>${esc(s.admission_number||'')}</td><td>${esc(s.grade||'')}</td><td>${esc(s.gender||'')}</td></tr>`).join('')}</tbody></table>`:'<div class="muted small">No learners yet. Add your class list to begin.</div>'}</div>`;
@@ -1537,6 +1542,16 @@ function renderStudentTable(students, grade, query){
     (!query||(s.full_name||'').toLowerCase().includes(query)||(s.admission_number||'').toLowerCase().includes(query))
   );
   if(!filtered.length) return `<div class="empty"><i class="ti ti-users"></i><div>No learners match this filter.</div></div>`;
+  if(isIndividualTeacher()){
+    return `<table><thead><tr><th>Name</th><th>Adm/NEMIS</th><th>Class</th><th>Gender</th><th></th></tr></thead>
+    <tbody>${filtered.map(s=>`<tr>
+      <td><a href="#" data-id="${s.id}" class="open">${esc(s.full_name)}</a></td>
+      <td class="small muted">${esc(s.nemis_number||s.admission_number||'')}</td>
+      <td>${esc([s.grade,s.stream].filter(Boolean).join(' ')||'')}</td>
+      <td>${esc(s.gender||'')}</td>
+      <td><a href="#" data-id="${s.id}" class="open small">View</a></td>
+    </tr>`).join('')}</tbody></table>`;
+  }
   return `<table><thead><tr><th>Name</th><th>Adm.</th><th>Grade</th><th>Stream</th><th>Gender</th><th>DOB</th><th></th></tr></thead>
   <tbody>${filtered.map(s=>`<tr>
     <td><a href="#" data-id="${s.id}" class="open">${esc(s.full_name)}</a></td>
@@ -1649,6 +1664,35 @@ async function importStudentsFile(file, schoolId, existingStudents=[]){
 function studentForm(existing){
   const m=$('#main');
   const GRADES=DEFAULT_GRADES;
+  if(isIndividualTeacher() && !existing){
+    m.innerHTML = `<div class="card" style="max-width:520px">
+      <a href="#" id="back" class="small"><i class="ti ti-arrow-left"></i> Back</a>
+      <h2 style="margin-top:1rem">Add learner</h2>
+      <p class="muted small">Keep this quick on phone. You can add parent contacts and other details later using Edit.</p>
+      <form id="f" class="stack">
+        <div class="row">
+          <div class="col field"><label>Grade / Class</label><input name="grade" list="gradeOptions" placeholder="e.g. Grade 4"><datalist id="gradeOptions">${GRADES.map(g=>`<option value="${esc(g)}"></option>`).join('')}</datalist></div>
+          <div class="col field"><label>Stream (optional)</label><input name="stream" placeholder="A"></div>
+        </div>
+        <div class="field"><label>Learner name *</label><input name="full_name" required></div>
+        <div class="field"><label>NEMIS / Admission number</label><input name="admission_number"></div>
+        <div class="field"><label>Gender</label><select name="gender"><option value="">Select</option><option value="Male">Male</option><option value="Female">Female</option></select></div>
+        <button class="btn primary block">Save learner</button>
+      </form>
+    </div>`;
+    $('#back').onclick=(e)=>{e.preventDefault();navigate('students');};
+    $('#f').onsubmit=async(e)=>{
+      e.preventDefault();
+      const f=Object.fromEntries(new FormData(e.target));
+      f.school_id=state.profile.school_id;
+      if(f.admission_number && !f.nemis_number) f.nemis_number=f.admission_number;
+      Object.keys(f).forEach(k=>{ if(f[k]==='') delete f[k]; });
+      const {error}=await sb.from('students').insert(f);
+      if(error){ toast(error.message,true); return; }
+      toast('Learner added'); navigate('students');
+    };
+    return;
+  }
   m.innerHTML = `<div class="card" style="max-width:700px">
     <a href="#" id="back" class="small"><i class="ti ti-arrow-left"></i> Back</a>
     <h2 style="margin-top:1rem">${existing?'Edit learner':'Enrol a new learner'}</h2>
@@ -1760,7 +1804,10 @@ async function student360(id){
         <h1 style="margin-bottom:.2rem">${esc(s.full_name)}</h1>
         <div class="muted">${esc(s.grade||'')} ${esc(s.stream||'')} &middot; Adm. ${esc(s.admission_number||'\u2014')}</div>
       </div>
-      <button class="btn secondary" id="edit" style="margin-left:auto">Edit details</button>
+      <div style="margin-left:auto;display:flex;gap:.5rem;flex-wrap:wrap">
+        <button class="btn secondary" id="shareWhatsApp"><i class="ti ti-brand-whatsapp"></i> Share</button>
+        <button class="btn secondary" id="edit">Edit details</button>
+      </div>
     </div>
 
     <div class="row">
@@ -1774,7 +1821,8 @@ async function student360(id){
         ${bySubject.length?`<table><thead><tr><th>Learning area</th><th>Average</th><th>Latest level</th><th>Records</th></tr></thead><tbody>
           ${bySubject.map(x=>`<tr><td>${esc(x.subject)}</td><td><b>${x.avg}%</b></td><td><span class="badge ${x.latest.score==='BE'?'terra':x.latest.score==='AE'?'amber':''}">${esc(x.latest.score||'Recorded')}</span></td><td>${x.count}</td></tr>`).join('')}
         </tbody></table>`:`<div class="muted small">No academic records yet.</div>`}
-        ${overall!==null?`<div class="small muted" style="margin-top:.65rem">${esc(autoOverallComment(s.full_name,overall))}</div>`:''}
+        ${bySubject.length?`<div style="margin-top:1rem"><canvas id="studentProgressChart" height="180"></canvas></div>`:''}
+        ${overall!==null?`<div class="small muted" style="margin-top:.65rem">${esc(autoOverallComment(overall,s.full_name))}</div>`:''}
       </div>
       <div class="col card"><h3>Fees and payments</h3>
         <div class="row" style="margin-bottom:.75rem">
@@ -1837,6 +1885,25 @@ async function student360(id){
     </div>`;
   $('#back').onclick=(e)=>{e.preventDefault();navigate('students');};
   $('#edit').onclick = ()=>studentForm(s);
+  $('#shareWhatsApp').onclick=()=>{
+    const phone=String(s.contact_phone||s.contact_phone2||'').replace(/\D/g,'');
+    const normalized=phone.startsWith('0')?'254'+phone.slice(1):phone;
+    const lines=[
+      `Hello, this is an academic update for ${s.full_name}.`,
+      overall!==null?`Current average: ${overall}%.`:'Assessment records are not complete yet.',
+      bySubject.slice(0,4).map(x=>`${x.subject}: ${x.avg}%`).join('; '),
+      overall!==null?autoOverallComment(overall,s.full_name):'The teacher will update more scores soon.'
+    ].filter(Boolean);
+    const url=`https://wa.me/${normalized && normalized.startsWith('254')?normalized:''}?text=${encodeURIComponent(lines.join('\n'))}`;
+    window.open(url,'_blank');
+  };
+  if($('#studentProgressChart') && window.Chart){
+    new Chart($('#studentProgressChart'),{
+      type:'bar',
+      data:{labels:bySubject.map(x=>x.subject),datasets:[{label:'Average %',data:bySubject.map(x=>x.avg),backgroundColor:'#1f6f4a'}]},
+      options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,max:100}}}
+    });
+  }
   $('#addHealth').onclick = ()=>{
     const wrap = el(`<div class="card" style="max-width:560px;margin-top:1rem"><h3>Add health condition</h3>
       <form id="hf" class="stack">
@@ -1866,7 +1933,10 @@ modules.attendance = async (m)=>{
       <div class="field"><label>Grade</label><select id="g"><option value="">All</option>${['PP1','PP2','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6','Grade 7','Grade 8','Grade 9'].map(g=>`<option>${g}</option>`).join('')}</select></div>
       <div class="field"><label>Stream</label><input id="s" placeholder="optional"></div>
       <div class="field"><label>Date</label><input id="d" type="date" value="${today}"></div>
+      <div class="field"><label>From</label><input id="fromDate" type="date" value="${today}"></div>
+      <div class="field"><label>To</label><input id="toDate" type="date" value="${today}"></div>
       <button class="btn secondary" id="load">Load class</button>
+      <button class="btn secondary" id="downloadRange"><i class="ti ti-download"></i> Download range</button>
     </div><div id="att"></div>`;
   $('#load').onclick = async ()=>{
     const grade=$('#g').value, stream=$('#s').value, date=$('#d').value;
@@ -1903,6 +1973,21 @@ modules.attendance = async (m)=>{
       if(error){ toast(error.message,true); return; }
       toast('Attendance saved');
     };
+  };
+  $('#downloadRange').onclick=async()=>{
+    const grade=$('#g').value, stream=$('#s').value, from=$('#fromDate').value, to=$('#toDate').value;
+    if(!from||!to){ toast('Choose the date range first.',true); return; }
+    let q=sb.from('students').select('id,full_name,admission_number,grade,stream').eq('school_id',sid).order('full_name');
+    if(grade) q=q.eq('grade',grade); if(stream) q=q.eq('stream',stream);
+    const {data:students=[]}=await q;
+    if(!students.length){ toast('No learners match that class.',true); return; }
+    const ids=students.map(s=>s.id);
+    const {data:att=[]}=await sb.from('student_attendance').select('student_id,date,status').in('student_id',ids).gte('date',from).lte('date',to).order('date');
+    const map={}; att.forEach(a=>{ map[`${a.student_id}_${a.date}`]=a.status; });
+    const dates=[]; for(let d=new Date(from); d<=new Date(to); d.setDate(d.getDate()+1)) dates.push(d.toISOString().slice(0,10));
+    const rows=[['Name','Admission No','Grade','Stream',...dates]];
+    students.forEach(s=>rows.push([s.full_name||'',s.admission_number||'',s.grade||'',s.stream||'',...dates.map(d=>map[`${s.id}_${d}`]||'')]));
+    const ws=XLSX.utils.aoa_to_sheet(rows); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Attendance range'); XLSX.writeFile(wb,`attendance-${from}-to-${to}.xlsx`);
   };
 };
 
@@ -4206,7 +4291,7 @@ modules.owner = async (m)=>{
         service_paid_until,service_status,service_last_paid_at,service_last_receipt,
         service_discount_note,service_customer_code
       `).order('created_at',{ascending:false}),
-      sb.from('users').select('id,school_id,role,created_at'),
+      sb.from('users').select('id,school_id,role,full_name,phone,email,created_at'),
       sb.from('students').select('id,school_id,created_at'),
       sb.from('service_subscription_payments').select('id,school_id,amount,status,paid_at,created_at,receipt_number'),
     ]);
@@ -4223,7 +4308,7 @@ modules.owner = async (m)=>{
     const thisMonth = new Date().toISOString().slice(0,7);
     const isIndividual = s=>String(s.type||'').toLowerCase().includes('individual');
     const isExpired = s=>!s.service_paid_until || new Date(`${s.service_paid_until}T23:59:59`) < new Date() || s.service_status==='locked';
-    const planPrice = s=>isIndividual(s) ? Number(s.teacher_subscription_amount||300) : Number(s.school_monthly_price||3000);
+    const planPrice = s=>isIndividual(s) ? Number(s.teacher_subscription_amount||450) : Number(s.school_monthly_price||3000);
     const activeCount = schools.filter(s=>!isExpired(s)).length;
     const expiredCount = schools.length - activeCount;
     const expectedRevenue = schools.reduce((sum,s)=>sum+planPrice(s),0);
@@ -4232,6 +4317,12 @@ modules.owner = async (m)=>{
       .reduce((sum,p)=>sum+Number(p.amount||0),0);
     const signupsThisMonth = ownerUsers.filter(u=>String(u.created_at||'').slice(0,7)===thisMonth).length;
     const userCountBySchool = ownerUsers.reduce((acc,u)=>{ acc[u.school_id]=(acc[u.school_id]||0)+1; return acc; },{});
+    const primaryUserBySchool = ownerUsers.reduce((acc,u)=>{
+      const current=acc[u.school_id];
+      const priority={admin:4,headteacher:3,teacher:2,parent:1};
+      if(!current || (priority[u.role]||0)>(priority[current.role]||0)) acc[u.school_id]=u;
+      return acc;
+    },{});
     const learnerCountBySchool = ownerLearners.reduce((acc,s)=>{ acc[s.school_id]=(acc[s.school_id]||0)+1; return acc; },{});
     const latestPaymentBySchool = completedPayments.reduce((acc,p)=>{
       if(!p.school_id) return acc;
@@ -4256,32 +4347,37 @@ modules.owner = async (m)=>{
       <div class="metric"><div class="num">${serviceCurrency(revenueThisMonth)}</div><div class="lbl">Collected this month</div></div>
     </div>
     <div class="card">
-      ${rows.length?`<table><thead><tr><th>Workspace</th><th>Owner ID</th><th>Users</th><th>Learners</th><th>Plan price</th><th>Paid until</th><th>Last paid</th><th>Status</th><th></th></tr></thead><tbody>
+      ${rows.length?`<table><thead><tr><th>Customer</th><th>Phone</th><th>Workspace / School</th><th>Subscription</th><th>Paid until</th><th>Status</th><th>Support</th></tr></thead><tbody>
         ${rows.map(s=>{
           const individual = isIndividual(s);
           const price = planPrice(s);
           const expired = isExpired(s);
           const lastPayment = latestPaymentBySchool[s.id];
+          const customer = primaryUserBySchool[s.id] || {};
           return `<tr>
-            <td><b>${esc(s.name||'Unnamed workspace')}</b><div class="small muted">${esc(s.type||'School')} &middot; ${esc(s.school_code||'No code')}</div>${s.service_discount_note?`<div class="small muted">Note: ${esc(s.service_discount_note)}</div>`:''}</td>
-            <td><code>${esc(s.service_customer_code||String(s.id).slice(0,8).toUpperCase())}</code><div class="small muted">${esc(s.id)}</div></td>
-            <td>${userCountBySchool[s.id]||0}</td>
-            <td>${learnerCountBySchool[s.id]||0}</td>
-            <td>${serviceCurrency(price)}</td>
+            <td><b>${esc(customer.full_name||s.name||'Unnamed customer')}</b><div class="small muted">${esc(customer.email||'')} ${individual?'&middot; Teacher':''}</div></td>
+            <td>${esc(customer.phone||'Not added')}</td>
+            <td>${esc(s.name||'Workspace')}<div class="small muted">ID: ${esc(s.service_customer_code||String(s.id).slice(0,8).toUpperCase())} &middot; Users: ${userCountBySchool[s.id]||0} &middot; Learners: ${learnerCountBySchool[s.id]||0}</div>${s.service_discount_note?`<div class="small muted">Note: ${esc(s.service_discount_note)}</div>`:''}</td>
+            <td>${serviceCurrency(price)}${lastPayment?`<div class="small muted">Last: ${serviceCurrency(lastPayment.amount)} on ${esc(String(lastPayment.paid_at||lastPayment.created_at||'').slice(0,10))}</div>`:''}</td>
             <td>${esc(s.service_paid_until||'Not active')}</td>
-            <td>${lastPayment?`${serviceCurrency(lastPayment.amount)}<div class="small muted">${esc(String(lastPayment.paid_at||lastPayment.created_at||'').slice(0,10))}</div>`:'-'}</td>
             <td><span class="badge ${expired||s.service_status==='locked'?'terra':''}">${expired?'expired':esc(s.service_status||'active')}</span></td>
-            <td><button class="btn secondary owner-edit" data-id="${esc(s.id)}">Edit</button></td>
+            <td><div style="display:flex;gap:.35rem;flex-wrap:wrap"><button class="btn secondary owner-edit" data-id="${esc(s.id)}">Edit</button><button class="btn secondary reset-device" data-id="${esc(s.id)}">Reset device</button></div></td>
           </tr>`;
         }).join('')}
       </tbody></table>`:`<div class="empty"><i class="ti ti-search"></i><div>No matching workspaces.</div></div>`}
     </div>`;
     $$('.owner-edit').forEach(btn=>btn.onclick=()=>openOwnerEdit(rows.find(s=>s.id===btn.dataset.id)));
+    $$('.reset-device').forEach(btn=>btn.onclick=async()=>{
+      if(!confirm('Reset active device access for this workspace?')) return;
+      const {error}=await sb.from('teacher_device_sessions').update({status:'reset'}).eq('school_id',btn.dataset.id).eq('status','active');
+      if(error){ toast('Device reset failed. Run the owner/device SQL update first: '+error.message,true); return; }
+      toast('Device access reset. The teacher can sign in on a new device.');
+    });
   };
 
   const openOwnerEdit=(s)=>{
     const individual = String(s.type||'').toLowerCase().includes('individual');
-    const currentPrice = individual ? Number(s.teacher_subscription_amount||300) : Number(s.school_monthly_price||3000);
+    const currentPrice = individual ? Number(s.teacher_subscription_amount||450) : Number(s.school_monthly_price||3000);
     const box=el(`<div class="modal-backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9998;display:flex;align-items:center;justify-content:center;padding:1rem">
       <div class="card" style="max-width:620px;width:100%;max-height:90vh;overflow:auto">
         <div class="section-title"><h3>Edit subscription</h3><button class="btn secondary" id="closeOwnerEdit">Close</button></div>
@@ -4319,7 +4415,7 @@ modules.owner = async (m)=>{
         service_status:f.service_status,
         service_discount_note:f.service_discount_note||null,
       };
-      if(individual) update.teacher_subscription_amount=Number(f.price||300);
+      if(individual) update.teacher_subscription_amount=Number(f.price||450);
       else update.school_monthly_price=Number(f.price||3000);
       const {error}=await sb.from('schools').update(update).eq('id',s.id);
       if(error){ toast('Save failed. Run the owner SQL first: '+error.message,true); return; }
@@ -4338,6 +4434,30 @@ modules.owner = async (m)=>{
 modules.settings = async (m)=>{
   const isAdmin = ['admin','headteacher'].includes(state.profile.role);
   const owner = isPlatformOwner();
+  if(owner){
+    m.innerHTML = `<h1>Platform settings</h1>
+      <div class="card" style="max-width:560px">
+        <h3>Your operator profile</h3>
+        <form id="p" class="stack">
+          <div class="field"><label>Full name</label><input name="full_name" value="${esc(state.profile.full_name||'')}"></div>
+          <div class="field"><label>Support phone</label><input name="phone" value="${esc(state.profile.phone||SUPPORT_PHONE)}"></div>
+          <div><button class="btn primary">Save</button></div>
+        </form>
+      </div>
+      <div class="card" style="max-width:640px">
+        <h3>Owner tools</h3>
+        <p class="small muted">Manage subscription prices, free months, expiry dates and teacher device resets.</p>
+        <button class="btn primary" id="openOwnerPage">Open subscription control</button>
+      </div>`;
+    $('#p').onsubmit=async(e)=>{
+      e.preventDefault();
+      const f=Object.fromEntries(new FormData(e.target));
+      const {error}=await sb.from('users').update(f).eq('id',state.profile.id);
+      if(error) toast(error.message,true); else { toast('Saved'); Object.assign(state.profile,f); }
+    };
+    $('#openOwnerPage').onclick=()=>navigate('owner');
+    return;
+  }
   m.innerHTML = `<h1>Settings</h1>
     <div class="card" style="max-width:560px">
       <h3>Your profile</h3>
@@ -4406,7 +4526,7 @@ modules.settings = async (m)=>{
   };
   if($('#openOwnerPage')) $('#openOwnerPage').onclick=()=>navigate('owner');
   if($('#secretGuide')) $('#secretGuide').onclick=()=>{ const mask=v=>v?String(v).slice(0,4)+'...'+String(v).slice(-4)+' ('+String(v).length+' chars)':'not pasted'; $('#secretOut').style.display='block'; $('#secretOut').textContent='School fee payment secrets:\n\nDARAJA_CONSUMER_KEY = '+mask($('#secretConsumerKey').value)+'\nDARAJA_CONSUMER_SECRET = '+mask($('#secretConsumerSecret').value)+'\nDARAJA_PASSKEY = '+mask($('#secretPasskey').value)+'\nDARAJA_SHORTCODE = '+mask($('#secretShortcode').value)+'\n\nYour Radari subscription payment secrets:\n\nSERVICE_CONSUMER_KEY = '+mask($('#secretConsumerKey').value)+'\nSERVICE_CONSUMER_SECRET = '+mask($('#secretConsumerSecret').value)+'\nSERVICE_PASSKEY = '+mask($('#secretPasskey').value)+'\nSERVICE_SHORTCODE = '+mask($('#secretShortcode').value)+'\n\nUse SERVICE_* for the system subscription lock so it stays separate from school fee payments.'; };
-  if($('#businessSettings')) $('#businessSettings').onsubmit=async(e)=>{ e.preventDefault(); const f=Object.fromEntries(new FormData(e.target)); f.teacher_subscription_amount=+f.teacher_subscription_amount||300; f.school_monthly_price=+f.school_monthly_price||3000; const {data,error}=await sb.from('schools').update(f).eq('id',state.school.id).select('*').single(); if(error){ toast('Save failed. Run the business SQL upgrade first: '+error.message,true); return; } state.school=data; toast('Business settings saved'); navigate('settings'); };
+  if($('#businessSettings')) $('#businessSettings').onsubmit=async(e)=>{ e.preventDefault(); const f=Object.fromEntries(new FormData(e.target)); f.teacher_subscription_amount=+f.teacher_subscription_amount||450; f.school_monthly_price=+f.school_monthly_price||3000; const {data,error}=await sb.from('schools').update(f).eq('id',state.school.id).select('*').single(); if(error){ toast('Save failed. Run the business SQL upgrade first: '+error.message,true); return; } state.school=data; toast('Business settings saved'); navigate('settings'); };
   if($('#seedBtn')) $('#seedBtn').onclick = ()=>window.seedDemoData();
   if($('#feePaySettings')) $('#feePaySettings').onsubmit=async(e)=>{
     e.preventDefault();
@@ -4447,7 +4567,7 @@ function serviceCurrency(amount){
 
 function serviceAmountForProfile(){
   if(!state.school) return 300;
-  if(state.profile?.role==='teacher') return Number(state.school.teacher_subscription_amount||300);
+  if(state.profile?.role==='teacher') return Number(state.school.teacher_subscription_amount||450);
   return Number(state.school.school_monthly_price||3000);
 }
 
