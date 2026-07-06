@@ -80,7 +80,9 @@ Deno.serve(async (req) => {
       .eq("id", payment.school_id)
       .single();
 
-    const paidUntil = addDaysFromLater(school?.service_paid_until || null, Number(school?.service_lock_after_days || 30));
+    const months = Number(payment.subscription_months || 1);
+    const days = months > 0 ? months * 30 : Number(school?.service_lock_after_days || 30);
+    const paidUntil = addDaysFromLater(school?.service_paid_until || null, days);
     const paidAt = parseMpesaDate(transactionDate);
 
     await supabase.from("service_subscription_payments").update({
@@ -107,4 +109,3 @@ Deno.serve(async (req) => {
     return json({ ok: false, message: error?.message || String(error) }, 500);
   }
 });
-

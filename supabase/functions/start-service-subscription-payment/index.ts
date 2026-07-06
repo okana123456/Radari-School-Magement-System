@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
   try {
     const authHeader = req.headers.get("Authorization") || "";
     const jwt = authHeader.replace("Bearer ", "");
-    const { school_id, phone } = await req.json();
+    const { school_id, phone, months } = await req.json();
     const cleanPhone = normalizePhone(phone);
     if (!/^254(7|1)\d{8}$/.test(cleanPhone)) {
       return json({ ok: false, message: "Invalid Safaricom phone number." }, 400);
@@ -75,9 +75,12 @@ Deno.serve(async (req) => {
       .single();
     if (schoolErr || !school) return json({ ok: false, message: "School not found." }, 404);
 
-    const amount = Math.max(1, Math.round(Number(
+    const requestedMonths = [1, 3, 6, 12].includes(Number(months)) ? Number(months) : 1;
+    const monthly = Math.max(1, Math.round(Number(
       profile.role === "teacher" ? school.teacher_subscription_amount || 300 : school.school_monthly_price || 3000,
     )));
+    const discount = requestedMonths >= 12 ? 0.8 : requestedMonths >= 6 ? 0.85 : requestedMonths >= 3 ? 0.9 : 1;
+    const amount = Math.max(1, Math.round(monthly * requestedMonths * discount));
 
     const shortcode = env("SERVICE_SHORTCODE");
     const consumerKey = env("SERVICE_CONSUMER_KEY");
@@ -136,6 +139,7 @@ Deno.serve(async (req) => {
       school_id,
       user_id: profile.id,
       amount,
+      subscription_months: requestedMonths,
       phone: cleanPhone,
       checkout_request_id: stk.CheckoutRequestID,
       merchant_request_id: stk.MerchantRequestID,
@@ -148,6 +152,7 @@ Deno.serve(async (req) => {
       ok: true,
       message: "Subscription payment prompt sent.",
       amount,
+      months: requestedMonths,
       checkout_request_id: stk.CheckoutRequestID,
       customer_message: stk.CustomerMessage,
     });
@@ -155,4 +160,3 @@ Deno.serve(async (req) => {
     return json({ ok: false, message: error?.message || String(error) }, 500);
   }
 });
-

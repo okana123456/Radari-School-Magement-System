@@ -24,6 +24,7 @@ create table if not exists public.service_subscription_payments (
   school_id uuid references public.schools(id) on delete cascade,
   user_id uuid references public.users(id) on delete set null,
   amount numeric not null default 0,
+  subscription_months int default 1,
   phone text,
   checkout_request_id text,
   merchant_request_id text,

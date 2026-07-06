@@ -986,7 +986,7 @@ function viewSignup(){
       $('#signupRole').value = 'admin';
       $('#signupRole').disabled = true;
     }else{
-      $('#signupHint').textContent = 'Use this when one teacher wants a personal CBC grading and report-card workspace. This uses the individual teacher monthly plan.';
+      $('#signupHint').textContent = 'Use this when one teacher wants a personal CBC grading and report-card workspace. This uses the individual teacher monthly plan. Teachers can use one browser/device at a time for account security.';
       $('#signupRole').value = 'teacher';
       $('#signupRole').disabled = true;
     }
@@ -1122,6 +1122,14 @@ function isPlatformOwner(){
   return PLATFORM_OWNER_EMAILS.includes(String(state.profile?.email||'').toLowerCase());
 }
 
+function isIndividualTeacherWorkspace(){
+  return String(state.school?.type||'').toLowerCase().includes('individual');
+}
+
+function isIndividualTeacher(){
+  return state.profile?.role==='teacher' && isIndividualTeacherWorkspace();
+}
+
 const NAV_GROUPS = [
   { label:'Overview', items:[
     { id:'dashboard',   label:'Dashboard',       icon:'ti-layout-dashboard', roles:['admin','headteacher','teacher','parent'] },
@@ -1156,6 +1164,20 @@ const NAV_GROUPS = [
 ];
 
 function buildNav(role, currentRoute){
+  if(role==='teacher' && isIndividualTeacherWorkspace()){
+    const teacherItems=[
+      { id:'dashboard', label:'Home', icon:'ti-home' },
+      { id:'students', label:'Students', icon:'ti-users' },
+      { id:'attendance', label:'Attendance', icon:'ti-calendar-check' },
+      { id:'grading', label:'Grading', icon:'ti-clipboard-check' },
+      { id:'reports', label:'Reports', icon:'ti-file-text' },
+      { id:'subscription', label:'Subscription', icon:'ti-credit-card' },
+      { id:'settings', label:'Settings', icon:'ti-settings' },
+    ];
+    return '<div class="nav-group"><div class="nav-group-label">Teacher tools</div><nav class="nav">'
+      + teacherItems.map(n=>'<a href="#'+n.id+'" data-route="'+n.id+'" class="'+(currentRoute===n.id?'active':'')+'"><i class="ti '+n.icon+'"></i>'+n.label+'</a>').join('')
+      + '</nav></div>';
+  }
   const baseNav = NAV_GROUPS.map(group=>{
     const visible = group.items.filter(n=>n.roles.includes(role));
     if(!visible.length) return '';
@@ -1224,6 +1246,7 @@ function navigate(route){
 }
 
 function findNavItem(id){
+  if(id==='subscription' && state.profile?.role==='teacher') return { id:'subscription', label:'Subscription', icon:'ti-credit-card', roles:['teacher'] };
   if(id==='owner' && isPlatformOwner()) return { id:'owner', label:'Subscriptions', icon:'ti-adjustments-dollar', roles:[state.profile?.role||'admin'] };
   for(const g of NAV_GROUPS){ const f=g.items.find(n=>n.id===id); if(f) return f; }
   return null;
@@ -1322,6 +1345,17 @@ async function dashboardAdmin(m){
 
 async function dashboardTeacher(m){
   const sid=state.profile.school_id;
+  if(isIndividualTeacherWorkspace()){
+    const {data:students=[]} = await sb.from('students').select('id,full_name,admission_number,grade,gender').eq('school_id',sid).order('full_name').limit(8);
+    const access=serviceAccessStatus();
+    m.innerHTML=`<h1>Good ${new Date().getHours()<12?'morning':'afternoon'}, ${esc((state.profile.full_name||'Teacher').split(' ')[0])}.</h1>
+      <p class="muted" style="margin-top:-.4rem;margin-bottom:1.25rem">Your personal CBC grading workspace</p>
+      <div class="metrics"><div class="metric"><div class="num">${students.length}</div><div class="lbl">Learners</div></div><div class="metric"><div class="num">${access?.locked?'Due':'Active'}</div><div class="lbl">Subscription</div></div><div class="metric"><div class="num">${esc(access?.paidUntil||'--')}</div><div class="lbl">Paid until</div></div></div>
+      <div class="card"><h3>Start here</h3><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.75rem"><button class="btn secondary block" data-route="students"><i class="ti ti-users"></i> Add learners</button><button class="btn secondary block" data-route="grading"><i class="ti ti-clipboard-check"></i> Enter marks</button><button class="btn secondary block" data-route="reports"><i class="ti ti-file-text"></i> Reports</button><button class="btn secondary block" data-route="subscription"><i class="ti ti-credit-card"></i> Pay subscription</button></div></div>
+      <div class="card"><h3>Recent learners</h3>${students.length?`<table><thead><tr><th>Name</th><th>Admission</th><th>Class</th><th>Gender</th></tr></thead><tbody>${students.map(s=>`<tr><td>${esc(s.full_name)}</td><td>${esc(s.admission_number||'')}</td><td>${esc(s.grade||'')}</td><td>${esc(s.gender||'')}</td></tr>`).join('')}</tbody></table>`:'<div class="muted small">No learners yet. Add your class list to begin.</div>'}</div>`;
+    m.querySelectorAll('[data-route]').forEach(a=>a.onclick=(e)=>{e.preventDefault();navigate(a.dataset.route);});
+    return;
+  }
   const {data:tch}=await sb.from('teachers').select('id,full_name,specialisation').eq('school_id',sid).eq('user_id',state.profile.id).maybeSingle();
   const DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const todayDay=DAYS[new Date().getDay()];
@@ -1850,12 +1884,16 @@ modules.attendance = async (m)=>{
             ${['present','late','excused','absent'].map(st=>`<button class="score-btn ${cur===st?'active':''} ${st==='absent'?'be':''}" data-st="${st}">${st}</button>`).join('')}
           </div></td></tr>`;
       }).join('')}</tbody></table>
-      <div style="margin-top:1rem"><button class="btn primary" id="save">Save attendance</button></div>
+      <div style="margin-top:1rem;display:flex;gap:.5rem;flex-wrap:wrap"><button class="btn primary" id="save">Save attendance</button><button class="btn secondary" id="downloadAttendance"><i class="ti ti-download"></i> Download sheet</button></div>
       `:'<div class="empty"><i class="ti ti-calendar"></i><div>No learners match.</div></div>'}</div>`;
     a.querySelectorAll('.score-btn').forEach(b=>b.onclick=()=>{
       b.parentNode.querySelectorAll('.score-btn').forEach(x=>x.classList.remove('active'));
       b.classList.add('active');
     });
+    if($('#downloadAttendance')) $('#downloadAttendance').onclick=()=>{
+      const rows=[['Date','Name','Admission No','Grade','Stream','Status'],...students.map(s=>[date,s.full_name||'',s.admission_number||'',s.grade||'',s.stream||'',a.querySelector(`tr[data-id="${s.id}"] .score-btn.active`)?.dataset.st||map[s.id]||'present'])];
+      const ws=XLSX.utils.aoa_to_sheet(rows); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Attendance'); XLSX.writeFile(wb,`attendance-${date}.xlsx`);
+    };
     if($('#save')) $('#save').onclick = async ()=>{
       const rows = $$('#att tbody tr').map(tr=>{
         const st = tr.querySelector('.score-btn.active')?.dataset.st || 'present';
@@ -2168,7 +2206,7 @@ modules.grading = async (m)=>{
             <div style="font-weight:600;font-size:.95rem">${esc(grade)}${stream?' — '+esc(stream):''} <span class="badge amber" style="font-size:.72rem">Term ${term} ${year}</span></div>
             <div class="small muted">${esc(testLabel)} &nbsp;&middot;&nbsp; ${students.length} learner${students.length>1?'s':''}${teacherSubjects&&teacherSubjects.length?' &middot; Your subjects: <b>'+teacherSubjects.join(', ')+'</b>':''}</div>
           </div>
-          <button class="btn primary" id="saveGrades"><i class="ti ti-device-floppy"></i> Save</button>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap"><button class="btn secondary" id="downloadGrades"><i class="ti ti-download"></i> Download Excel</button><button class="btn primary" id="saveGrades"><i class="ti ti-device-floppy"></i> Save</button></div>
         </div>
         <div class="field" style="margin-bottom:.75rem">
           <input id="stuFilter" placeholder="Search learner by name or admission number...">
@@ -2196,6 +2234,8 @@ modules.grading = async (m)=>{
     };
 
     wireRubricBadges();
+
+    $('#downloadGrades').onclick=()=>downloadGradedExamExcel(students, displayAreas, amap, testCol, term, year, testLabel);
 
     $('#saveGrades').onclick=async()=>{
       const tableRows=[...document.querySelectorAll('#gradeTable tbody tr')];
@@ -2256,6 +2296,32 @@ modules.grading = async (m)=>{
   };
   if($('#manageAreas')) $('#manageAreas').onclick=()=>openLearningAreaManager();
 };
+
+function downloadGradedExamExcel(students, displayAreas, amap, testCol, term, year, testLabel){
+  const header=['Admission No','Learner Name','Term','Year','Test'];
+  displayAreas.forEach(la=>{ header.push(`${la} Score`,`${la} Level`,`${la} Comment`); });
+  header.push('Overall Average','Overall Comment');
+  const rows=[header];
+  students.forEach(stu=>{
+    const row=[stu.admission_number||'',stu.full_name||'',term,year,testLabel];
+    const scores=[];
+    displayAreas.forEach(la=>{
+      const a=amap[stu.id]?.[la]||{};
+      const score=a[testCol];
+      const avg=a.weighted_score!=null?+a.weighted_score:(score!=null&&score!==''?+score:null);
+      if(avg!=null&&!isNaN(avg)) scores.push(avg);
+      row.push(score??'', avg!=null?pctToRubricCode(avg):'', avg!=null?autoLearningAreaRemark(la,avg):'');
+    });
+    const overall=scores.length?Math.round(scores.reduce((a,b)=>a+b,0)/scores.length*10)/10:null;
+    row.push(overall??'', autoOverallComment(overall,stu.full_name));
+    rows.push(row);
+  });
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Graded exam');
+  XLSX.writeFile(wb,`graded-exam-${testLabel.replace(/\s+/g,'-')}-T${term}-${year}.xlsx`);
+}
+
 
 async function openLearningAreaManager(){
   const m=$('#main');
@@ -4093,6 +4159,31 @@ modules.revision = async (m)=>{
   };
 };
 
+/* --- TEACHER SUBSCRIPTION --- */
+modules.subscription = async (m)=>{
+  if(state.profile.role!=='teacher') { navigate('dashboard'); return; }
+  const access = await refreshServiceAccess();
+  const monthly = serviceAmountForProfile();
+  const plans = [
+    {months:1,label:'Monthly',amount:monthly,note:'Flexible month-to-month'},
+    {months:3,label:'3 months',amount:Math.max(1,Math.round(monthly*3*0.9)),note:'10% saving'},
+    {months:6,label:'6 months',amount:Math.max(1,Math.round(monthly*6*0.85)),note:'15% saving'},
+    {months:12,label:'12 months',amount:Math.max(1,Math.round(monthly*12*0.8)),note:'20% saving'},
+  ];
+  m.innerHTML = `<div class="section-title"><div><h1>Subscription</h1><p class="muted">Choose a plan and pay by M-Pesa to keep your teacher workspace active.</p></div></div>
+    <div class="card" style="max-width:720px"><div class="row"><div class="col"><div class="small muted">Current status</div><h3>${access?.locked?'Payment needed':'Active'}</h3></div><div class="col"><div class="small muted">Paid until</div><h3>${esc(access?.paidUntil||'Not active')}</h3></div><div class="col"><div class="small muted">Monthly price</div><h3>${serviceCurrency(monthly)}</h3></div></div></div>
+    <div class="row" style="align-items:stretch">${plans.map(p=>`<div class="col card" style="min-width:190px"><h3>${p.label}</h3><div style="font-size:1.7rem;font-weight:800;color:var(--green)">${serviceCurrency(p.amount)}</div><div class="small muted">${p.note}</div><button class="btn primary block plan-pay" data-months="${p.months}" data-amount="${p.amount}" style="margin-top:1rem">Pay ${p.label}</button></div>`).join('')}</div>
+    <div class="card" style="max-width:720px"><div class="field"><label>Safaricom phone number</label><input id="subPhone" placeholder="07XXXXXXXX" inputmode="tel"></div><p class="small muted">Your teacher account is designed for one browser/device at a time. If you need to move to another phone or laptop, ask support to reset device access.</p></div>`;
+  $$('.plan-pay').forEach(btn=>btn.onclick=async()=>{
+    const phone=$('#subPhone').value.trim();
+    if(!/^(\+?254|0)?(7|1)\d{8}$/.test(phone.replace(/\s/g,''))){ toast('Enter a valid Safaricom phone number.', true); return; }
+    btn.disabled=true; const old=btn.textContent; btn.textContent='Sending prompt...';
+    try{ const res=await startServiceSubscriptionPayment(phone,+btn.dataset.months,+btn.dataset.amount); toast(res.message||'M-Pesa prompt sent. Enter PIN on the phone.'); }
+    catch(e){ toast('Payment prompt failed: '+(e.message||String(e)), true); }
+    finally{ btn.disabled=false; btn.textContent=old; }
+  });
+};
+
 /* --- PLATFORM OWNER SUBSCRIPTIONS --- */
 modules.owner = async (m)=>{
   if(!isPlatformOwner()){
@@ -4383,14 +4474,15 @@ async function refreshServiceAccess(){
   return state.serviceAccess;
 }
 
-async function startServiceSubscriptionPayment(phone){
-  const amount = serviceAmountForProfile();
+async function startServiceSubscriptionPayment(phone, months=1, amount=null){
+  amount = amount || serviceAmountForProfile();
   const {data,error}=await sb.functions.invoke('start-service-subscription-payment',{
     body:{
       school_id:state.profile.school_id,
       user_id:state.profile.id,
       phone,
       amount,
+      months,
       role:state.profile.role
     }
   });
@@ -4469,6 +4561,13 @@ async function loadProfile(){
 }
 
 async function boot(){
+  if(location.hash.includes('type=signup')){
+    await sb.auth.signOut();
+    history.replaceState(null,'',window.location.href.split('#')[0]);
+    viewLogin();
+    setTimeout(()=>toast('Email confirmed. Please sign in with your password.'),250);
+    return;
+  }
   if(location.hash.includes('type=recovery') || location.hash==='#reset'){
     viewSetPassword(); return;
   }
