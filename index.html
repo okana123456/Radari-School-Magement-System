@@ -651,6 +651,15 @@ on conflict (school_code) do nothing;
     .service-lock-actions{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1rem}
     .service-lock-actions .btn{flex:1;min-width:160px}
     @media(max-width:520px){.service-lock{align-items:flex-end;padding:.75rem}.service-lock-card{border-radius:16px;padding:1rem}.service-lock-card .amount{font-size:1.6rem}.service-lock-actions{display:grid;grid-template-columns:1fr}.service-lock-actions .btn{width:100%}}
+    .owner-table{min-width:720px;white-space:normal!important}
+    .owner-table td{vertical-align:top;white-space:normal}
+    .owner-line{line-height:1.45}
+    .owner-actions{display:flex;gap:.35rem;flex-wrap:wrap}
+    @media(max-width:720px){
+      .owner-table{min-width:620px}
+      .owner-actions{flex-direction:column}
+      .owner-actions .btn{width:100%}
+    }
   </style>
 </head>
 <body>
@@ -1481,12 +1490,31 @@ async function dashboardParent(m){
 }
 
 /* --- STUDENTS --- */
+function teacherQuickClassKey(){
+  return `radari_quick_class_${state.profile?.id || state.profile?.school_id || 'teacher'}`;
+}
+function getTeacherQuickClass(students=[]){
+  try{
+    const saved=JSON.parse(localStorage.getItem(teacherQuickClassKey())||'{}');
+    if(saved.grade || saved.stream) return { grade:saved.grade||'', stream:saved.stream||'' };
+  }catch(e){}
+  const first=(students||[]).find(s=>s.grade || s.stream) || {};
+  return { grade:first.grade||'', stream:first.stream||'' };
+}
+function setTeacherQuickClass(grade='', stream=''){
+  const value={ grade:String(grade||'').trim(), stream:String(stream||'').trim() };
+  localStorage.setItem(teacherQuickClassKey(), JSON.stringify(value));
+  return value;
+}
+
 modules.students = async (m)=>{
   const sid = state.profile.school_id;
   const role = state.profile.role;
   const canManage = ['admin','headteacher','teacher'].includes(role);
   const { data:students=[] } = await sb.from('students').select('*').eq('school_id',sid).order('full_name');
   const grades = ['All',...new Set(students.map(s=>s.grade).filter(Boolean).sort())];
+  const quickClass = getTeacherQuickClass(students);
+  const quickGradeOptions = [...new Set([...DEFAULT_GRADES,...students.map(s=>s.grade).filter(Boolean)])];
   m.innerHTML = `
     <div class="section-title"><h1 style="margin:0">Students</h1>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
@@ -1496,6 +1524,14 @@ modules.students = async (m)=>{
         ${canManage?`<button class="btn primary" id="addStu"><i class="ti ti-plus"></i> Add learner</button>`:''}
       </div>
     </div>
+    ${isIndividualTeacher()?`<div class="card" style="border-color:var(--green);margin-bottom:1rem">
+      <div class="section-title" style="margin-bottom:.75rem"><div><h3 style="margin:0">Class for quick entry</h3><p class="small muted">Select this once, then add learners one after another.</p></div></div>
+      <div class="row">
+        <div class="col field"><label>Grade / Class</label><input id="quickGrade" list="quickGradeOptions" value="${esc(quickClass.grade)}" placeholder="e.g. Grade 4"><datalist id="quickGradeOptions">${quickGradeOptions.map(g=>`<option value="${esc(g)}"></option>`).join('')}</datalist></div>
+        <div class="col field"><label>Stream (optional)</label><input id="quickStream" value="${esc(quickClass.stream)}" placeholder="A"></div>
+        <div class="col field" style="flex:0 0 auto"><label>&nbsp;</label><button class="btn secondary block" id="saveQuickClass" type="button">Use this class</button></div>
+      </div>
+    </div>`:''}
     <div class="toolbar" style="margin-bottom:1rem">
       <div class="field"><label>Filter by grade</label>
         <select id="gradeFilter">${grades.map(g=>`<option>${g}</option>`).join('')}</select>
@@ -1518,7 +1554,22 @@ modules.students = async (m)=>{
   $('#search').oninput = refresh;
   refresh();
 
-  if($('#addStu')) $('#addStu').onclick = ()=>studentForm(null);
+  const saveQuickClass=()=>{
+    if(!isIndividualTeacher()) return {};
+    return setTeacherQuickClass($('#quickGrade')?.value||'', $('#quickStream')?.value||'');
+  };
+  if($('#saveQuickClass')) $('#saveQuickClass').onclick = ()=>{ saveQuickClass(); toast('Class saved for quick entry'); };
+  if($('#quickGrade')) $('#quickGrade').onchange = saveQuickClass;
+  if($('#quickStream')) $('#quickStream').onchange = saveQuickClass;
+  if($('#addStu')) $('#addStu').onclick = ()=>{
+    if(isIndividualTeacher()){
+      const quick=saveQuickClass();
+      if(!quick.grade){ toast('Select the grade/class first.', true); $('#quickGrade')?.focus(); return; }
+      studentForm(null, quick);
+      return;
+    }
+    studentForm(null);
+  };
   if($('#importStu')) $('#importStu').onclick = ()=>$('#studentImportFile').click();
   if($('#studentImportFile')) $('#studentImportFile').onchange = async (e)=>{
     const file=e.target.files?.[0];
@@ -1661,19 +1712,24 @@ async function importStudentsFile(file, schoolId, existingStudents=[]){
   }
 }
 
-function studentForm(existing){
+function studentForm(existing, quickClass=null){
   const m=$('#main');
   const GRADES=DEFAULT_GRADES;
   if(isIndividualTeacher() && !existing){
+    const quick=quickClass || getTeacherQuickClass();
+    const classLabel=[quick.grade, quick.stream].filter(Boolean).join(' ') || 'No class selected';
     m.innerHTML = `<div class="card" style="max-width:520px">
       <a href="#" id="back" class="small"><i class="ti ti-arrow-left"></i> Back</a>
       <h2 style="margin-top:1rem">Add learner</h2>
       <p class="muted small">Keep this quick on phone. You can add parent contacts and other details later using Edit.</p>
       <form id="f" class="stack">
-        <div class="row">
-          <div class="col field"><label>Grade / Class</label><input name="grade" list="gradeOptions" placeholder="e.g. Grade 4"><datalist id="gradeOptions">${GRADES.map(g=>`<option value="${esc(g)}"></option>`).join('')}</datalist></div>
-          <div class="col field"><label>Stream (optional)</label><input name="stream" placeholder="A"></div>
+        <div style="background:var(--green-50);border:1px solid var(--green);border-radius:var(--radius);padding:.85rem;margin-bottom:.25rem">
+          <div class="small muted">Adding learners to</div>
+          <b>${esc(classLabel)}</b>
+          <button class="btn secondary" id="changeQuickClass" type="button" style="margin-top:.6rem">Change class</button>
         </div>
+        <input type="hidden" name="grade" value="${esc(quick.grade||'')}">
+        <input type="hidden" name="stream" value="${esc(quick.stream||'')}">
         <div class="field"><label>Learner name *</label><input name="full_name" required></div>
         <div class="field"><label>NEMIS / Admission number</label><input name="admission_number"></div>
         <div class="field"><label>Gender</label><select name="gender"><option value="">Select</option><option value="Male">Male</option><option value="Female">Female</option></select></div>
@@ -1681,6 +1737,7 @@ function studentForm(existing){
       </form>
     </div>`;
     $('#back').onclick=(e)=>{e.preventDefault();navigate('students');};
+    $('#changeQuickClass').onclick=()=>navigate('students');
     $('#f').onsubmit=async(e)=>{
       e.preventDefault();
       const f=Object.fromEntries(new FormData(e.target));
@@ -1689,7 +1746,11 @@ function studentForm(existing){
       Object.keys(f).forEach(k=>{ if(f[k]==='') delete f[k]; });
       const {error}=await sb.from('students').insert(f);
       if(error){ toast(error.message,true); return; }
-      toast('Learner added'); navigate('students');
+      toast('Learner added. Add the next one or go back when done.');
+      e.target.reset();
+      e.target.elements.grade.value=quick.grade||'';
+      e.target.elements.stream.value=quick.stream||'';
+      e.target.elements.full_name.focus();
     };
     return;
   }
@@ -4331,7 +4392,8 @@ modules.owner = async (m)=>{
     },{});
     const rows=schools.filter(s=>{
       if(!term) return true;
-      return [s.id,s.name,s.type,s.school_code,s.service_customer_code].some(v=>String(v||'').toLowerCase().includes(term));
+      const customer=primaryUserBySchool[s.id] || {};
+      return [s.id,s.name,s.type,s.school_code,s.service_customer_code,customer.full_name,customer.email,customer.phone].some(v=>String(v||'').toLowerCase().includes(term));
     });
     $('#ownerList').innerHTML = `
     <div class="metrics" style="margin-bottom:1rem">
@@ -4347,7 +4409,7 @@ modules.owner = async (m)=>{
       <div class="metric"><div class="num">${serviceCurrency(revenueThisMonth)}</div><div class="lbl">Collected this month</div></div>
     </div>
     <div class="card">
-      ${rows.length?`<table><thead><tr><th>Customer</th><th>Phone</th><th>Workspace / School</th><th>Subscription</th><th>Paid until</th><th>Status</th><th>Support</th></tr></thead><tbody>
+      ${rows.length?`<table class="owner-table"><thead><tr><th>Customer</th><th>Workspace / School</th><th>Subscription</th><th>Status</th><th>Support</th></tr></thead><tbody>
         ${rows.map(s=>{
           const individual = isIndividual(s);
           const price = planPrice(s);
@@ -4355,13 +4417,11 @@ modules.owner = async (m)=>{
           const lastPayment = latestPaymentBySchool[s.id];
           const customer = primaryUserBySchool[s.id] || {};
           return `<tr>
-            <td><b>${esc(customer.full_name||s.name||'Unnamed customer')}</b><div class="small muted">${esc(customer.email||'')} ${individual?'&middot; Teacher':''}</div></td>
-            <td>${esc(customer.phone||'Not added')}</td>
-            <td>${esc(s.name||'Workspace')}<div class="small muted">ID: ${esc(s.service_customer_code||String(s.id).slice(0,8).toUpperCase())} &middot; Users: ${userCountBySchool[s.id]||0} &middot; Learners: ${learnerCountBySchool[s.id]||0}</div>${s.service_discount_note?`<div class="small muted">Note: ${esc(s.service_discount_note)}</div>`:''}</td>
-            <td>${serviceCurrency(price)}${lastPayment?`<div class="small muted">Last: ${serviceCurrency(lastPayment.amount)} on ${esc(String(lastPayment.paid_at||lastPayment.created_at||'').slice(0,10))}</div>`:''}</td>
-            <td>${esc(s.service_paid_until||'Not active')}</td>
-            <td><span class="badge ${expired||s.service_status==='locked'?'terra':''}">${expired?'expired':esc(s.service_status||'active')}</span></td>
-            <td><div style="display:flex;gap:.35rem;flex-wrap:wrap"><button class="btn secondary owner-edit" data-id="${esc(s.id)}">Edit</button><button class="btn secondary reset-device" data-id="${esc(s.id)}">Reset device</button></div></td>
+            <td class="owner-line"><b>${esc(customer.full_name||s.name||'Unnamed customer')}</b><div class="small muted">${esc(customer.email||'No email')}</div><div class="small muted">${esc(customer.phone||'No phone added')} ${individual?'&middot; Teacher':''}</div></td>
+            <td class="owner-line"><b>${esc(s.name||'Workspace')}</b><div class="small muted">ID: ${esc(s.service_customer_code||String(s.id).slice(0,8).toUpperCase())}</div><div class="small muted">Users: ${userCountBySchool[s.id]||0}</div><div class="small muted">Learners: ${learnerCountBySchool[s.id]||0}</div>${s.service_discount_note?`<div class="small muted">Note: ${esc(s.service_discount_note)}</div>`:''}</td>
+            <td class="owner-line"><b>${serviceCurrency(price)}</b><div class="small muted">Paid until: ${esc(s.service_paid_until||'Not active')}</div>${lastPayment?`<div class="small muted">Last: ${serviceCurrency(lastPayment.amount)} on ${esc(String(lastPayment.paid_at||lastPayment.created_at||'').slice(0,10))}</div>`:''}</td>
+            <td class="owner-line"><span class="badge ${expired||s.service_status==='locked'?'terra':''}">${expired?'expired':esc(s.service_status||'active')}</span><div class="small muted">${esc(String(s.service_last_paid_at||s.created_at||'').slice(0,10)||'')}</div></td>
+            <td><div class="owner-actions"><button class="btn secondary owner-edit" data-id="${esc(s.id)}">Edit</button><button class="btn secondary reset-device" data-id="${esc(s.id)}">Reset device</button></div></td>
           </tr>`;
         }).join('')}
       </tbody></table>`:`<div class="empty"><i class="ti ti-search"></i><div>No matching workspaces.</div></div>`}
