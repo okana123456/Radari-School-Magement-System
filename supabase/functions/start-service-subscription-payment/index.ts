@@ -90,7 +90,10 @@ Deno.serve(async (req) => {
     const mode = (Deno.env.get("SERVICE_DARAJA_ENVIRONMENT") || "production").toLowerCase();
 
     if (!consumerKey || !consumerSecret || !passkey || !shortcode) {
-      return json({ ok: false, message: "Service Daraja credentials are missing." }, 500);
+      return json({
+        ok: false,
+        message: "Service Daraja credentials are missing. Check SERVICE_CONSUMER_KEY, SERVICE_CONSUMER_SECRET, SERVICE_PASSKEY and SERVICE_SHORTCODE in Supabase secrets.",
+      });
     }
 
     const authUrl = mode === "sandbox"
@@ -105,7 +108,11 @@ Deno.serve(async (req) => {
     });
     const oauth = await oauthRes.json();
     if (!oauthRes.ok || !oauth.access_token) {
-      return json({ ok: false, message: "Daraja OAuth failed.", response: oauth }, 502);
+      return json({
+        ok: false,
+        message: oauth.errorMessage || oauth.error_description || "Daraja OAuth failed. Check consumer key and consumer secret.",
+        response: oauth,
+      });
     }
 
     const ts = timestamp();
@@ -132,7 +139,11 @@ Deno.serve(async (req) => {
     });
     const stk = await stkRes.json();
     if (!stkRes.ok || stk.ResponseCode !== "0") {
-      return json({ ok: false, message: "STK request failed.", response: stk }, 502);
+      return json({
+        ok: false,
+        message: stk.errorMessage || stk.ResponseDescription || "STK request failed. Check shortcode, passkey and transaction type.",
+        response: stk,
+      });
     }
 
     await supabase.from("service_subscription_payments").upsert({

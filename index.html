@@ -4509,7 +4509,11 @@ modules.owner = async (m)=>{
     const completedPayments = payments.filter(p=>p.status==='completed');
     const thisMonth = new Date().toISOString().slice(0,7);
     const isIndividual = s=>String(s.type||'').toLowerCase().includes('individual');
-    const isExpired = s=>!s.service_paid_until || new Date(`${s.service_paid_until}T23:59:59`) < new Date() || s.service_status==='locked';
+    const isExpired = s=>{
+      const status=String(s.service_status||'active').toLowerCase();
+      const firstTeacherPayment = isIndividual(s) && !s.service_last_paid_at && !['trial','manual'].includes(status);
+      return firstTeacherPayment || !s.service_paid_until || new Date(`${s.service_paid_until}T23:59:59`) < new Date() || status==='locked';
+    };
     const planPrice = s=>isIndividual(s) ? Number(s.teacher_subscription_amount||450) : Number(s.school_monthly_price||3000);
     const activeCount = schools.filter(s=>!isExpired(s)).length;
     const expiredCount = schools.length - activeCount;
@@ -4780,9 +4784,13 @@ function serviceAccessStatus(){
   const paidUntil = paidUntilText ? new Date(`${paidUntilText}T23:59:59`) : null;
   const today = new Date();
   const daysLeft = paidUntil ? Math.ceil((paidUntil - today) / 86400000) : -1;
-  const locked = state.school.service_status === 'locked' || !paidUntil || daysLeft < 0;
+  const status = String(state.school.service_status || 'active').toLowerCase();
+  const firstTeacherPaymentRequired = isIndividualTeacher()
+    && !state.school.service_last_paid_at
+    && !['trial','manual'].includes(status);
+  const locked = firstTeacherPaymentRequired || status === 'locked' || !paidUntil || daysLeft < 0;
   const dueSoon = !locked && daysLeft <= 7;
-  return { configured:true, locked, dueSoon, daysLeft, paidUntil:paidUntilText };
+  return { configured:true, locked, dueSoon, daysLeft, paidUntil:paidUntilText, firstTeacherPaymentRequired };
 }
 
 async function refreshServiceAccess(){
@@ -4821,9 +4829,11 @@ function showServiceNotice(access){
   removeServiceNotice();
   const canPay = ['admin','headteacher','teacher'].includes(state.profile?.role);
   const amount = serviceAmountForProfile();
-  const title = access.locked ? 'Subscription renewal required' : 'Subscription renewal reminder';
-  const message = access.locked
-    ? 'This Radari account is locked because the 30-day access period has ended. Renew to continue using the system.'
+  const title = access.firstTeacherPaymentRequired ? 'Activate your teacher subscription' : (access.locked ? 'Subscription renewal required' : 'Subscription renewal reminder');
+  const message = access.firstTeacherPaymentRequired
+    ? 'Please activate your teacher workspace before using Radari. After payment, your 30-day access starts immediately.'
+    : access.locked
+    ? 'This Radari account is locked because the access period has ended. Renew to continue using the system.'
     : `This Radari account has ${access.daysLeft} day${access.daysLeft===1?'':'s'} remaining. Renew now to reset another 30 days.`;
   const overlay = el(`<div class="service-lock" id="serviceLock">
     <div class="service-lock-card">

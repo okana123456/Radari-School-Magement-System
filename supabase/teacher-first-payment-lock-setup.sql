@@ -1,9 +1,5 @@
--- Radari signup workspace setup
--- Run this in Supabase SQL Editor after the main Radari SQL.
--- It lets the signup page support:
--- 1. joining an existing school with a school code
--- 2. registering a whole school
--- 3. registering as an individual teacher
+-- Require individual teachers to pay before first access.
+-- Run after service-subscription-setup.sql and signup-workspace-setup.sql.
 
 create or replace function public.handle_new_user() returns trigger
 language plpgsql security definer set search_path = public as $$
@@ -57,3 +53,12 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
 after insert on auth.users
 for each row execute procedure public.handle_new_user();
+
+-- Optional cleanup for individual-teacher test workspaces created before this fix.
+-- This locks only individual-teacher workspaces with no successful subscription payment yet.
+update public.schools
+set service_paid_until = null,
+    service_status = 'locked'
+where lower(coalesce(type, '')) like '%individual%'
+  and service_last_paid_at is null
+  and lower(coalesce(service_status, 'active')) not in ('trial', 'manual');

@@ -1,0 +1,24 @@
+{
+  "name": "Radari School Management",
+  "short_name": "Radari",
+  "description": "CBC grading, attendance, reports and fee tracking for Kenyan schools.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f4ee",
+  "theme_color": "#1f4434",
+  "icons": [
+    {
+      "src": "/radari-icon.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/radari-icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
