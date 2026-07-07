@@ -650,6 +650,9 @@ on conflict (school_code) do nothing;
     .service-lock-card{width:min(560px,100%);background:#fff;border-radius:18px;box-shadow:0 24px 70px rgba(0,0,0,.28);padding:1.25rem;border:1px solid rgba(255,255,255,.45)}
     .service-lock-card h2{margin:.25rem 0 .35rem;font-size:1.35rem}
     .service-lock-card .amount{font-size:2rem;font-weight:800;color:var(--green);letter-spacing:0;margin:.75rem 0}
+    .service-lock-message{display:none;margin-top:.85rem;padding:.75rem .85rem;border-radius:10px;border:1px solid var(--stone);background:var(--stone-0);font-size:.86rem;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+    .service-lock-message.error{display:block;background:var(--terracotta-bg);border-color:var(--terracotta);color:#6b2218}
+    .service-lock-message.ok{display:block;background:var(--green-50);border-color:var(--green);color:var(--green)}
     .service-lock-actions{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1rem}
     .service-lock-actions .btn{flex:1;min-width:160px}
     @media(max-width:520px){.service-lock{align-items:flex-end;padding:.75rem}.service-lock-card{border-radius:16px;padding:1rem}.service-lock-card .amount{font-size:1.6rem}.service-lock-actions{display:grid;grid-template-columns:1fr}.service-lock-actions .btn{width:100%}}
@@ -2269,7 +2272,41 @@ function averageScore(scores){
 }
 
 /* --- GRADING HELPERS --- */
-function renderGradeRows(students, displayAreas, amap, testCol, testNum){
+function gradingOutOfKey(grade, testNum){
+  const schoolId = state.profile?.school_id || 'school';
+  return `radari_grading_outof_${schoolId}_${grade || 'grade'}_${testNum || 1}`;
+}
+
+function getGradingOutOf(grade, testNum, displayAreas){
+  let saved = {};
+  try{ saved = JSON.parse(localStorage.getItem(gradingOutOfKey(grade, testNum)) || '{}'); }catch(_){ saved = {}; }
+  const out = {};
+  displayAreas.forEach(la=>{
+    const n = Number(saved[la] || 100);
+    out[la] = n > 0 ? n : 100;
+  });
+  return out;
+}
+
+function saveGradingOutOf(grade, testNum, outOfMap){
+  localStorage.setItem(gradingOutOfKey(grade, testNum), JSON.stringify(outOfMap || {}));
+}
+
+function pctFromRawMark(raw, outOf){
+  const mark = Number(raw);
+  const max = Number(outOf || 100);
+  if(isNaN(mark) || isNaN(max) || max <= 0) return null;
+  return Math.round((mark / max * 100) * 10) / 10;
+}
+
+function rawMarkFromPct(pct, outOf){
+  const p = Number(pct);
+  const max = Number(outOf || 100);
+  if(isNaN(p) || isNaN(max) || max <= 0) return '';
+  return Math.round((p * max / 100) * 10) / 10;
+}
+
+function renderGradeRows(students, displayAreas, amap, testCol, testNum, outOfMap={}){
   return students.map((stu,si)=>`
     <tr data-sid="${stu.id}">
       <td>
@@ -2279,15 +2316,17 @@ function renderGradeRows(students, displayAreas, amap, testCol, testNum){
       ${displayAreas.map(la=>{
         const ex=amap[stu.id]?.[la];
         const val=ex?.[testCol]??'';
+        const max=Number(outOfMap[la]||100);
+        const rawVal=val!==''&&val!=null?rawMarkFromPct(val,max):'';
         const rc=val!==''&&val!=null?pctToRubricCode(+val):null;
         const pts=rc?RUBRIC_BANDS.find(b=>b.code===rc)?.points||'':'';
         return `<td style="text-align:center;padding:.3rem .35rem">
-          <input type="number" min="0" max="100"
+          <input type="number" min="0" max="${max}" step="0.1"
             class="pct-inp" data-la="${esc(la)}"
-            value="${val!==''&&val!=null?val:''}"
-            placeholder="—">
+            value="${rawVal}"
+            placeholder="0-${max}">
           <div class="rc-badge" style="color:${rc?levelColor(rc):'var(--muted)'};font-size:.7rem">
-            ${rc?`${rc}<span style="color:var(--muted);font-weight:400"> (${pts})</span>`:''}
+            ${rc?`${rc}<span style="color:var(--muted);font-weight:400"> (${pts})</span><br><span style="color:var(--muted);font-weight:400">${Number(val).toFixed(1).replace('.0','')}%</span>`:''}
           </div>
         </td>`;
       }).join('')}
@@ -2298,11 +2337,15 @@ function wireRubricBadges(){
   document.querySelectorAll('.pct-inp').forEach(inp=>inp.oninput=()=>{
     const v=inp.value.trim();
     const badge=inp.parentElement.querySelector('.rc-badge');
-    if(v===''||isNaN(+v)){ badge.innerHTML=''; badge.style.color='var(--muted)'; return; }
-    const rc=pctToRubricCode(+v);
+    const la=inp.dataset.la||'';
+    const maxInp=document.querySelector(`.max-inp[data-la="${CSS.escape(la)}"]`);
+    const max=Number(maxInp?.value||inp.max||100);
+    const pct=pctFromRawMark(v,max);
+    if(v===''||pct==null||isNaN(pct)){ badge.innerHTML=''; badge.style.color='var(--muted)'; return; }
+    const rc=pctToRubricCode(pct);
     const pts=rc?RUBRIC_BANDS.find(b=>b.code===rc)?.points||'':'';
     badge.style.color=rc?levelColor(rc):'var(--muted)';
-    badge.innerHTML=rc?`${rc} <span style="color:var(--muted)">(${pts})</span>`:'';
+    badge.innerHTML=rc?`${rc} <span style="color:var(--muted)">(${pts})</span><br><span style="color:var(--muted)">${pct.toFixed(1).replace('.0','')}%</span>`:'';
   });
 }
 
@@ -2426,6 +2469,21 @@ modules.grading = async (m)=>{
       // Fallback: if nothing matched, show all (teacher may not have timetable set yet)
       if(!displayAreas.length) displayAreas=learningAreas;
     }
+    let outOfMap=getGradingOutOf(grade,testNum,displayAreas);
+    let visibleStudents=students;
+    const currentOutOfMap=()=>{
+      const map={};
+      document.querySelectorAll('.max-inp').forEach(inp=>{
+        const la=inp.dataset.la;
+        const val=Number(inp.value||100);
+        if(la) map[la]=val>0?val:100;
+      });
+      return map;
+    };
+    const renderVisibleGradeRows=()=>{
+      $('#gradeBody').innerHTML=renderGradeRows(visibleStudents, displayAreas, amap, testCol, testNum, outOfMap);
+      wireRubricBadges();
+    };
 
     $('#gradingBody').innerHTML=`
       <div class="card">
@@ -2439,6 +2497,13 @@ modules.grading = async (m)=>{
         <div class="field" style="margin-bottom:.75rem">
           <input id="stuFilter" placeholder="Search learner by name or admission number...">
         </div>
+        <div style="border:1px solid var(--border);border-radius:8px;padding:.85rem;margin-bottom:.85rem;background:var(--green-50)">
+          <div style="font-weight:700;margin-bottom:.25rem">Subject totals</div>
+          <div class="small muted">Set what each subject was marked out of. Enter raw marks below; Radari will convert them to percentages and CBC levels automatically.</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:.65rem;margin-top:.75rem">
+            ${displayAreas.map(la=>`<div class="field" style="margin:0"><label>${esc(la)}</label><input class="max-inp" data-la="${esc(la)}" type="number" min="1" step="1" value="${outOfMap[la]||100}"></div>`).join('')}
+          </div>
+        </div>
         <div class="grading-wrap">
           <table id="gradeTable">
             <thead><tr>
@@ -2446,28 +2511,33 @@ modules.grading = async (m)=>{
               ${displayAreas.map(la=>`<th style="text-align:center">${esc(la.length>16?la.slice(0,15)+'…':la)}</th>`).join('')}
             </tr></thead>
             <tbody id="gradeBody">
-              ${renderGradeRows(students, displayAreas, amap, testCol, testNum)}
+              ${renderGradeRows(students, displayAreas, amap, testCol, testNum, outOfMap)}
             </tbody>
           </table>
         </div>
-        <div class="small muted" style="margin-top:.5rem">Enter 0–100. Rubric updates live. Blank cells are skipped on save.</div>
+        <div class="small muted" style="margin-top:.5rem">Enter learner marks using the subject totals above. Rubric and percentage update live. Blank cells are skipped on save.</div>
       </div>`;
 
     // Student filter
     $('#stuFilter').oninput=e=>{
       const q=e.target.value.toLowerCase();
-      const filtered=q?students.filter(s=>(s.full_name||'').toLowerCase().includes(q)||(s.admission_number||'').toLowerCase().includes(q)):students;
-      $('#gradeBody').innerHTML=renderGradeRows(filtered, displayAreas, amap, testCol, testNum);
-      wireRubricBadges();
+      visibleStudents=q?students.filter(s=>(s.full_name||'').toLowerCase().includes(q)||(s.admission_number||'').toLowerCase().includes(q)):students;
+      renderVisibleGradeRows();
     };
 
     wireRubricBadges();
+    document.querySelectorAll('.max-inp').forEach(inp=>inp.oninput=()=>{
+      outOfMap=currentOutOfMap();
+      saveGradingOutOf(grade,testNum,outOfMap);
+      renderVisibleGradeRows();
+    });
 
     $('#downloadGrades').onclick=()=>downloadGradedExamExcel(students, displayAreas, amap, testCol, term, year, testLabel);
 
     $('#saveGrades').onclick=async()=>{
       const tableRows=[...document.querySelectorAll('#gradeTable tbody tr')];
       const toUpsert=[];
+      let invalid=false;
 
       tableRows.forEach(tableRow=>{
         const studentId=tableRow.dataset.sid;
@@ -2478,8 +2548,19 @@ modules.grading = async (m)=>{
           const raw=inp.value.trim();
           if(raw==='') return;
 
-          const pct=+raw;
-          if(isNaN(pct)||pct<0||pct>100){ toast(`Invalid score for ${la}: must be 0–100`,true); return; }
+          const outOf=Number(outOfMap[la]||100);
+          const rawMark=Number(raw);
+          if(isNaN(rawMark)||rawMark<0||rawMark>outOf){
+            toast(`Invalid mark for ${la}: must be 0-${outOf}`,true);
+            invalid=true;
+            return;
+          }
+          const pct=pctFromRawMark(rawMark,outOf);
+          if(pct==null||isNaN(pct)||pct<0||pct>100){
+            toast(`Invalid mark for ${la}. Check the subject total.`,true);
+            invalid=true;
+            return;
+          }
           const existingRow=amap[studentId]?.[la];
 
           const t1=testNum===1?pct:(existingRow?.cat1??null);
@@ -2503,7 +2584,9 @@ modules.grading = async (m)=>{
         });
       });
 
-      if(!toUpsert.length){ toast('No scores entered. Type at least one percentage.',true); return; }
+      if(invalid) return;
+      saveGradingOutOf(grade,testNum,outOfMap);
+      if(!toUpsert.length){ toast('No marks entered. Type at least one learner mark.',true); return; }
 
       const btn=$('#saveGrades');
       btn.disabled=true; btn.textContent='Saving...';
@@ -4798,8 +4881,10 @@ function serviceAccessStatus(){
   const today = new Date();
   const daysLeft = paidUntil ? Math.ceil((paidUntil - today) / 86400000) : -1;
   const status = String(state.school.service_status || 'active').toLowerCase();
+  const hasActivePaidUntil = !!paidUntil && daysLeft >= 0;
   const firstTeacherPaymentRequired = isIndividualTeacher()
     && !state.school.service_last_paid_at
+    && !hasActivePaidUntil
     && !['trial','manual'].includes(status);
   const locked = firstTeacherPaymentRequired || status === 'locked' || !paidUntil || daysLeft < 0;
   const dueSoon = !locked && daysLeft <= 7;
@@ -4838,6 +4923,42 @@ async function startServiceSubscriptionPayment(phone, months=1, amount=null){
   return data;
 }
 
+async function confirmServiceSubscriptionPayment(){
+  const {data:{session}, error:sessionError}=await sb.auth.getSession();
+  if(sessionError || !session?.access_token){
+    throw new Error('Your login session has expired. Please sign out, sign in again, then try checking payment.');
+  }
+  const {data,error}=await sb.functions.invoke('confirm-service-subscription-payment',{
+    headers:{ Authorization:`Bearer ${session.access_token}` },
+    body:{ school_id:state.profile.school_id }
+  });
+  if(error) throw error;
+  if(!data?.ok) throw new Error(data?.message||'Payment has not been confirmed yet.');
+  return data;
+}
+
+function readablePaymentError(error){
+  if(!error) return 'Unknown payment error.';
+  if(typeof error === 'string') return error;
+  const ctx = error.context || error;
+  const body = ctx.body || ctx.response || error.response || null;
+  if(body?.message) return body.message;
+  if(body?.error_description) return body.error_description;
+  if(body?.errorMessage) return body.errorMessage;
+  if(body?.ResponseDescription) return body.ResponseDescription;
+  if(body?.ResultDesc) return body.ResultDesc;
+  if(error.message) return error.message;
+  try{ return JSON.stringify(error); }catch(_){ return String(error); }
+}
+
+function setServiceLockMessage(message, isError=false){
+  const box=$('#serviceLockMessage');
+  if(!box) return;
+  box.textContent=message || '';
+  box.classList.remove('error','ok');
+  if(message) box.classList.add(isError?'error':'ok');
+}
+
 function removeServiceNotice(){
   $('#serviceLock')?.remove();
 }
@@ -4860,6 +4981,7 @@ function showServiceNotice(access){
       <div class="amount">${serviceCurrency(amount)}</div>
       <div class="small muted">Paid until: ${esc(access.paidUntil||'Not active')}</div>
       ${canPay?`<div class="field" style="margin-top:1rem"><label>Safaricom phone number</label><input id="servicePhone" placeholder="07XXXXXXXX" inputmode="tel"></div>`:`<p class="muted small" style="margin-top:1rem">Please ask the school administrator to renew the account.</p>`}
+      <div id="serviceLockMessage" class="service-lock-message"></div>
       <div class="service-lock-actions">
         ${canPay?`<button class="btn primary" id="servicePay"><i class="ti ti-device-mobile"></i> Pay ${serviceCurrency(amount)}</button>`:''}
         <button class="btn secondary" id="serviceCheck"><i class="ti ti-refresh"></i> Check payment</button>
@@ -4872,21 +4994,90 @@ function showServiceNotice(access){
   if($('#serviceLater')) $('#serviceLater').onclick=removeServiceNotice;
   $('#serviceSignOut').onclick=async()=>{ await sb.auth.signOut(); location.reload(); };
   $('#serviceCheck').onclick=async()=>{
+    $('#serviceCheck').disabled=true;
+    $('#serviceCheck').innerHTML='<i class="ti ti-refresh"></i> Checking...';
+    setServiceLockMessage('Checking payment with Safaricom. Please wait...', false);
+    try{
+      const checked=await confirmServiceSubscriptionPayment();
+      setServiceLockMessage(checked.message || 'Payment confirmed. Opening Radari...', false);
+      toast(checked.message || 'Payment confirmed. Opening Radari...');
+      await refreshServiceAccess();
+      if(checked.paid_until){
+        state.school = {
+          ...(state.school || {}),
+          service_status:'active',
+          service_paid_until:checked.paid_until,
+          service_last_paid_at:state.school?.service_last_paid_at || new Date().toISOString(),
+        };
+        state.serviceAccess = serviceAccessStatus();
+      }
+      removeServiceNotice();
+      render();
+      return;
+    }catch(e){
+      console.warn('Direct payment confirmation skipped:', e);
+      setServiceLockMessage(`Direct confirmation failed: ${readablePaymentError(e)}\n\nI will also check Radari records now.`, true);
+    }
     const fresh = await refreshServiceAccess();
-    if(!fresh?.locked){ toast('Subscription is active.'); removeServiceNotice(); }
-    else toast('Payment has not reflected yet. Try again after confirmation.', true);
+    if(!fresh?.locked){
+      toast('Subscription is active.');
+      removeServiceNotice();
+      render();
+    } else {
+      const {data:latest=[]}=await sb.from('service_subscription_payments')
+        .select('status,paid_at,paid_until,receipt_number,amount,created_at')
+        .eq('school_id',state.profile.school_id)
+        .order('created_at',{ascending:false})
+        .limit(1);
+      const p=latest[0];
+      if(p?.status==='completed'){
+        toast('Payment is confirmed. Refreshing access...');
+        await refreshServiceAccess();
+        if(p.paid_until){
+          state.school = {
+            ...(state.school || {}),
+            service_status:'active',
+            service_paid_until:p.paid_until,
+            service_last_paid_at:p.paid_at || state.school?.service_last_paid_at || new Date().toISOString(),
+            service_last_receipt:p.receipt_number || state.school?.service_last_receipt || null,
+          };
+          state.serviceAccess = serviceAccessStatus();
+        }
+        removeServiceNotice();
+        render();
+      } else {
+        const lastStatus=p ? `\n\nLatest record: ${p.status || 'unknown'}${p.result_description ? ` - ${p.result_description}` : ''}` : '\n\nNo payment record was found.';
+        setServiceLockMessage(`Payment has not opened the account yet.${lastStatus}`, true);
+        toast('Payment has not reflected yet. Read the message inside the payment box.', true);
+        const current=serviceAccessStatus();
+        if(!$('#serviceLock')) showServiceNotice(current);
+      }
+    }
+    if($('#serviceCheck')){
+      $('#serviceCheck').disabled=false;
+      $('#serviceCheck').innerHTML='<i class="ti ti-refresh"></i> Check payment';
+    }
   };
   if($('#servicePay')) $('#servicePay').onclick=async()=>{
     const phone = $('#servicePhone').value.trim();
-    if(!/^(\+?254|0)?(7|1)\d{8}$/.test(phone.replace(/\s/g,''))){ toast('Enter a valid Safaricom phone number.', true); return; }
+    if(!/^(\+?254|0)?(7|1)\d{8}$/.test(phone.replace(/\s/g,''))){
+      setServiceLockMessage('Enter a valid Safaricom phone number.', true);
+      toast('Enter a valid Safaricom phone number.', true);
+      return;
+    }
     $('#servicePay').disabled=true;
+    setServiceLockMessage('Sending M-Pesa prompt to the phone...', false);
     try{
+      await refreshServiceAccess();
       const res = await startServiceSubscriptionPayment(phone);
-      toast(res.message||'M-Pesa prompt sent. Enter PIN on the phone.');
+      setServiceLockMessage(`${res.message||'M-Pesa prompt sent. Enter PIN on the phone.'}\nAmount: ${serviceCurrency(res.amount||serviceAmountForProfile())}`, false);
+      toast(`${res.message||'M-Pesa prompt sent. Enter PIN on the phone.'} Amount: ${serviceCurrency(res.amount||serviceAmountForProfile())}`);
     }catch(e){
-      toast('Payment prompt failed: '+(e.message||String(e)), true);
+      const msg=readablePaymentError(e);
+      setServiceLockMessage(`Payment prompt failed: ${msg}`, true);
+      toast('Payment prompt failed. Read the message inside the payment box.', true);
     }finally{
-      $('#servicePay').disabled=false;
+      if($('#servicePay')) $('#servicePay').disabled=false;
     }
   };
 }
