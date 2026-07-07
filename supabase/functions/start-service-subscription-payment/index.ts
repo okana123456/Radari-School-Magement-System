@@ -27,7 +27,7 @@ function timestamp() {
 }
 
 function env(name: string) {
-  return Deno.env.get(name) || Deno.env.get(name.replace("SERVICE_", "DARAJA_")) || "";
+  return String(Deno.env.get(name) || Deno.env.get(name.replace("SERVICE_", "DARAJA_")) || "").trim();
 }
 
 function accountReference(school: any) {

@@ -12,7 +12,7 @@ function json(body: unknown, status = 200) {
 }
 
 function env(name: string) {
-  return Deno.env.get(name) || Deno.env.get(name.replace("SERVICE_", "DARAJA_")) || "";
+  return String(Deno.env.get(name) || Deno.env.get(name.replace("SERVICE_", "DARAJA_")) || "").trim();
 }
 
 function mask(value: string) {
@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
     const mode = (body.mode || Deno.env.get("SERVICE_DARAJA_ENVIRONMENT") || "production").toLowerCase();
     const phone = normalizePhone(body.phone || "");
     const amount = Number(body.amount || 1);
-    const shortcode = body.shortcode || env("SERVICE_SHORTCODE");
+    const shortcode = String(body.shortcode || env("SERVICE_SHORTCODE")).trim();
     const consumerKey = env("SERVICE_CONSUMER_KEY");
     const consumerSecret = env("SERVICE_CONSUMER_SECRET");
     const passkey = env("SERVICE_PASSKEY");
