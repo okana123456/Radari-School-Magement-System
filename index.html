@@ -656,8 +656,23 @@ on conflict (school_code) do nothing;
     .service-lock-actions{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:1rem}
     .service-lock-actions .btn{flex:1;min-width:160px}
     @media(max-width:520px){.service-lock{align-items:flex-end;padding:.75rem}.service-lock-card{border-radius:16px;padding:1rem}.service-lock-card .amount{font-size:1.6rem}.service-lock-actions{display:grid;grid-template-columns:1fr}.service-lock-actions .btn{width:100%}}
+    .owner-tabs{display:flex;gap:.45rem;flex-wrap:wrap;margin:.35rem 0 1rem}
+    .owner-tabs .btn{min-height:38px;flex:1;min-width:120px}
+    .owner-tabs .active{background:var(--green);color:#fff}
+    .owner-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.65rem;margin-bottom:1rem}
+    .owner-kpis .metric{padding:.85rem}
+    .owner-kpis .metric .num{font-size:1.45rem}
     .owner-table{min-width:720px;white-space:normal!important}
     .owner-table td{vertical-align:top;white-space:normal}
+    .owner-mobile-list{display:none}
+    .owner-mobile-card{border:1px solid var(--stone);border-radius:10px;padding:.85rem;margin-bottom:.65rem;background:#fff}
+    .owner-mobile-card .top{display:flex;justify-content:space-between;gap:.75rem;align-items:flex-start}
+    .owner-mobile-card .actions{display:grid;grid-template-columns:1fr 1fr;gap:.45rem;margin-top:.75rem}
+    .subject-card-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:.65rem}
+    .subject-card{border:1px solid var(--stone);border-radius:10px;padding:.8rem;background:#fff}
+    .subject-card .actions{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.65rem}
+    .analytics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem}
+    .chart-box{min-height:260px}
     .owner-line{line-height:1.45}
     .owner-actions{display:flex;gap:.35rem;flex-wrap:wrap}
     .attendance-table{min-width:0;white-space:normal!important}
@@ -671,6 +686,8 @@ on conflict (school_code) do nothing;
     .attendance-history-card{background:var(--green-50);border:1px solid var(--green);border-radius:var(--radius);padding:.8rem;margin-top:.85rem}
     @media(max-width:720px){
       .owner-table{min-width:620px}
+      .owner-table-wrap{display:none}
+      .owner-mobile-list{display:block}
       .owner-actions{flex-direction:column}
       .owner-actions .btn{width:100%}
       table.attendance-table{display:table!important;min-width:0!important;white-space:normal!important}
@@ -680,6 +697,10 @@ on conflict (school_code) do nothing;
       .attendance-table th,.attendance-table td{display:table-cell;padding:.48rem .35rem;font-size:.78rem}
       .attendance-status .score-btn{min-width:52px;font-size:.72rem;padding:.36rem .28rem}
       .attendance-table th:nth-child(2),.attendance-table td:nth-child(2){width:50%}
+    }
+    @media print{
+      *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+      .report-level{color:#fff!important}
     }
   </style>
 </head>
@@ -1173,6 +1194,7 @@ const NAV_GROUPS = [
     { id:'students',    label:'Students',         icon:'ti-users',            roles:['admin','headteacher','teacher'] },
     { id:'attendance',  label:'Attendance',       icon:'ti-calendar-check',   roles:['admin','headteacher','teacher'] },
     { id:'grading',     label:'CBC Grading',      icon:'ti-clipboard-check',  roles:['admin','headteacher','teacher'] },
+    { id:'analytics',   label:'Analytics',        icon:'ti-chart-line',       roles:['admin','headteacher','teacher'] },
     { id:'incidents',   label:'Incidents',        icon:'ti-shield-exclamation',roles:['admin','headteacher','teacher'] },
   ]},
   { label:'Teaching', items:[
@@ -1215,6 +1237,7 @@ function buildNav(role, currentRoute){
       { id:'subjects', label:'Subjects', icon:'ti-books' },
       { id:'attendance', label:'Attendance', icon:'ti-calendar-check' },
       { id:'grading', label:'Grading', icon:'ti-clipboard-check' },
+      { id:'analytics', label:'Analytics', icon:'ti-chart-line' },
       { id:'reports', label:'Reports', icon:'ti-file-text' },
       { id:'subscription', label:'Subscription', icon:'ti-credit-card' },
       { id:'settings', label:'Settings', icon:'ti-settings' },
@@ -2612,6 +2635,72 @@ modules.subjects = async (m)=>{
   await openLearningAreaManager('subjects');
 };
 
+modules.analytics = async (m)=>{
+  const sid=state.profile.school_id;
+  const [{data:students=[]},{data:assessments=[]},{data:teachers=[]}]=await Promise.all([
+    sb.from('students').select('id,full_name,grade,stream,admission_number').eq('school_id',sid),
+    sb.from('assessments').select('student_id,learning_area,weighted_score,cat1,cat2,endterm_score,term,year,teacher_id').not('learning_area','is',null),
+    sb.from('teachers').select('id,full_name').eq('school_id',sid),
+  ]);
+  const studentById=students.reduce((acc,s)=>{acc[s.id]=s;return acc;},{});
+  const teacherById=teachers.reduce((acc,t)=>{acc[t.id]=t.full_name;return acc;},{});
+  const scoped=assessments.filter(a=>studentById[a.student_id] && a.weighted_score!=null);
+  const latestYear=scoped.reduce((max,a)=>Math.max(max,Number(a.year||0)),new Date().getFullYear());
+  const rows=scoped.filter(a=>Number(a.year||latestYear)===latestYear);
+  const avg=list=>list.length?Math.round(list.reduce((s,x)=>s+Number(x.weighted_score||0),0)/list.length*10)/10:0;
+  const groupAvg=(items,keyFn)=>Object.values(items.reduce((acc,a)=>{
+    const key=keyFn(a)||'Not set';
+    if(!acc[key]) acc[key]={label:key,items:[]};
+    acc[key].items.push(a);
+    return acc;
+  },{})).map(g=>({label:g.label,avg:avg(g.items),count:g.items.length})).sort((a,b)=>b.avg-a.avg);
+  const classAvg=groupAvg(rows,a=>studentById[a.student_id]?.grade).slice(0,12);
+  const subjectAvg=groupAvg(rows,a=>a.learning_area).slice(0,12);
+  const streamAvg=groupAvg(rows,a=>[studentById[a.student_id]?.grade,studentById[a.student_id]?.stream].filter(Boolean).join(' ')).slice(0,12);
+  const teacherAvg=groupAvg(rows.filter(a=>a.teacher_id),a=>teacherById[a.teacher_id]||'Teacher not linked').slice(0,10);
+  const learnerRows=Object.values(rows.reduce((acc,a)=>{
+    const s=studentById[a.student_id];
+    if(!s) return acc;
+    if(!acc[s.id]) acc[s.id]={student:s,items:[]};
+    acc[s.id].items.push(a);
+    return acc;
+  },{})).map(x=>({student:x.student,avg:avg(x.items),count:x.items.length})).sort((a,b)=>a.avg-b.avg);
+  const weak=learnerRows.filter(x=>x.avg<41).slice(0,12);
+  const top=learnerRows.slice().sort((a,b)=>b.avg-a.avg).slice(0,5);
+  const overall=avg(rows);
+  m.innerHTML=`<div class="section-title"><div><h1 style="margin:0">School Analytics</h1><p class="muted small">Performance trends for class teachers, exam teachers and school leadership.</p></div></div>
+    <div class="owner-kpis">
+      <div class="metric"><div class="num">${overall||'--'}%</div><div class="lbl">Overall average ${latestYear}</div></div>
+      <div class="metric"><div class="num">${classAvg.length}</div><div class="lbl">Classes with scores</div></div>
+      <div class="metric"><div class="num">${subjectAvg.length}</div><div class="lbl">Subjects assessed</div></div>
+      <div class="metric"><div class="num">${weak.length}</div><div class="lbl">Learners needing support</div></div>
+    </div>
+    ${rows.length?`<div class="analytics-grid">
+      <div class="card chart-box"><h3>Class performance</h3><canvas id="classChart"></canvas></div>
+      <div class="card chart-box"><h3>Subject performance</h3><canvas id="subjectChart"></canvas></div>
+      <div class="card chart-box"><h3>Stream comparison</h3><canvas id="streamChart"></canvas></div>
+      <div class="card chart-box"><h3>Teacher-entered results</h3><canvas id="teacherChart"></canvas></div>
+    </div>
+    <div class="row" style="align-items:flex-start;margin-top:1rem">
+      <div class="col card"><h3>Learners needing attention</h3>${weak.length?`<table><thead><tr><th>Learner</th><th>Class</th><th>Average</th><th>Action</th></tr></thead><tbody>${weak.map(x=>`<tr><td>${esc(x.student.full_name)}<div class="small muted">${esc(x.student.admission_number||'')}</div></td><td>${esc([x.student.grade,x.student.stream].filter(Boolean).join(' '))}</td><td><span class="badge terra">${x.avg}%</span></td><td class="small muted">Remedial follow-up</td></tr>`).join('')}</tbody></table>`:'<p class="muted small">No learner is below the support line.</p>'}</div>
+      <div class="col card"><h3>Top improvement targets</h3>${top.length?`<table><thead><tr><th>Learner</th><th>Class</th><th>Average</th></tr></thead><tbody>${top.map(x=>`<tr><td>${esc(x.student.full_name)}</td><td>${esc([x.student.grade,x.student.stream].filter(Boolean).join(' '))}</td><td><span class="badge">${x.avg}%</span></td></tr>`).join('')}</tbody></table>`:'<p class="muted small">No scores yet.</p>'}</div>
+    </div>`:`<div class="card empty"><i class="ti ti-chart-line"></i><div>No CBC scores yet. Analytics will appear after grading is saved.</div></div>`}`;
+  const draw=(id,data,label,color)=>{
+    if(!window.Chart || !data.length) return;
+    const canvas=document.getElementById(id);
+    if(!canvas) return;
+    if(state._charts?.[id]) state._charts[id].destroy();
+    state._charts=state._charts||{};
+    state._charts[id]=new Chart(canvas,{type:'bar',data:{labels:data.map(x=>x.label),datasets:[{label,data:data.map(x=>x.avg),backgroundColor:color,borderRadius:6}]},options:{responsive:true,maintainAspectRatio:false,scales:{y:{beginAtZero:true,max:100}}}});
+  };
+  setTimeout(()=>{
+    draw('classChart',classAvg,'Class average','#1f4434');
+    draw('subjectChart',subjectAvg,'Subject average','#2d6a4f');
+    draw('streamChart',streamAvg,'Stream average','#b45309');
+    draw('teacherChart',teacherAvg,'Average entered by teacher','#8f3d2d');
+  },80);
+};
+
 function downloadGradedExamExcel(students, displayAreas, amap, testCol, term, year, testLabel){
   const header=['Admission No','Learner Name','Term','Year','Test'];
   displayAreas.forEach(la=>{ header.push(`${la} Score`,`${la} Level`,`${la} Comment`); });
@@ -2674,15 +2763,21 @@ async function openLearningAreaManager(backRoute='grading'){
       <div class="col card" style="min-width:280px">
         <h3>${esc(selected)} subjects</h3>
         ${!hasCustomRows?`<p class="small muted">This grade is still using CBC defaults. Editing any subject will create a school-specific subject list for this grade.</p>`:''}
-        ${subjectRows.length?`<table><thead><tr><th>Learning area</th><th>Instructor</th><th></th></tr></thead><tbody>
+        ${subjectRows.length?`<div class="subject-card-list">
           ${subjectRows.map(a=>{
-            return `<tr>
-              <td>${esc(a.subject)}${a.custom?'':'<div class="small muted">CBC default</div>'}</td>
-              <td class="small muted">${esc(a.instructor_name||'Not set')}</td>
-              <td><a href="#" class="small edit-area" data-id="${a.custom?esc(a.id):''}" data-subject="${esc(a.subject)}" data-strand="${esc(a.strand)}" data-sub="${esc(a.sub_strand)}" data-teacher="${esc(a.teacher_id||'')}" data-instructor="${esc(a.instructor_name||'')}">Edit</a>${a.custom?` &nbsp; <a href="#" class="small del-area" data-id="${esc(a.id)}" style="color:var(--terracotta)">Remove</a>`:''}</td>
-            </tr>`;
+            const teacherName=teachers.find(t=>t.id===a.teacher_id)?.full_name||'';
+            return `<div class="subject-card">
+              <div style="font-weight:700">${esc(a.subject)}</div>
+              <div class="small muted">${a.custom?'School subject':'CBC default subject'}</div>
+              <div class="small muted" style="margin-top:.45rem"><b>Instructor:</b> ${esc(a.instructor_name||teacherName||'Not set')}</div>
+              <div class="small muted"><b>Topic:</b> ${esc(a.strand||'General')}</div>
+              <div class="actions">
+                <button class="btn secondary edit-area" data-id="${a.custom?esc(a.id):''}" data-subject="${esc(a.subject)}" data-strand="${esc(a.strand)}" data-sub="${esc(a.sub_strand)}" data-teacher="${esc(a.teacher_id||'')}" data-instructor="${esc(a.instructor_name||'')}"><i class="ti ti-pencil"></i> Edit</button>
+                ${a.custom?`<button class="btn secondary del-area" data-id="${esc(a.id)}" style="color:var(--terracotta)"><i class="ti ti-trash"></i> Remove</button>`:''}
+              </div>
+            </div>`;
           }).join('')}
-        </tbody></table>`:`<div class="muted small">No subjects yet.</div>`}
+        </div>`:`<div class="muted small">No subjects yet.</div>`}
       </div>
       <div class="col card" style="min-width:260px">
         <h3>Add subject</h3>
@@ -4059,6 +4154,8 @@ modules.reports = async (m)=>{
 function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMarks,maxMarks,overallAvg,overallRc,overallPts,myRank,streamSize,health,school}){
   const BAND_COLOR={EE1:'#1b5e20',EE2:'#2e7d32',ME1:'#1565c0',ME2:'#1976d2',AE1:'#e65100',AE2:'#f57c00',BE1:'#b71c1c',BE2:'#c62828'};
   const rcColor=rc=>BAND_COLOR[rc]||'#333';
+  const primaryColor=school.report_primary_color||'#1a3c2a';
+  const accentColor=school.report_accent_color||'#e8f5e9';
   const classTeacherComment=autoOverallComment(overallAvg, s.full_name);
   const hoiComment=autoHoiComment(overallAvg);
   const fmt=v=>v!=null?v:'—';
@@ -4068,13 +4165,14 @@ function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMar
   <style>
     @page{size:A4;margin:1.2cm}
     *{box-sizing:border-box;margin:0;padding:0}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#111;background:#fff}
 
     /* Header */
-    .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1a3c2a;padding-bottom:10px;margin-bottom:10px}
-    .school-logo{width:52px;height:52px;border:2px solid #1a3c2a;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:bold;color:#1a3c2a;text-align:center;line-height:1.2;flex-shrink:0}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid ${primaryColor};padding-bottom:10px;margin-bottom:10px}
+    .school-logo{width:52px;height:52px;border:2px solid ${primaryColor};border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:bold;color:${primaryColor};text-align:center;line-height:1.2;flex-shrink:0}
     .school-info{flex:1;padding:0 14px}
-    .school-name{font-size:17px;font-weight:900;color:#1a3c2a;text-transform:uppercase;letter-spacing:.03em}
+    .school-name{font-size:17px;font-weight:900;color:${primaryColor};text-transform:uppercase;letter-spacing:.03em}
     .doc-title{font-size:10px;color:#555;font-style:italic;margin-top:1px}
     .photo-box{width:68px;height:78px;border:1.5px solid #bbb;display:flex;align-items:center;justify-content:center;font-size:8px;color:#aaa;flex-shrink:0;background:#f8f8f8}
 
@@ -4085,26 +4183,26 @@ function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMar
     .info-cell .val{font-weight:700;color:#111}
 
     /* Performance summary box — Image 1 style */
-    .perf-box{background:#1a3c2a;color:#fff;border-radius:6px;padding:8px 12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+    .perf-box{background:${primaryColor};color:#fff;border-radius:6px;padding:8px 12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
     .perf-item{text-align:center}
     .perf-num{font-size:20px;font-weight:900;line-height:1}
     .perf-lbl{font-size:8px;opacity:.8;text-transform:uppercase;letter-spacing:.05em;margin-top:1px}
-    .perf-badge{background:#fff;color:#1a3c2a;font-size:16px;font-weight:900;border-radius:4px;padding:3px 10px}
+    .perf-badge{background:#fff;color:${primaryColor};font-size:16px;font-weight:900;border-radius:4px;padding:3px 10px}
 
     /* Exam details strip */
-    .exam-strip{display:flex;gap:16px;font-size:10px;margin-bottom:10px;padding:6px 10px;background:#f5f5f5;border-radius:4px;border-left:4px solid #1a3c2a}
+    .exam-strip{display:flex;gap:16px;font-size:10px;margin-bottom:10px;padding:6px 10px;background:#f5f5f5;border-radius:4px;border-left:4px solid ${primaryColor}}
     .exam-strip .lbl{color:#666}
     .exam-strip .val{font-weight:700}
 
     /* Main table */
     table{width:100%;border-collapse:collapse;margin-bottom:8px;font-size:10.5px}
-    th{background:#1a3c2a;color:#fff;padding:5px 6px;text-align:left;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+    th{background:${primaryColor};color:#fff;padding:5px 6px;text-align:left;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
     th.center,td.center{text-align:center}
     td{padding:4px 6px;border-bottom:1px solid #e0e0e0;vertical-align:middle}
     tr:nth-child(even) td{background:#f8fffe}
     .rc-pill{display:inline-block;padding:1px 6px;border-radius:3px;font-weight:700;font-size:10px;color:#fff}
     .pts-badge{display:inline-block;width:20px;height:20px;border-radius:50%;font-weight:700;font-size:10px;text-align:center;line-height:20px;color:#fff}
-    .avg-row td{font-weight:700;background:#e8f5e9;border-top:2px solid #1a3c2a;font-size:11px}
+    .avg-row td{font-weight:700;background:${accentColor};border-top:2px solid ${primaryColor};font-size:11px}
 
     /* Levels legend — Image 1 style rounded badge */
     .legend-box{border:1px solid #ddd;border-radius:6px;padding:8px 12px;margin-bottom:10px;display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;font-size:9.5px}
@@ -4112,14 +4210,14 @@ function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMar
     .legend-code{width:30px;font-weight:700}
 
     /* 3-column grouping (Arts/Social/STEM) */
-    .group-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border:1.5px solid #1a3c2a;border-radius:4px;overflow:hidden;margin-bottom:10px;font-size:10px}
-    .group-cell{padding:5px 8px;border-right:1.5px solid #1a3c2a;text-align:center}
+    .group-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border:1.5px solid ${primaryColor};border-radius:4px;overflow:hidden;margin-bottom:10px;font-size:10px}
+    .group-cell{padding:5px 8px;border-right:1.5px solid ${primaryColor};text-align:center}
     .group-cell:last-child{border-right:none}
     .group-cell .g-lbl{font-size:8.5px;color:#666;text-transform:uppercase;letter-spacing:.04em}
 
     /* Remarks */
     .remarks-section{margin-bottom:10px}
-    .remarks-section .r-lbl{font-size:9.5px;font-weight:700;color:#1a3c2a;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+    .remarks-section .r-lbl{font-size:9.5px;font-weight:700;color:${primaryColor};text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
     .remarks-section .r-body{border-bottom:1px solid #999;min-height:18px;padding:2px 0;font-style:italic;font-size:10.5px}
 
     /* Signatures */
@@ -4560,7 +4658,13 @@ modules.owner = async (m)=>{
     m.innerHTML = `<div class="card"><h3>Not available</h3><p class="muted small">This area is only for the platform owner.</p></div>`;
     return;
   }
+  state.ownerTab = state.ownerTab || 'subscriptions';
   m.innerHTML = `<div class="section-title"><div><h1>Subscription Control</h1><p class="muted">Manage each school or individual teacher workspace from one place.</p></div></div>
+    <div class="owner-tabs">
+      <button class="btn secondary owner-tab ${state.ownerTab==='subscriptions'?'active':''}" data-tab="subscriptions"><i class="ti ti-users"></i> Subscriptions</button>
+      <button class="btn secondary owner-tab ${state.ownerTab==='payments'?'active':''}" data-tab="payments"><i class="ti ti-cash"></i> Payments</button>
+      <button class="btn secondary owner-tab ${state.ownerTab==='overview'?'active':''}" data-tab="overview"><i class="ti ti-chart-bar"></i> Overview</button>
+    </div>
     <div class="toolbar">
       <div class="field" style="min-width:280px"><label>Search</label><input id="ownerSearch" placeholder="School, teacher workspace, code, or ID"></div>
       <button class="btn secondary" id="ownerRefresh"><i class="ti ti-refresh"></i> Refresh</button>
@@ -4578,7 +4682,7 @@ modules.owner = async (m)=>{
       `).order('created_at',{ascending:false}),
       sb.from('users').select('id,school_id,role,full_name,phone,email,created_at'),
       sb.from('students').select('id,school_id,created_at'),
-      sb.from('service_subscription_payments').select('id,school_id,amount,status,paid_at,created_at,receipt_number'),
+      sb.from('service_subscription_payments').select('id,school_id,user_id,amount,status,paid_at,created_at,receipt_number,phone,result_description,paid_until').order('created_at',{ascending:false}),
     ]);
     const schools = schoolRes.data || [];
     const users = userRes.data || [];
@@ -4623,37 +4727,86 @@ modules.owner = async (m)=>{
       const customer=primaryUserBySchool[s.id] || {};
       return [s.id,s.name,s.type,s.school_code,s.service_customer_code,customer.full_name,customer.email,customer.phone].some(v=>String(v||'').toLowerCase().includes(term));
     });
-    $('#ownerList').innerHTML = `
-    <div class="metrics" style="margin-bottom:1rem">
-      <div class="metric"><div class="num">${schools.length}</div><div class="lbl">Total workspaces</div></div>
-      <div class="metric"><div class="num">${activeCount}</div><div class="lbl">Active subscriptions</div></div>
+    const ownerKpis = `<div class="owner-kpis">
+      <div class="metric"><div class="num">${schools.length}</div><div class="lbl">Workspaces</div></div>
+      <div class="metric"><div class="num">${activeCount}</div><div class="lbl">Active</div></div>
       <div class="metric"><div class="num">${expiredCount}</div><div class="lbl">Expired or locked</div></div>
-      <div class="metric"><div class="num">${schools.filter(isIndividual).length}</div><div class="lbl">Individual teachers</div></div>
+      <div class="metric"><div class="num">${schools.filter(isIndividual).length}</div><div class="lbl">Teachers</div></div>
       <div class="metric"><div class="num">${schools.filter(s=>!isIndividual(s)).length}</div><div class="lbl">Schools</div></div>
-      <div class="metric"><div class="num">${ownerUsers.length}</div><div class="lbl">Total users</div></div>
-      <div class="metric"><div class="num">${ownerLearners.length}</div><div class="lbl">Total learners</div></div>
-      <div class="metric"><div class="num">${signupsThisMonth}</div><div class="lbl">User signups this month</div></div>
-      <div class="metric"><div class="num">${serviceCurrency(expectedRevenue)}</div><div class="lbl">Expected monthly revenue</div></div>
       <div class="metric"><div class="num">${serviceCurrency(revenueThisMonth)}</div><div class="lbl">Collected this month</div></div>
-    </div>
-    <div class="card">
-      ${rows.length?`<table class="owner-table"><thead><tr><th>Customer</th><th>Workspace / School</th><th>Subscription</th><th>Status</th><th>Support</th></tr></thead><tbody>
-        ${rows.map(s=>{
-          const individual = isIndividual(s);
-          const price = planPrice(s);
-          const expired = isExpired(s);
-          const lastPayment = latestPaymentBySchool[s.id];
-          const customer = primaryUserBySchool[s.id] || {};
-          return `<tr>
-            <td class="owner-line"><b>${esc(customer.full_name||s.name||'Unnamed customer')}</b><div class="small muted">${esc(customer.email||'No email')}</div><div class="small muted">${esc(customer.phone||'No phone added')} ${individual?'&middot; Teacher':''}</div></td>
-            <td class="owner-line"><b>${esc(s.name||'Workspace')}</b><div class="small muted">ID: ${esc(s.service_customer_code||String(s.id).slice(0,8).toUpperCase())}</div><div class="small muted">Users: ${userCountBySchool[s.id]||0}</div><div class="small muted">Learners: ${learnerCountBySchool[s.id]||0}</div>${s.service_discount_note?`<div class="small muted">Note: ${esc(s.service_discount_note)}</div>`:''}</td>
-            <td class="owner-line"><b>${serviceCurrency(price)}</b><div class="small muted">Paid until: ${esc(s.service_paid_until||'Not active')}</div>${lastPayment?`<div class="small muted">Last: ${serviceCurrency(lastPayment.amount)} on ${esc(String(lastPayment.paid_at||lastPayment.created_at||'').slice(0,10))}</div>`:''}</td>
-            <td class="owner-line"><span class="badge ${expired||s.service_status==='locked'?'terra':''}">${expired?'expired':esc(s.service_status||'active')}</span><div class="small muted">${esc(String(s.service_last_paid_at||s.created_at||'').slice(0,10)||'')}</div></td>
-            <td><div class="owner-actions"><button class="btn secondary owner-edit" data-id="${esc(s.id)}">Edit</button><button class="btn secondary reset-device" data-id="${esc(s.id)}">Reset device</button></div></td>
-          </tr>`;
-        }).join('')}
-      </tbody></table>`:`<div class="empty"><i class="ti ti-search"></i><div>No matching workspaces.</div></div>`}
     </div>`;
+    const renderSubscriptionRow=s=>{
+      const individual = isIndividual(s);
+      const price = planPrice(s);
+      const expired = isExpired(s);
+      const lastPayment = latestPaymentBySchool[s.id];
+      const customer = primaryUserBySchool[s.id] || {};
+      return `<tr>
+        <td class="owner-line"><b>${esc(customer.full_name||s.name||'Unnamed customer')}</b><div class="small muted">${esc(customer.email||'No email')}</div><div class="small muted">${esc(customer.phone||'No phone added')} ${individual?'&middot; Teacher':''}</div></td>
+        <td class="owner-line"><b>${esc(s.name||'Workspace')}</b><div class="small muted">ID: ${esc(s.service_customer_code||String(s.id).slice(0,8).toUpperCase())}</div><div class="small muted">Users: ${userCountBySchool[s.id]||0} &middot; Learners: ${learnerCountBySchool[s.id]||0}</div>${s.service_discount_note?`<div class="small muted">Note: ${esc(s.service_discount_note)}</div>`:''}</td>
+        <td class="owner-line"><b>${serviceCurrency(price)}</b><div class="small muted">Paid until: ${esc(s.service_paid_until||'Not active')}</div>${lastPayment?`<div class="small muted">Last: ${serviceCurrency(lastPayment.amount)} on ${esc(new Date(lastPayment.paid_at||lastPayment.created_at).toLocaleString('en-KE'))}</div>`:''}</td>
+        <td class="owner-line"><span class="badge ${expired||s.service_status==='locked'?'terra':''}">${expired?'expired':esc(s.service_status||'active')}</span><div class="small muted">${esc(String(s.service_last_paid_at||s.created_at||'').slice(0,10)||'')}</div></td>
+        <td><div class="owner-actions"><button class="btn secondary owner-edit" data-id="${esc(s.id)}">Edit</button><button class="btn secondary reset-device" data-id="${esc(s.id)}">Reset device</button></div></td>
+      </tr>`;
+    };
+    const renderSubscriptionCard=s=>{
+      const individual = isIndividual(s);
+      const price = planPrice(s);
+      const expired = isExpired(s);
+      const customer = primaryUserBySchool[s.id] || {};
+      return `<div class="owner-mobile-card">
+        <div class="top"><div><b>${esc(customer.full_name||s.name||'Unnamed customer')}</b><div class="small muted">${esc(customer.email||'No email')}</div><div class="small muted">${esc(customer.phone||'No phone added')} ${individual?'&middot; Teacher':''}</div></div><span class="badge ${expired||s.service_status==='locked'?'terra':''}">${expired?'expired':esc(s.service_status||'active')}</span></div>
+        <div class="small muted" style="margin-top:.55rem"><b>${esc(s.name||'Workspace')}</b> &middot; ID ${esc(s.service_customer_code||String(s.id).slice(0,8).toUpperCase())}</div>
+        <div class="small muted">Users: ${userCountBySchool[s.id]||0} &middot; Learners: ${learnerCountBySchool[s.id]||0}</div>
+        <div style="margin-top:.5rem"><b>${serviceCurrency(price)}</b><div class="small muted">Paid until: ${esc(s.service_paid_until||'Not active')}</div></div>
+        <div class="actions"><button class="btn secondary owner-edit" data-id="${esc(s.id)}">Edit</button><button class="btn secondary reset-device" data-id="${esc(s.id)}">Reset device</button></div>
+      </div>`;
+    };
+    const paymentRows=payments.filter(p=>{
+      const school=schools.find(s=>s.id===p.school_id)||{};
+      const customer=primaryUserBySchool[p.school_id]||{};
+      if(!term) return true;
+      return [school.name,school.school_code,school.service_customer_code,customer.full_name,customer.email,customer.phone,p.phone,p.receipt_number,p.status,p.result_description].some(v=>String(v||'').toLowerCase().includes(term));
+    });
+    const todayKey = new Date().toISOString().slice(0,10);
+    const todayPayments = completedPayments.filter(p=>String(p.paid_at||p.created_at||'').slice(0,10)===todayKey);
+    const tab=state.ownerTab||'subscriptions';
+    $('#ownerList').innerHTML = tab==='overview' ? `
+      ${ownerKpis}
+      <div class="card"><h3>Business snapshot</h3>
+        <div class="analytics-grid">
+          <div><div class="small muted">Expected monthly revenue</div><h2>${serviceCurrency(expectedRevenue)}</h2></div>
+          <div><div class="small muted">Collected this month</div><h2>${serviceCurrency(revenueThisMonth)}</h2></div>
+          <div><div class="small muted">User signups this month</div><h2>${signupsThisMonth}</h2></div>
+          <div><div class="small muted">Total learners served</div><h2>${ownerLearners.length}</h2></div>
+        </div>
+      </div>` : tab==='payments' ? `
+      <div class="owner-kpis">
+        <div class="metric"><div class="num">${serviceCurrency(todayPayments.reduce((sum,p)=>sum+Number(p.amount||0),0))}</div><div class="lbl">Collected today</div></div>
+        <div class="metric"><div class="num">${todayPayments.length}</div><div class="lbl">Payments today</div></div>
+        <div class="metric"><div class="num">${serviceCurrency(revenueThisMonth)}</div><div class="lbl">Collected this month</div></div>
+      </div>
+      <div class="card">
+        <h3>Subscription payments</h3>
+        ${paymentRows.length?`<div class="owner-table-wrap"><table class="owner-table"><thead><tr><th>Paid by</th><th>Workspace</th><th>Amount</th><th>Time</th><th>Status</th></tr></thead><tbody>
+          ${paymentRows.map(p=>{ const school=schools.find(s=>s.id===p.school_id)||{}; const customer=primaryUserBySchool[p.school_id]||{}; return `<tr>
+            <td><b>${esc(customer.full_name||'Unknown')}</b><div class="small muted">${esc(customer.email||'')}</div><div class="small muted">${esc(p.phone||customer.phone||'')}</div></td>
+            <td>${esc(school.name||'Workspace')}<div class="small muted">ID: ${esc(school.service_customer_code||String(p.school_id||'').slice(0,8).toUpperCase())}</div></td>
+            <td><b>${serviceCurrency(p.amount)}</b><div class="small muted">${esc(p.receipt_number||'No receipt yet')}</div></td>
+            <td class="small muted">${esc(new Date(p.paid_at||p.created_at).toLocaleString('en-KE'))}</td>
+            <td><span class="badge ${p.status==='completed'?'':'amber'}">${esc(p.status||'pending')}</span><div class="small muted">${esc(p.result_description||'')}</div></td>
+          </tr>`; }).join('')}
+        </tbody></table></div>
+        <div class="owner-mobile-list">${paymentRows.map(p=>{ const school=schools.find(s=>s.id===p.school_id)||{}; const customer=primaryUserBySchool[p.school_id]||{}; return `<div class="owner-mobile-card">
+          <div class="top"><div><b>${esc(customer.full_name||'Unknown')}</b><div class="small muted">${esc(school.name||'Workspace')}</div><div class="small muted">${esc(p.phone||customer.phone||'')}</div></div><span class="badge ${p.status==='completed'?'':'amber'}">${esc(p.status||'pending')}</span></div>
+          <div style="margin-top:.55rem"><b>${serviceCurrency(p.amount)}</b><div class="small muted">${esc(new Date(p.paid_at||p.created_at).toLocaleString('en-KE'))}</div><div class="small muted">${esc(p.receipt_number||p.result_description||'No receipt yet')}</div></div>
+        </div>`; }).join('')}</div>`:`<div class="empty"><i class="ti ti-cash"></i><div>No matching payments.</div></div>`}
+      </div>` : `
+      ${ownerKpis}
+      <div class="card">
+        ${rows.length?`<div class="owner-table-wrap"><table class="owner-table"><thead><tr><th>Customer</th><th>Workspace / School</th><th>Subscription</th><th>Status</th><th>Support</th></tr></thead><tbody>${rows.map(renderSubscriptionRow).join('')}</tbody></table></div>
+        <div class="owner-mobile-list">${rows.map(renderSubscriptionCard).join('')}</div>`:`<div class="empty"><i class="ti ti-search"></i><div>No matching workspaces.</div></div>`}
+      </div>`;
     $$('.owner-edit').forEach(btn=>btn.onclick=()=>openOwnerEdit(rows.find(s=>s.id===btn.dataset.id)));
     $$('.reset-device').forEach(btn=>btn.onclick=async()=>{
       if(!confirm('Reset active device access for this workspace?')) return;
@@ -4713,6 +4866,11 @@ modules.owner = async (m)=>{
     };
   };
 
+  $$('.owner-tab').forEach(btn=>btn.onclick=()=>{
+    state.ownerTab=btn.dataset.tab;
+    $$('.owner-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===state.ownerTab));
+    load();
+  });
   $('#ownerRefresh').onclick=load;
   $('#ownerSearch').oninput=load;
   await load();
@@ -4760,6 +4918,17 @@ modules.settings = async (m)=>{
       <p class="small muted">${esc(state.school?.name||'No school linked.')}</p>
       ${state.school?`<p class="small">School code: <b>${esc(state.school.school_code)}</b> &mdash; share this with teachers and parents joining your school.</p>`:''}
     </div>
+    ${isAdmin&&state.school?`<div class="card" style="max-width:560px">
+      <h3>Report card appearance</h3>
+      <p class="small muted">Set the colours used on printed report cards.</p>
+      <form id="reportColorSettings" class="stack">
+        <div class="row">
+          <div class="col field"><label>Main colour</label><input type="color" name="report_primary_color" value="${esc(state.school.report_primary_color||'#1a3c2a')}"></div>
+          <div class="col field"><label>Summary row colour</label><input type="color" name="report_accent_color" value="${esc(state.school.report_accent_color||'#e8f5e9')}"></div>
+        </div>
+        <button class="btn primary">Save report colours</button>
+      </form>
+    </div>`:''}
     ${isAdmin&&state.school?`<div class="card" style="max-width:640px">
       <h3>Fee payments via M-Pesa</h3>
       <p class="small muted">Main flow: parents pay manually using Paybill + admission number. Optional flow: parents can also click Pay via M-Pesa for an STK prompt. Consumer key, consumer secret and passkey must be saved as Supabase Edge Function secrets.</p>
@@ -4816,6 +4985,15 @@ modules.settings = async (m)=>{
   if($('#secretGuide')) $('#secretGuide').onclick=()=>{ const mask=v=>v?String(v).slice(0,4)+'...'+String(v).slice(-4)+' ('+String(v).length+' chars)':'not pasted'; $('#secretOut').style.display='block'; $('#secretOut').textContent='School fee payment secrets:\n\nDARAJA_CONSUMER_KEY = '+mask($('#secretConsumerKey').value)+'\nDARAJA_CONSUMER_SECRET = '+mask($('#secretConsumerSecret').value)+'\nDARAJA_PASSKEY = '+mask($('#secretPasskey').value)+'\nDARAJA_SHORTCODE = '+mask($('#secretShortcode').value)+'\n\nYour Radari subscription payment secrets:\n\nSERVICE_CONSUMER_KEY = '+mask($('#secretConsumerKey').value)+'\nSERVICE_CONSUMER_SECRET = '+mask($('#secretConsumerSecret').value)+'\nSERVICE_PASSKEY = '+mask($('#secretPasskey').value)+'\nSERVICE_SHORTCODE = '+mask($('#secretShortcode').value)+'\n\nUse SERVICE_* for the system subscription lock so it stays separate from school fee payments.'; };
   if($('#businessSettings')) $('#businessSettings').onsubmit=async(e)=>{ e.preventDefault(); const f=Object.fromEntries(new FormData(e.target)); f.teacher_subscription_amount=+f.teacher_subscription_amount||450; f.school_monthly_price=+f.school_monthly_price||3000; const {data,error}=await sb.from('schools').update(f).eq('id',state.school.id).select('*').single(); if(error){ toast('Save failed. Run the business SQL upgrade first: '+error.message,true); return; } state.school=data; toast('Business settings saved'); navigate('settings'); };
   if($('#seedBtn')) $('#seedBtn').onclick = ()=>window.seedDemoData();
+  if($('#reportColorSettings')) $('#reportColorSettings').onsubmit=async(e)=>{
+    e.preventDefault();
+    const f=Object.fromEntries(new FormData(e.target));
+    const {data,error}=await sb.from('schools').update(f).eq('id',state.school.id).select('*').single();
+    if(error){ toast('Save failed. Run report-colors-setup.sql first: '+error.message,true); return; }
+    state.school=data;
+    toast('Report colours saved');
+    navigate('settings');
+  };
   if($('#feePaySettings')) $('#feePaySettings').onsubmit=async(e)=>{
     e.preventDefault();
     const f=Object.fromEntries(new FormData(e.target));
