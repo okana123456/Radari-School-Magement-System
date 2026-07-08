@@ -17,8 +17,8 @@ begin
   _school_name := nullif(trim(coalesce(new.raw_user_meta_data->>'school_name', '')), '');
 
   if _signup_type = 'school_owner' then
-    insert into public.schools (name, type)
-    values (coalesce(_school_name, 'New School'), 'School')
+    insert into public.schools (name, type, service_paid_until, service_status, school_monthly_price)
+    values (coalesce(_school_name, 'New School'), 'School', null, 'locked', 5500)
     returning id into _school;
     _role := 'admin';
 

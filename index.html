@@ -785,7 +785,7 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
   alter table public.schools add column if not exists fee_auto_allocate_excess boolean default true;
   alter table public.schools add column if not exists fee_payment_instructions text;
   alter table public.schools add column if not exists teacher_subscription_amount numeric default 450;
-  alter table public.schools add column if not exists school_monthly_price numeric default 3000;
+  alter table public.schools add column if not exists school_monthly_price numeric default 5500;
   alter table public.schools add column if not exists teacher_device_policy text default 'one_browser';
   alter table public.schools add column if not exists parent_access_mode text default 'login_required';
 
@@ -4825,7 +4825,7 @@ modules.owner = async (m)=>{
       const firstTeacherPayment = isIndividual(s) && !s.service_last_paid_at && !['trial','manual'].includes(status);
       return firstTeacherPayment || !s.service_paid_until || new Date(`${s.service_paid_until}T23:59:59`) < new Date() || status==='locked';
     };
-    const planPrice = s=>isIndividual(s) ? Number(s.teacher_subscription_amount||450) : Number(s.school_monthly_price||3000);
+    const planPrice = s=>isIndividual(s) ? Number(s.teacher_subscription_amount||450) : Number(s.school_monthly_price||5500);
     const activeCount = schools.filter(s=>!isExpired(s)).length;
     const expiredCount = schools.length - activeCount;
     const expectedRevenue = schools.reduce((sum,s)=>sum+planPrice(s),0);
@@ -4957,7 +4957,7 @@ modules.owner = async (m)=>{
 
   const openOwnerEdit=(s)=>{
     const individual = String(s.type||'').toLowerCase().includes('individual');
-    const currentPrice = individual ? Number(s.teacher_subscription_amount||450) : Number(s.school_monthly_price||3000);
+    const currentPrice = individual ? Number(s.teacher_subscription_amount||450) : Number(s.school_monthly_price||5500);
     const box=el(`<div class="modal-backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9998;display:flex;align-items:center;justify-content:center;padding:1rem">
       <div class="card" style="max-width:620px;width:100%;max-height:90vh;overflow:auto">
         <div class="section-title"><h3>Edit subscription</h3><button class="btn secondary" id="closeOwnerEdit">Close</button></div>
@@ -4996,7 +4996,7 @@ modules.owner = async (m)=>{
         service_discount_note:f.service_discount_note||null,
       };
       if(individual) update.teacher_subscription_amount=Number(f.price||450);
-      else update.school_monthly_price=Number(f.price||3000);
+      else update.school_monthly_price=Number(f.price||5500);
       const {error}=await sb.from('schools').update(update).eq('id',s.id);
       if(error){ toast('Save failed. Run the owner SQL first: '+error.message,true); return; }
       toast('Subscription updated');
@@ -5124,7 +5124,7 @@ modules.settings = async (m)=>{
   };
   if($('#openOwnerPage')) $('#openOwnerPage').onclick=()=>navigate('owner');
   if($('#secretGuide')) $('#secretGuide').onclick=()=>{ const mask=v=>v?String(v).slice(0,4)+'...'+String(v).slice(-4)+' ('+String(v).length+' chars)':'not pasted'; $('#secretOut').style.display='block'; $('#secretOut').textContent='School fee payment secrets:\n\nDARAJA_CONSUMER_KEY = '+mask($('#secretConsumerKey').value)+'\nDARAJA_CONSUMER_SECRET = '+mask($('#secretConsumerSecret').value)+'\nDARAJA_PASSKEY = '+mask($('#secretPasskey').value)+'\nDARAJA_SHORTCODE = '+mask($('#secretShortcode').value)+'\n\nYour Radari subscription payment secrets:\n\nSERVICE_CONSUMER_KEY = '+mask($('#secretConsumerKey').value)+'\nSERVICE_CONSUMER_SECRET = '+mask($('#secretConsumerSecret').value)+'\nSERVICE_PASSKEY = '+mask($('#secretPasskey').value)+'\nSERVICE_SHORTCODE = '+mask($('#secretShortcode').value)+'\n\nUse SERVICE_* for the system subscription lock so it stays separate from school fee payments.'; };
-  if($('#businessSettings')) $('#businessSettings').onsubmit=async(e)=>{ e.preventDefault(); const f=Object.fromEntries(new FormData(e.target)); f.teacher_subscription_amount=+f.teacher_subscription_amount||450; f.school_monthly_price=+f.school_monthly_price||3000; const {data,error}=await sb.from('schools').update(f).eq('id',state.school.id).select('*').single(); if(error){ toast('Save failed. Run the business SQL upgrade first: '+error.message,true); return; } state.school=data; toast('Business settings saved'); navigate('settings'); };
+  if($('#businessSettings')) $('#businessSettings').onsubmit=async(e)=>{ e.preventDefault(); const f=Object.fromEntries(new FormData(e.target)); f.teacher_subscription_amount=+f.teacher_subscription_amount||450; f.school_monthly_price=+f.school_monthly_price||5500; const {data,error}=await sb.from('schools').update(f).eq('id',state.school.id).select('*').single(); if(error){ toast('Save failed. Run the business SQL upgrade first: '+error.message,true); return; } state.school=data; toast('Business settings saved'); navigate('settings'); };
   if($('#seedBtn')) $('#seedBtn').onclick = ()=>window.seedDemoData();
   if($('#reportColorSettings')) $('#reportColorSettings').onsubmit=async(e)=>{
     e.preventDefault();
@@ -5183,12 +5183,12 @@ function serviceCurrency(amount){
 }
 
 function serviceAmountForProfile(){
-  if(!state.school) return 450;
-  if(state.profile?.role==='teacher') {
+  if(!state.school) return 5500;
+  if(state.profile?.role==='teacher' && isIndividualTeacherWorkspace()) {
     const configured = Number(state.school.teacher_subscription_amount || 0);
     return configured > 0 ? configured : 450;
   }
-  return Number(state.school.school_monthly_price||3000);
+  return Number(state.school.school_monthly_price||5500);
 }
 
 function serviceAccessStatus(){

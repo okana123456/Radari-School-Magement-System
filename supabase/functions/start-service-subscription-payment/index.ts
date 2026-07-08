@@ -76,8 +76,9 @@ Deno.serve(async (req) => {
     if (schoolErr || !school) return json({ ok: false, message: "School not found." }, 404);
 
     const requestedMonths = [1, 3, 6, 12].includes(Number(months)) ? Number(months) : 1;
+    const isIndividualTeacherWorkspace = String(school.type || "").toLowerCase().includes("individual");
     const monthly = Math.max(1, Math.round(Number(
-      profile.role === "teacher" ? school.teacher_subscription_amount || 450 : school.school_monthly_price || 3000,
+      profile.role === "teacher" && isIndividualTeacherWorkspace ? school.teacher_subscription_amount || 450 : school.school_monthly_price || 5500,
     )));
     const discount = requestedMonths >= 12 ? 0.8 : requestedMonths >= 6 ? 0.85 : requestedMonths >= 3 ? 0.9 : 1;
     const amount = Math.max(1, Math.round(monthly * requestedMonths * discount));

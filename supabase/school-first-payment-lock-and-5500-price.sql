@@ -1,5 +1,9 @@
--- Require new schools and individual teachers to pay before first access.
--- Run after service-subscription-setup.sql and signup-workspace-setup.sql.
+-- Radari school first-payment lock and KSh 5,500 default
+-- Run this in Supabase SQL Editor.
+-- It makes newly registered full schools pay before first access.
+
+alter table public.schools
+alter column school_monthly_price set default 5500;
 
 create or replace function public.handle_new_user() returns trigger
 language plpgsql security definer set search_path = public as $$
@@ -54,22 +58,19 @@ create trigger on_auth_user_created
 after insert on auth.users
 for each row execute procedure public.handle_new_user();
 
-alter table public.schools
-alter column school_monthly_price set default 5500;
-
--- Optional cleanup for unpaid test workspaces created before this fix.
+-- Lock unpaid full-school workspaces that were created before this change.
 update public.schools
 set service_paid_until = null,
-    service_status = 'locked'
-where (
-    lower(coalesce(type, '')) like '%individual%'
-    or lower(coalesce(type, '')) = 'school'
-  )
+    service_status = 'locked',
+    school_monthly_price = 5500
+where lower(coalesce(type, '')) = 'school'
   and service_last_paid_at is null
   and lower(coalesce(service_status, 'active')) not in ('trial', 'manual');
 
+-- Keep individual-teacher workspaces locked before first payment as before.
 update public.schools
-set school_monthly_price = 5500
-where lower(coalesce(type, '')) = 'school'
-  and coalesce(school_monthly_price, 0) in (0, 3000)
-  and service_last_paid_at is null;
+set service_paid_until = null,
+    service_status = 'locked'
+where lower(coalesce(type, '')) like '%individual%'
+  and service_last_paid_at is null
+  and lower(coalesce(service_status, 'active')) not in ('trial', 'manual');
