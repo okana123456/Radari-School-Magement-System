@@ -5192,6 +5192,9 @@ function serviceAmountForProfile(){
 }
 
 function serviceAccessStatus(){
+  if(isPlatformOwner()){
+    return { configured:true, locked:false, dueSoon:false, daysLeft:null, paidUntil:null, ownerBypass:true };
+  }
   if(!state.school || !('service_paid_until' in state.school)) {
     return { configured:false, locked:false, dueSoon:false, daysLeft:null, paidUntil:null };
   }
@@ -5283,6 +5286,7 @@ function removeServiceNotice(){
 }
 
 function showServiceNotice(access){
+  if(isPlatformOwner() || access?.ownerBypass) return;
   if(!access?.configured || (!access.locked && !access.dueSoon)) return;
   removeServiceNotice();
   const canPay = ['admin','headteacher','teacher'].includes(state.profile?.role);
