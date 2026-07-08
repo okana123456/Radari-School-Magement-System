@@ -755,6 +755,13 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
   alter table public.assignments add column if not exists attachment_url text;
   alter table public.cbc_strands add column if not exists teacher_id uuid references public.teachers(id) on delete set null;
   alter table public.cbc_strands add column if not exists instructor_name text;
+  alter table public.teachers add column if not exists system_role text default 'teacher';
+  alter table public.teachers add column if not exists subjects_taught text;
+  alter table public.teachers add column if not exists classes_taught text;
+  alter table public.teachers add column if not exists streams_taught text;
+  alter table public.teachers add column if not exists is_class_teacher boolean default false;
+  alter table public.teachers add column if not exists class_teacher_grade text;
+  alter table public.teachers add column if not exists class_teacher_stream text;
   alter table public.students add column if not exists nationality text;
   alter table public.students add column if not exists religion text;
   alter table public.students add column if not exists home_county text;
@@ -1223,7 +1230,7 @@ const NAV_GROUPS = [
     { id:'revision',    label:'Revision Hub',     icon:'ti-files',            roles:['admin','headteacher','teacher','parent'] },
   ]},
   { label:'Staff', items:[
-    { id:'teachers',    label:'Teachers',         icon:'ti-school',           roles:['admin','headteacher'] },
+    { id:'teachers',    label:'Staff Management', icon:'ti-school',           roles:['admin','headteacher'] },
     { id:'leave',       label:'Leave & Cover',    icon:'ti-calendar-off',     roles:['admin','headteacher','teacher'] },
   ]},
   { label:'Finance', items:[
@@ -2482,18 +2489,16 @@ modules.grading = async (m)=>{
     const testCol=testNum===1?'cat1':testNum===2?'cat2':'endterm_score';
 
     // Get logged-in teacher record
-    const {data:tch}=await sb.from('teachers').select('id,full_name')
+    const {data:tch}=await sb.from('teachers').select('id,full_name,subjects_taught,classes_taught,streams_taught,is_class_teacher,class_teacher_grade,class_teacher_stream')
       .eq('school_id',sid).eq('user_id',state.profile.id).maybeSingle();
 
-    // Get teacher's assigned subjects from their timetable (if they are a teacher role)
-    // This restricts the Learning Area columns to only their subjects
+    // Get teacher's assigned subjects from Staff assignments first, then timetable.
     let teacherSubjects=null;
     if(tch && state.profile.role==='teacher'){
+      teacherSubjects=csvParts(tch.subjects_taught);
       const {data:slots=[]}=await sb.from('timetables')
         .select('subject').eq('teacher_id',tch.id).eq('school_id',sid);
-      if(slots.length){
-        teacherSubjects=[...new Set(slots.map(s=>s.subject).filter(Boolean))];
-      }
+      teacherSubjects=[...new Set([...teacherSubjects,...slots.map(s=>s.subject).filter(Boolean)])];
     }
 
     // If teacher has assigned subjects, filter learning areas to only those they teach
@@ -2531,7 +2536,7 @@ modules.grading = async (m)=>{
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.85rem;flex-wrap:wrap;gap:.5rem">
           <div>
             <div style="font-weight:600;font-size:.95rem">${esc(grade)}${stream?' — '+esc(stream):''} <span class="badge amber" style="font-size:.72rem">Term ${term} ${year}</span></div>
-            <div class="small muted">${esc(testLabel)} &nbsp;&middot;&nbsp; ${students.length} learner${students.length>1?'s':''}${teacherSubjects&&teacherSubjects.length?' &middot; Your subjects: <b>'+teacherSubjects.join(', ')+'</b>':''}</div>
+            <div class="small muted">${esc(testLabel)} &nbsp;&middot;&nbsp; ${students.length} learner${students.length>1?'s':''}${teacherSubjects&&teacherSubjects.length?' &middot; Your subjects: <b>'+teacherSubjects.join(', ')+'</b>':''}${tch?.classes_taught?' &middot; Classes: <b>'+esc(tch.classes_taught)+'</b>':''}</div>
           </div>
           <div style="display:flex;gap:.5rem;flex-wrap:wrap"><button class="btn secondary" id="downloadGrades"><i class="ti ti-download"></i> Download Excel</button><button class="btn primary" id="saveGrades"><i class="ti ti-device-floppy"></i> Save</button></div>
         </div>
@@ -3474,30 +3479,52 @@ function printTimetable(rows=[]){
   w.document.close();
 }
 
+function csvParts(value){
+  return String(value||'').split(',').map(x=>x.trim()).filter(Boolean);
+}
+function selectedCsv(value){
+  return new Set(csvParts(value).map(x=>x.toLowerCase()));
+}
+function allSchoolSubjects(){
+  const areas = Object.values(CBC_LEARNING_AREAS || {}).flat();
+  return [...new Set(areas)].sort((a,b)=>a.localeCompare(b));
+}
+function multiOptions(items, selectedValue){
+  const selected=selectedCsv(selectedValue);
+  return items.map(x=>`<option value="${esc(x)}" ${selected.has(String(x).toLowerCase())?'selected':''}>${esc(x)}</option>`).join('');
+}
+function roleLabel(role){
+  return role==='headteacher'?'Head teacher':role==='admin'?'School admin':'Teacher';
+}
+
 /* --- TEACHERS --- */
 modules.teachers = async (m)=>{
   const sid = state.profile.school_id;
   const { data:rows=[] } = await sb.from('teachers').select('*').eq('school_id',sid).order('full_name');
   const canManageStaff = ['admin','headteacher'].includes(state.profile.role);
+  const subjectOptions=allSchoolSubjects();
+  const gradeOptions=DEFAULT_GRADES;
   m.innerHTML = `<div class="section-title"><div><h1 style="margin:0">Teachers</h1><p class="muted small">Create staff logins, reset device access, and keep teacher records linked to the school.</p></div>
     ${canManageStaff?`<button class="btn primary" id="add"><i class="ti ti-mail-plus"></i> Invite staff login</button>`:''}</div>
     <div class="card">${rows.length?`
-      <div class="owner-table-wrap"><table class="owner-table"><thead><tr><th>Name</th><th>Contact</th><th>Role / subject</th><th>Status</th><th>Access</th></tr></thead>
+      <div class="owner-table-wrap"><table class="owner-table"><thead><tr><th>Name</th><th>Contact</th><th>Teaching assignment</th><th>Status</th><th>Access</th></tr></thead>
       <tbody>${rows.map(r=>`<tr>
-        <td><b>${esc(r.full_name)}</b><div class="small muted">TSC: ${esc(r.tsc_number||'Not added')}</div></td>
+        <td><b>${esc(r.full_name)}</b><div class="small muted">${esc(roleLabel(r.system_role||'teacher'))} &middot; TSC: ${esc(r.tsc_number||'Not added')}</div></td>
         <td>${esc(r.email||'No email')}<div class="small muted">${esc(r.phone||'No phone')}</div></td>
-        <td>${esc(r.specialisation||'Class teacher / subject teacher')}<div class="small muted">${esc(r.qualification||'')}</div></td>
+        <td><b>${esc(r.subjects_taught||r.specialisation||'Subjects not assigned')}</b><div class="small muted">Classes: ${esc(r.classes_taught||'Not assigned')} ${r.streams_taught?'&middot; Streams: '+esc(r.streams_taught):''}</div>${r.is_class_teacher?`<div class="small"><span class="badge">Class teacher</span> ${esc([r.class_teacher_grade,r.class_teacher_stream].filter(Boolean).join(' '))}</div>`:''}</td>
         <td><span class="badge ${r.employment_status==='terminated'?'terra':r.employment_status==='on_leave'?'amber':''}">${esc(r.employment_status||'active')}</span></td>
         <td>${r.user_id?`<span class="badge">Login linked</span>`:`<span class="badge amber">No login</span>`}
           ${canManageStaff?`<div class="owner-actions" style="margin-top:.45rem">
+            <button class="btn secondary edit-teaching" data-id="${esc(r.id)}">Edit assignment</button>
             ${r.user_id?`<button class="btn secondary reset-staff-device" data-user="${esc(r.user_id)}">Reset device</button>`:''}
             ${r.employment_status!=='terminated'?`<button class="btn secondary deactivate-teacher" data-id="${esc(r.id)}">Remove</button>`:''}
           </div>`:''}</td>
       </tr>`).join('')}</tbody></table></div>
       <div class="owner-mobile-list">${rows.map(r=>`<div class="owner-mobile-card">
-        <div class="top"><div><b>${esc(r.full_name)}</b><div class="small muted">${esc(r.email||'No email')}</div><div class="small muted">${esc(r.phone||'No phone')}</div></div><span class="badge ${r.employment_status==='terminated'?'terra':r.employment_status==='on_leave'?'amber':''}">${esc(r.employment_status||'active')}</span></div>
-        <div class="small muted" style="margin-top:.5rem">${esc(r.specialisation||'Class teacher / subject teacher')} ${r.user_id?' - Login linked':' - No login'}</div>
-        ${canManageStaff?`<div class="actions">${r.user_id?`<button class="btn secondary reset-staff-device" data-user="${esc(r.user_id)}">Reset device</button>`:''}${r.employment_status!=='terminated'?`<button class="btn secondary deactivate-teacher" data-id="${esc(r.id)}">Remove</button>`:''}</div>`:''}
+        <div class="top"><div><b>${esc(r.full_name)}</b><div class="small muted">${esc(roleLabel(r.system_role||'teacher'))} &middot; ${esc(r.email||'No email')}</div><div class="small muted">${esc(r.phone||'No phone')}</div></div><span class="badge ${r.employment_status==='terminated'?'terra':r.employment_status==='on_leave'?'amber':''}">${esc(r.employment_status||'active')}</span></div>
+        <div class="small muted" style="margin-top:.5rem"><b>${esc(r.subjects_taught||'Subjects not assigned')}</b><br>Classes: ${esc(r.classes_taught||'Not assigned')} ${r.streams_taught?'&middot; Streams: '+esc(r.streams_taught):''}</div>
+        ${r.is_class_teacher?`<div class="small" style="margin-top:.45rem"><span class="badge">Class teacher</span> ${esc([r.class_teacher_grade,r.class_teacher_stream].filter(Boolean).join(' '))}</div>`:''}
+        ${canManageStaff?`<div class="actions"><button class="btn secondary edit-teaching" data-id="${esc(r.id)}">Edit assignment</button>${r.user_id?`<button class="btn secondary reset-staff-device" data-user="${esc(r.user_id)}">Reset device</button>`:''}${r.employment_status!=='terminated'?`<button class="btn secondary deactivate-teacher" data-id="${esc(r.id)}">Remove</button>`:''}</div>`:''}
       </div>`).join('')}</div>
       `:`<div class="empty"><i class="ti ti-school"></i><div>No teachers yet.</div></div>`}</div>`;
   if(canManageStaff) $('#add').onclick = ()=>{
@@ -3512,12 +3539,27 @@ modules.teachers = async (m)=>{
           <div class="col field"><label>Specialisation</label><input name="specialisation"></div></div>
         <div class="row"><div class="col field"><label>Date joined</label><input name="date_joined" type="date"></div>
           <div class="col field"><label>System role</label><select name="role"><option value="teacher">Teacher</option><option value="headteacher">Head teacher</option><option value="admin">School admin</option></select></div></div>
+        <div class="row">
+          <div class="col field"><label>Classes taught</label><select name="classes_taught" multiple size="5">${multiOptions(gradeOptions,'')}</select><div class="small muted">Hold Ctrl to select several classes.</div></div>
+          <div class="col field"><label>Subjects taught</label><select name="subjects_taught" multiple size="5">${multiOptions(subjectOptions,'')}</select><div class="small muted">These subjects will guide grading and report access.</div></div>
+        </div>
+        <div class="field"><label>Streams taught</label><input name="streams_taught" placeholder="e.g. A, B, North"></div>
+        <label class="small" style="display:flex;gap:.5rem;align-items:center"><input type="checkbox" name="is_class_teacher" id="isClassTeacher"> This teacher is also a class teacher</label>
+        <div class="row" id="classTeacherFields" style="display:none">
+          <div class="col field"><label>Class teacher grade</label><select name="class_teacher_grade"><option value="">Select class</option>${gradeOptions.map(g=>`<option>${esc(g)}</option>`).join('')}</select></div>
+          <div class="col field"><label>Class teacher stream</label><input name="class_teacher_stream" placeholder="e.g. A"></div>
+        </div>
         <div><button class="btn primary" id="inviteBtn"><i class="ti ti-send"></i> Send invitation</button> <button type="button" class="btn secondary" id="c">Cancel</button></div>
       </form></div>`;
     $('#c').onclick=()=>navigate('teachers');
+    $('#isClassTeacher').onchange=()=>$('#classTeacherFields').style.display=$('#isClassTeacher').checked?'':'none';
     $('#f').onsubmit = async (e)=>{
       e.preventDefault();
-      const f=Object.fromEntries(new FormData(e.target));
+      const fd=new FormData(e.target);
+      const f=Object.fromEntries(fd);
+      f.classes_taught=fd.getAll('classes_taught').join(', ');
+      f.subjects_taught=fd.getAll('subjects_taught').join(', ');
+      f.is_class_teacher=fd.get('is_class_teacher')==='on';
       Object.keys(f).forEach(k=>{ if(f[k]==='') delete f[k]; });
       const btn=$('#inviteBtn'); btn.disabled=true; btn.innerHTML='<i class="ti ti-loader-2"></i> Sending invitation...';
       const { data:{ session } } = await sb.auth.getSession();
@@ -3534,6 +3576,52 @@ modules.teachers = async (m)=>{
       navigate('teachers');
     };
   };
+  $$('.edit-teaching').forEach(btn=>btn.onclick=()=>{
+    const r=rows.find(x=>x.id===btn.dataset.id);
+    if(!r) return;
+    m.innerHTML=`<div class="card" style="max-width:760px">
+      <a href="#" id="backStaff" class="small"><i class="ti ti-arrow-left"></i> Back to teachers</a>
+      <h2 style="margin-top:1rem">Edit teaching assignment</h2>
+      <p class="muted small">${esc(r.full_name)} &middot; ${esc(r.email||'No email')}</p>
+      <form id="assignmentForm" class="stack">
+        <div class="row">
+          <div class="col field"><label>System role</label><select name="system_role"><option value="teacher" ${r.system_role!=='headteacher'&&r.system_role!=='admin'?'selected':''}>Teacher</option><option value="headteacher" ${r.system_role==='headteacher'?'selected':''}>Head teacher</option><option value="admin" ${r.system_role==='admin'?'selected':''}>School admin</option></select></div>
+          <div class="col field"><label>Specialisation</label><input name="specialisation" value="${esc(r.specialisation||'')}"></div>
+        </div>
+        <div class="row">
+          <div class="col field"><label>Classes taught</label><select name="classes_taught" multiple size="6">${multiOptions(gradeOptions,r.classes_taught)}</select></div>
+          <div class="col field"><label>Subjects taught</label><select name="subjects_taught" multiple size="6">${multiOptions(subjectOptions,r.subjects_taught||r.specialisation)}</select></div>
+        </div>
+        <div class="field"><label>Streams taught</label><input name="streams_taught" value="${esc(r.streams_taught||'')}" placeholder="e.g. A, B, North"></div>
+        <label class="small" style="display:flex;gap:.5rem;align-items:center"><input type="checkbox" name="is_class_teacher" id="editClassTeacher" ${r.is_class_teacher?'checked':''}> This teacher is also a class teacher</label>
+        <div class="row" id="editClassTeacherFields" style="${r.is_class_teacher?'':'display:none'}">
+          <div class="col field"><label>Class teacher grade</label><select name="class_teacher_grade"><option value="">Select class</option>${gradeOptions.map(g=>`<option ${r.class_teacher_grade===g?'selected':''}>${esc(g)}</option>`).join('')}</select></div>
+          <div class="col field"><label>Class teacher stream</label><input name="class_teacher_stream" value="${esc(r.class_teacher_stream||'')}" placeholder="e.g. A"></div>
+        </div>
+        <div><button class="btn primary">Save assignment</button> <button type="button" class="btn secondary" id="cancelStaff">Cancel</button></div>
+      </form>
+    </div>`;
+    $('#backStaff').onclick=(e)=>{e.preventDefault();navigate('teachers');};
+    $('#cancelStaff').onclick=()=>navigate('teachers');
+    $('#editClassTeacher').onchange=()=>$('#editClassTeacherFields').style.display=$('#editClassTeacher').checked?'':'none';
+    $('#assignmentForm').onsubmit=async(e)=>{
+      e.preventDefault();
+      const fd=new FormData(e.target);
+      const update=Object.fromEntries(fd);
+      update.classes_taught=fd.getAll('classes_taught').join(', ');
+      update.subjects_taught=fd.getAll('subjects_taught').join(', ');
+      update.is_class_teacher=fd.get('is_class_teacher')==='on';
+      if(!update.is_class_teacher){ update.class_teacher_grade=null; update.class_teacher_stream=null; }
+      Object.keys(update).forEach(k=>{ if(update[k]==='') update[k]=null; });
+      const {error}=await sb.from('teachers').update(update).eq('id',r.id);
+      if(error){ toast('Save failed. Run staff-teaching-assignments-setup.sql first: '+error.message,true); return; }
+      if(r.user_id && update.system_role){
+        await sb.from('users').update({role:update.system_role}).eq('id',r.user_id);
+      }
+      toast('Teaching assignment saved.');
+      navigate('teachers');
+    };
+  });
   $$('.reset-staff-device').forEach(btn=>btn.onclick=async()=>{
     if(!confirm('Reset device access for this teacher?')) return;
     const {error}=await sb.from('teacher_device_sessions').update({status:'reset'}).eq('user_id',btn.dataset.user).eq('status','active');

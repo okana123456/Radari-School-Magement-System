@@ -17,6 +17,11 @@ function cleanText(value: unknown) {
   return String(value || "").trim();
 }
 
+function cleanList(value: unknown) {
+  if (Array.isArray(value)) return value.map((v) => cleanText(v)).filter(Boolean).join(", ");
+  return cleanText(value);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ ok: false, message: "Use POST." }, 405);
@@ -35,6 +40,12 @@ Deno.serve(async (req) => {
     const qualification = cleanText(body.qualification);
     const specialisation = cleanText(body.specialisation);
     const date_joined = cleanText(body.date_joined) || null;
+    const subjects_taught = cleanList(body.subjects_taught);
+    const classes_taught = cleanList(body.classes_taught);
+    const streams_taught = cleanText(body.streams_taught);
+    const is_class_teacher = body.is_class_teacher === true || body.is_class_teacher === "true" || body.is_class_teacher === "on";
+    const class_teacher_grade = cleanText(body.class_teacher_grade);
+    const class_teacher_stream = cleanText(body.class_teacher_stream);
 
     if (!email || !full_name) {
       return json({ ok: false, message: "Enter the teacher name and email address." }, 400);
@@ -113,6 +124,13 @@ Deno.serve(async (req) => {
       tsc_number: tsc_number || null,
       qualification: qualification || null,
       specialisation: specialisation || null,
+      system_role: role,
+      subjects_taught: subjects_taught || null,
+      classes_taught: classes_taught || null,
+      streams_taught: streams_taught || null,
+      is_class_teacher,
+      class_teacher_grade: is_class_teacher ? class_teacher_grade || null : null,
+      class_teacher_stream: is_class_teacher ? class_teacher_stream || null : null,
       date_joined,
       employment_status: "active",
     };
