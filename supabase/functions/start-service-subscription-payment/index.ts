@@ -147,7 +147,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    await supabase.from("service_subscription_payments").upsert({
+    const { error: saveErr } = await supabase.from("service_subscription_payments").upsert({
       school_id,
       user_id: profile.id,
       amount,
@@ -159,6 +159,14 @@ Deno.serve(async (req) => {
       status: "pending",
       result_description: stk.ResponseDescription,
     }, { onConflict: "checkout_request_id" });
+    if (saveErr) {
+      return json({
+        ok: false,
+        message: `M-Pesa prompt was sent, but Radari could not save the payment request: ${saveErr.message}`,
+        checkout_request_id: stk.CheckoutRequestID,
+        response: stk,
+      });
+    }
 
     return json({
       ok: true,

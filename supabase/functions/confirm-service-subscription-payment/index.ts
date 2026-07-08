@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
   try {
     const authHeader = req.headers.get("Authorization") || "";
     const jwt = authHeader.replace("Bearer ", "");
-    const { school_id } = await req.json();
+    const { school_id, checkout_request_id } = await req.json();
     if (!school_id) return json({ ok: false, message: "Missing school ID." }, 400);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -64,20 +64,58 @@ Deno.serve(async (req) => {
 
     const { data: school } = await supabase
       .from("schools")
-      .select("id,service_paid_until,service_lock_after_days")
+      .select("id,type,service_paid_until,service_lock_after_days,school_monthly_price,teacher_subscription_amount")
       .eq("id", school_id)
       .single();
 
-    const { data: payment } = await supabase
-      .from("service_subscription_payments")
-      .select("*")
-      .eq("school_id", school_id)
-      .not("checkout_request_id", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    let payment: any = null;
+    const checkoutId = String(checkout_request_id || "").trim();
+    if (checkoutId) {
+      const { data: byCheckout } = await supabase
+        .from("service_subscription_payments")
+        .select("*")
+        .eq("checkout_request_id", checkoutId)
+        .maybeSingle();
+      payment = byCheckout || null;
+      if (payment && payment.school_id !== school_id) {
+        return json({ ok: false, message: "That payment request belongs to a different workspace." }, 403);
+      }
+    }
 
-    if (!payment) return json({ ok: false, message: "No subscription payment request found yet." }, 404);
+    if (!payment) {
+      const { data: latest } = await supabase
+        .from("service_subscription_payments")
+        .select("*")
+        .eq("school_id", school_id)
+        .not("checkout_request_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      payment = latest || null;
+    }
+
+    if (!payment && checkoutId) {
+      const isIndividual = String(school?.type || "").toLowerCase().includes("individual");
+      const amount = Math.max(1, Math.round(Number(
+        profile.role === "teacher" && isIndividual ? school?.teacher_subscription_amount || 450 : school?.school_monthly_price || 5500,
+      )));
+      const { data: rebuilt, error: rebuildErr } = await supabase
+        .from("service_subscription_payments")
+        .insert({
+          school_id,
+          user_id: profile.id,
+          amount,
+          subscription_months: 1,
+          checkout_request_id: checkoutId,
+          status: "pending",
+          result_description: "Rebuilt during payment confirmation",
+        })
+        .select("*")
+        .single();
+      if (!rebuildErr) payment = rebuilt;
+    }
+
+    if (!payment) return json({ ok: false, message: "No subscription payment request found yet. Please click Pay again so Radari can receive a fresh M-Pesa checkout number." });
 
     if (payment.status === "completed" && payment.paid_until) {
       await supabase.from("schools").update({
@@ -96,7 +134,7 @@ Deno.serve(async (req) => {
     const mode = (Deno.env.get("SERVICE_DARAJA_ENVIRONMENT") || "production").toLowerCase();
 
     if (!consumerKey || !consumerSecret || !passkey || !shortcode) {
-      return json({ ok: false, message: "Service Daraja credentials are missing in Supabase secrets." }, 400);
+      return json({ ok: false, message: "Service Daraja credentials are missing in Supabase secrets." });
     }
 
     const authUrl = mode === "sandbox"
@@ -111,7 +149,7 @@ Deno.serve(async (req) => {
     });
     const oauth = await oauthRes.json();
     if (!oauthRes.ok || !oauth.access_token) {
-      return json({ ok: false, message: oauth.errorMessage || oauth.error_description || "Daraja OAuth failed.", response: oauth }, 502);
+      return json({ ok: false, message: oauth.errorMessage || oauth.error_description || "Daraja OAuth failed.", response: oauth });
     }
 
     const ts = timestamp();
@@ -132,7 +170,7 @@ Deno.serve(async (req) => {
     const resultDesc = query.ResultDesc || query.ResponseDescription || query.errorMessage || "";
 
     if (!queryRes.ok || query.ResponseCode !== "0") {
-      return json({ ok: false, message: resultDesc || "Daraja could not confirm this payment yet.", response: query }, 502);
+      return json({ ok: false, message: resultDesc || "Daraja could not confirm this payment yet.", response: query });
     }
 
     if (resultCode !== "0") {
