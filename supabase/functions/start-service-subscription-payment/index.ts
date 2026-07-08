@@ -147,7 +147,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { error: saveErr } = await supabase.from("service_subscription_payments").upsert({
+    const paymentRow = {
       school_id,
       user_id: profile.id,
       amount,
@@ -158,7 +158,15 @@ Deno.serve(async (req) => {
       account_reference: account,
       status: "pending",
       result_description: stk.ResponseDescription,
-    }, { onConflict: "checkout_request_id" });
+    };
+    let { error: saveErr } = await supabase.from("service_subscription_payments").insert(paymentRow);
+    if (saveErr && String(saveErr.code || "") === "23505") {
+      const updateRes = await supabase
+        .from("service_subscription_payments")
+        .update(paymentRow)
+        .eq("checkout_request_id", stk.CheckoutRequestID);
+      saveErr = updateRes.error;
+    }
     if (saveErr) {
       return json({
         ok: false,

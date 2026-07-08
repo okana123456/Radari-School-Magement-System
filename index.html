@@ -5245,8 +5245,8 @@ async function startServiceSubscriptionPayment(phone, months=1, amount=null){
     }
   });
   if(error) throw error;
-  if(!data?.ok) throw new Error(data?.message||'Payment prompt was not accepted.');
   if(data.checkout_request_id) localStorage.setItem(serviceCheckoutKey(), data.checkout_request_id);
+  if(!data?.ok) throw new Error(data?.message||'Payment prompt was not accepted.');
   return data;
 }
 
