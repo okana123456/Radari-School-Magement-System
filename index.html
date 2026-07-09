@@ -1425,6 +1425,11 @@ function navigate(route){
 function findNavItem(id){
   if(id==='subscription' && state.profile?.role==='teacher') return { id:'subscription', label:'Subscription', icon:'ti-credit-card', roles:['teacher'] };
   if(id==='owner' && isPlatformOwner()) return { id:'owner', label:'Subscriptions', icon:'ti-adjustments-dollar', roles:[state.profile?.role||'admin'] };
+  const role=state.profile?.role;
+  for(const g of NAV_GROUPS){
+    const exact=g.items.find(n=>n.id===id && (!role || n.roles.includes(role)));
+    if(exact) return exact;
+  }
   for(const g of NAV_GROUPS){ const f=g.items.find(n=>n.id===id); if(f) return f; }
   return null;
 }
