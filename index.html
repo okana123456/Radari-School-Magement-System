@@ -543,13 +543,18 @@ on conflict (school_code) do nothing;
 
     /* GRADING TABLE — the most complex mobile layout */
     .grading-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--stone);border-radius:var(--radius)}
-    .grading-wrap table{min-width:600px;border-collapse:collapse}
+    .grading-wrap table{min-width:720px;border-collapse:collapse;table-layout:fixed}
     .grading-wrap th,.grading-wrap td{padding:.45rem .4rem;border-bottom:1px solid var(--stone);font-size:.82rem}
     .grading-wrap th{background:var(--green);color:#fff;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.03em;position:sticky;top:0;z-index:3}
-    .grading-wrap th:first-child,.grading-wrap td:first-child{position:sticky;left:0;z-index:2;background:var(--surface);border-right:2px solid var(--stone);min-width:130px;max-width:160px}
+    .grading-wrap th:not(:first-child){width:86px;white-space:normal;line-height:1.15;overflow-wrap:anywhere;text-align:center}
+    .grading-wrap th:first-child,.grading-wrap td:first-child{position:sticky;left:0;z-index:2;background:var(--surface);border-right:2px solid var(--stone);width:190px;min-width:190px;max-width:190px;white-space:normal}
     .grading-wrap th:first-child{background:var(--green);z-index:4}
     .grading-wrap tbody tr:nth-child(even) td{background:#f8fffe}
     .grading-wrap tbody tr:nth-child(even) td:first-child{background:#f8fffe}
+    .grading-learner{display:flex;flex-direction:column;gap:.1rem;min-width:0;max-width:100%;overflow:hidden}
+    .grading-learner-name{font-weight:600;font-size:.86rem;line-height:1.22;white-space:normal;overflow-wrap:anywhere;word-break:break-word;color:var(--ink)}
+    .grading-learner-meta{font-size:.72rem;color:var(--muted);white-space:normal;overflow-wrap:anywhere}
+    .grading-mark-cell{width:86px;min-width:86px;text-align:center;padding:.35rem .3rem!important;vertical-align:top}
     .pct-inp{
       width:56px;text-align:center;font-size:.88rem;
       padding:.28rem .3rem;border-radius:4px;
@@ -561,7 +566,12 @@ on conflict (school_code) do nothing;
     .rc-badge{margin-top:.15rem;font-size:.7rem;font-weight:700;min-height:13px;line-height:1;text-align:center}
     @media(max-width:600px){
       .pct-inp{width:48px;font-size:.82rem}
-      .grading-wrap th:first-child,.grading-wrap td:first-child{min-width:110px;max-width:130px}
+      .grading-wrap table{min-width:680px}
+      .grading-wrap th:first-child,.grading-wrap td:first-child{width:150px;min-width:150px;max-width:150px}
+      .grading-wrap th:not(:first-child){width:74px;font-size:.66rem}
+      .grading-learner-name{font-size:.8rem}
+      .grading-learner-meta{font-size:.68rem}
+      .grading-mark-cell{width:74px;min-width:74px}
     }
 
     /* SCORE BUTTONS (old primary grading style kept for PP/Grade 1-3 if needed) */
@@ -929,6 +939,7 @@ const state = {
   profile:null,  // row from public.users
   school:null,
   serviceAccess:null,
+  teacherAssignment:null,
   route:'dashboard',
 };
 
@@ -1210,6 +1221,52 @@ function isIndividualTeacher(){
 
 const SUPPORT_PHONE = '0708095461';
 
+function splitList(value){
+  return String(value||'').split(',').map(x=>x.trim()).filter(Boolean);
+}
+function teacherAssignment(){
+  return state.teacherAssignment || {};
+}
+function isSchoolTeacher(){
+  return state.profile?.role==='teacher' && !isIndividualTeacherWorkspace();
+}
+function assignedTeacherGrades(){
+  const t=teacherAssignment();
+  const grades=[...splitList(t.classes_taught)];
+  if(t.is_class_teacher && t.class_teacher_grade) grades.push(t.class_teacher_grade);
+  return sortGrades([...new Set(grades)]);
+}
+function assignedTeacherStreams(){
+  const t=teacherAssignment();
+  const streams=[...splitList(t.streams_taught)];
+  if(t.is_class_teacher && t.class_teacher_stream) streams.push(t.class_teacher_stream);
+  return [...new Set(streams.map(s=>s.trim()).filter(Boolean))];
+}
+function isClassTeacher(){
+  return !!teacherAssignment().is_class_teacher;
+}
+function teacherCanSeeStudent(s){
+  if(!isSchoolTeacher()) return true;
+  const grades=assignedTeacherGrades();
+  const streams=assignedTeacherStreams();
+  if(!grades.length) return false;
+  if(!grades.includes(s.grade)) return false;
+  if(streams.length && s.stream && !streams.some(st=>st.toLowerCase()===String(s.stream).toLowerCase())) return false;
+  return true;
+}
+function filterStudentsForTeacher(students=[]){
+  return isSchoolTeacher() ? students.filter(teacherCanSeeStudent) : students;
+}
+function teacherAccessNotice(){
+  if(!isSchoolTeacher()) return '';
+  const grades=assignedTeacherGrades();
+  const streams=assignedTeacherStreams();
+  if(!grades.length){
+    return `<div class="card" style="border-color:var(--amber);margin-bottom:1rem"><b>No teaching assignment yet</b><p class="muted small">Ask the school admin to assign your classes and subjects under Staff Management.</p></div>`;
+  }
+  return `<div class="card" style="border-color:var(--green);margin-bottom:1rem"><b>Your assigned learners</b><p class="muted small">Showing ${esc(grades.join(', '))}${streams.length?' - streams '+esc(streams.join(', ')):''}. ${isClassTeacher()?'Class teacher tools are enabled.':'Report cards are hidden because you are not marked as a class teacher.'}</p></div>`;
+}
+
 const NAV_GROUPS = [
   { label:'Overview', items:[
     { id:'dashboard',   label:'Dashboard',       icon:'ti-layout-dashboard', roles:['admin','headteacher','teacher','parent'] },
@@ -1268,6 +1325,22 @@ function buildNav(role, currentRoute){
       { id:'settings', label:'Settings', icon:'ti-settings' },
     ];
     return '<div class="nav-group"><div class="nav-group-label">Teacher tools</div><nav class="nav">'
+      + teacherItems.map(n=>'<a href="#'+n.id+'" data-route="'+n.id+'" class="'+(currentRoute===n.id?'active':'')+'"><i class="ti '+n.icon+'"></i>'+n.label+'</a>').join('')
+      + '</nav></div>';
+  }
+  if(role==='teacher'){
+    const teacherItems=[
+      { id:'dashboard', label:'Home', icon:'ti-home' },
+      { id:'students', label:'Learner search', icon:'ti-search' },
+      { id:'attendance', label:'Attendance', icon:'ti-calendar-check' },
+      { id:'grading', label:'CBC grading', icon:'ti-clipboard-check' },
+      { id:'lessons', label:'Lesson plans', icon:'ti-book-2' },
+      { id:'assignments', label:'Assignments', icon:'ti-notebook' },
+      ...(isClassTeacher()?[{ id:'reports', label:'Report cards', icon:'ti-file-text' }]:[]),
+      { id:'leave', label:'Leave', icon:'ti-calendar-off' },
+      { id:'settings', label:'Settings', icon:'ti-settings' },
+    ];
+    return '<div class="nav-group"><div class="nav-group-label">Teacher workspace</div><nav class="nav">'
       + teacherItems.map(n=>'<a href="#'+n.id+'" data-route="'+n.id+'" class="'+(currentRoute===n.id?'active':'')+'"><i class="ti '+n.icon+'"></i>'+n.label+'</a>').join('')
       + '</nav></div>';
   }
@@ -1337,8 +1410,25 @@ function findNavItem(id){
   return null;
 }
 
+function canAccessRoute(route){
+  if(!state.profile) return false;
+  if(isPlatformOwner()) return ['owner','settings','dashboard'].includes(route);
+  if(isIndividualTeacher()) return ['dashboard','students','subjects','attendance','grading','analytics','reports','subscription','settings'].includes(route);
+  if(isSchoolTeacher()){
+    const allowed=['dashboard','students','attendance','grading','lessons','assignments','leave','settings'];
+    if(isClassTeacher()) allowed.push('reports');
+    return allowed.includes(route);
+  }
+  const item=findNavItem(route);
+  return !!item && item.roles.includes(state.profile.role);
+}
+
 async function render(){
   const main = $('#main'); if(!main) return;
+  if(!canAccessRoute(state.route)){
+    state.route='dashboard';
+    if(location.hash.replace('#','')!=='dashboard') location.hash='dashboard';
+  }
   const mod = findNavItem(state.route);
   if($('#modName')) $('#modName').textContent = mod?.label||'';
   main.innerHTML = `<div class="muted" style="padding:1rem">Loading\u2026</div>`;
@@ -1443,7 +1533,8 @@ async function dashboardTeacher(m){
     m.querySelectorAll('[data-route]').forEach(a=>a.onclick=(e)=>{e.preventDefault();navigate(a.dataset.route);});
     return;
   }
-  const {data:tch}=await sb.from('teachers').select('id,full_name,specialisation').eq('school_id',sid).eq('user_id',state.profile.id).maybeSingle();
+  const {data:tch}=await sb.from('teachers').select('id,full_name,specialisation,subjects_taught,classes_taught,streams_taught,is_class_teacher,class_teacher_grade,class_teacher_stream').eq('school_id',sid).eq('user_id',state.profile.id).maybeSingle();
+  state.teacherAssignment=tch||state.teacherAssignment;
   const DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const todayDay=DAYS[new Date().getDay()];
   const [myTimetable,myPlans,myAssignments]=await Promise.all([
@@ -1455,7 +1546,7 @@ async function dashboardTeacher(m){
   m.innerHTML=`
     <h1>Good ${new Date().getHours()<12?'morning':'afternoon'}, ${esc((state.profile.full_name||tch?.full_name||'').split(' ')[0])}.</h1>
     <p class="muted" style="margin-top:-.4rem;margin-bottom:1.75rem">${new Date().toLocaleDateString('en-KE',{weekday:'long',day:'numeric',month:'long'})}</p>
-    ${!tch?`<div class="card" style="border:1px solid var(--amber);margin-bottom:1rem"><p class="muted small">Your account is not yet linked to a teacher record. Ask your school admin to link your account under the Teachers tab.</p></div>`:''}
+    ${!tch?`<div class="card" style="border:1px solid var(--amber);margin-bottom:1rem"><p class="muted small">Your account is not yet linked to a teacher record. Ask your school admin to link your account under Staff Management.</p></div>`:teacherAccessNotice()}
     <div class="row" style="align-items:flex-start;gap:1.25rem">
       <div style="flex:2;min-width:0;display:flex;flex-direction:column;gap:1.25rem">
         <div class="card">
@@ -1475,11 +1566,13 @@ async function dashboardTeacher(m){
       </div>
       <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:1rem">
         <div class="card">
-          <h3>Class teacher tools</h3>
+          <h3>${tch?.is_class_teacher?'Class teacher tools':'Teacher tools'}</h3>
           <div style="display:flex;flex-direction:column;gap:.5rem">
-            <button class="btn secondary block" data-route="students"><i class="ti ti-users"></i> Learner records</button>
+            <button class="btn secondary block" data-route="students"><i class="ti ti-search"></i> Learner search</button>
+            <button class="btn secondary block" data-route="attendance"><i class="ti ti-calendar-check"></i> Attendance</button>
             <button class="btn secondary block" data-route="grading"><i class="ti ti-clipboard-check"></i> Enter CBC marks</button>
-            <button class="btn secondary block" data-route="reports"><i class="ti ti-file-text"></i> Report cards</button>
+            <button class="btn secondary block" data-route="lessons"><i class="ti ti-book-2"></i> Lesson plans</button>
+            ${tch?.is_class_teacher?`<button class="btn secondary block" data-route="reports"><i class="ti ti-file-text"></i> Report cards</button>`:''}
           </div>
         </div>
         <div class="card">
@@ -1583,13 +1676,14 @@ function setTeacherQuickClass(grade='', stream=''){
 modules.students = async (m)=>{
   const sid = state.profile.school_id;
   const role = state.profile.role;
-  const canManage = ['admin','headteacher','teacher'].includes(role);
-  const { data:students=[] } = await sb.from('students').select('*').eq('school_id',sid).order('full_name');
+  const canManage = ['admin','headteacher'].includes(role) || isIndividualTeacher();
+  const { data:allStudents=[] } = await sb.from('students').select('*').eq('school_id',sid).order('full_name');
+  const students = filterStudentsForTeacher(allStudents);
   const grades = ['All',...new Set(students.map(s=>s.grade).filter(Boolean).sort())];
   const quickClass = getTeacherQuickClass(students);
   const quickGradeOptions = [...new Set([...DEFAULT_GRADES,...students.map(s=>s.grade).filter(Boolean)])];
   m.innerHTML = `
-    <div class="section-title"><h1 style="margin:0">Students</h1>
+    <div class="section-title"><h1 style="margin:0">${isSchoolTeacher()?'Learner search':'Students'}</h1>
       <div style="display:flex;gap:.5rem;flex-wrap:wrap">
         ${canManage?`<button class="btn secondary" id="importStu"><i class="ti ti-upload"></i> Import Excel</button>`:''}
         ${canManage?`<button class="btn secondary" id="tplStu"><i class="ti ti-file-spreadsheet"></i> Template</button>`:''}
@@ -1597,6 +1691,7 @@ modules.students = async (m)=>{
         ${canManage?`<button class="btn primary" id="addStu"><i class="ti ti-plus"></i> Add learner</button>`:''}
       </div>
     </div>
+    ${teacherAccessNotice()}
     ${isIndividualTeacher()?`<div class="card" style="border-color:var(--green);margin-bottom:1rem">
       <div class="section-title" style="margin-bottom:.75rem"><div><h3 style="margin:0">Class for quick entry</h3><p class="small muted">Select this once, then add learners one after another.</p></div></div>
       <div class="row">
@@ -2062,10 +2157,14 @@ async function student360(id){
 modules.attendance = async (m)=>{
   const sid = state.profile.school_id;
   const today = new Date().toISOString().slice(0,10);
+  const teacherGrades=assignedTeacherGrades();
+  const teacherStreams=assignedTeacherStreams();
+  const gradeOptions=isSchoolTeacher() && teacherGrades.length ? teacherGrades : DEFAULT_GRADES;
   m.innerHTML = `<h1>Attendance</h1>
+    ${teacherAccessNotice()}
     <div class="toolbar">
-      <div class="field"><label>Grade</label><select id="g"><option value="">All</option>${['PP1','PP2','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6','Grade 7','Grade 8','Grade 9'].map(g=>`<option>${g}</option>`).join('')}</select></div>
-      <div class="field"><label>Stream</label><input id="s" placeholder="optional"></div>
+      <div class="field"><label>Grade</label><select id="g"><option value="">All</option>${gradeOptions.map(g=>`<option>${esc(g)}</option>`).join('')}</select></div>
+      <div class="field"><label>Stream</label>${teacherStreams.length?`<select id="s"><option value="">All</option>${teacherStreams.map(s=>`<option>${esc(s)}</option>`).join('')}</select>`:`<input id="s" placeholder="optional">`}</div>
       <div class="field"><label>Date</label><input id="d" type="date" value="${today}"></div>
       <div class="field"><label>From</label><input id="fromDate" type="date" value="${today}"></div>
       <div class="field"><label>To</label><input id="toDate" type="date" value="${today}"></div>
@@ -2076,7 +2175,8 @@ modules.attendance = async (m)=>{
     const grade=$('#g').value, stream=$('#s').value, date=$('#d').value;
     let q = sb.from('students').select('id,full_name,admission_number,grade,stream').eq('school_id',sid).order('full_name');
     if(grade) q=q.eq('grade',grade); if(stream) q=q.eq('stream',stream);
-    const { data:students=[] } = await q;
+    const { data:rawStudents=[] } = await q;
+    const students=filterStudentsForTeacher(rawStudents);
     const { data:existing=[] } = await sb.from('student_attendance').select('student_id,status').eq('date',date).in('student_id', students.map(s=>s.id).concat('00000000-0000-0000-0000-000000000000'));
     const map = Object.fromEntries(existing.map(e=>[e.student_id, e.status]));
     const a=$('#att'); a.innerHTML = `<div class="card">${students.length?`
@@ -2122,7 +2222,8 @@ modules.attendance = async (m)=>{
     if(!from||!to){ toast('Choose the date range first.',true); return; }
     let q=sb.from('students').select('id,full_name,admission_number,grade,stream').eq('school_id',sid).order('full_name');
     if(grade) q=q.eq('grade',grade); if(stream) q=q.eq('stream',stream);
-    const {data:students=[]}=await q;
+    const {data:rawStudents=[]}=await q;
+    const students=filterStudentsForTeacher(rawStudents);
     if(!students.length){ toast('No learners match that class.',true); return; }
     const ids=students.map(s=>s.id);
     const {data:att=[]}=await sb.from('student_attendance').select('student_id,date,status').in('student_id',ids).gte('date',from).lte('date',to).order('date');
@@ -2358,8 +2459,10 @@ function renderGradeRows(students, displayAreas, amap, testCol, testNum, outOfMa
   return students.map((stu,si)=>`
     <tr data-sid="${stu.id}">
       <td>
-        <div style="font-weight:500;font-size:.85rem">${esc(stu.full_name)}</div>
-        <div class="small muted">${esc(stu.admission_number||'')}</div>
+        <div class="grading-learner">
+          <div class="grading-learner-name">${esc(stu.full_name)}</div>
+          <div class="grading-learner-meta">${esc(stu.admission_number||'')}</div>
+        </div>
       </td>
       ${displayAreas.map(la=>{
         const ex=amap[stu.id]?.[la];
@@ -2368,7 +2471,7 @@ function renderGradeRows(students, displayAreas, amap, testCol, testNum, outOfMa
         const rawVal=val!==''&&val!=null?rawMarkFromPct(val,max):'';
         const rc=val!==''&&val!=null?pctToRubricCode(+val):null;
         const pts=rc?RUBRIC_BANDS.find(b=>b.code===rc)?.points||'':'';
-        return `<td style="text-align:center;padding:.3rem .35rem">
+        return `<td class="grading-mark-cell">
           <input type="number" min="0" max="${max}" step="0.1"
             class="pct-inp" data-la="${esc(la)}"
             value="${rawVal}"
@@ -2409,10 +2512,13 @@ modules.grading = async (m)=>{
   const sid=state.profile.school_id;
   const TESTS=['First Test','Second Test','Third Test'];
   const [{data:allStudents=[]},{data:allStrands=[]}]=await Promise.all([
-    sb.from('students').select('grade').eq('school_id',sid),
+    sb.from('students').select('grade,stream').eq('school_id',sid),
     sb.from('cbc_strands').select('id,grade,subject,strand,sub_strand').eq('school_id',sid).order('grade').order('subject'),
   ]);
-  const GRADES=schoolGradeList(allStudents, allStrands);
+  const GRADES=isSchoolTeacher() && assignedTeacherGrades().length
+    ? assignedTeacherGrades()
+    : schoolGradeList(allStudents, allStrands);
+  const teacherStreams=assignedTeacherStreams();
   const canManageSubjects=['admin','headteacher','teacher'].includes(state.profile.role);
 
   m.innerHTML=`
@@ -2424,12 +2530,13 @@ modules.grading = async (m)=>{
       ${canManageSubjects?`<button class="btn secondary" id="manageAreas"><i class="ti ti-settings"></i> Manage subjects</button>`:''}
     </div>
 
+    ${teacherAccessNotice()}
     <div class="card" style="margin-bottom:1rem">
       <div class="toolbar">
         <div class="field"><label>Grade</label>
-          <select id="g">${GRADES.map(g=>`<option>${g}</option>`).join('')}</select></div>
+          <select id="g">${GRADES.map(g=>`<option>${esc(g)}</option>`).join('')}</select></div>
         <div class="field"><label>Stream</label>
-          <input id="s" placeholder="A, B or blank"></div>
+          ${isSchoolTeacher()&&teacherStreams.length?`<select id="s"><option value="">All</option>${teacherStreams.map(s=>`<option>${esc(s)}</option>`).join('')}</select>`:`<input id="s" placeholder="A, B or blank">`}</div>
         <div class="field"><label>Test</label>
           <select id="testSel">
             <option value="1">First Test</option>
@@ -2461,7 +2568,8 @@ modules.grading = async (m)=>{
     let sq=sb.from('students').select('id,full_name,admission_number')
       .eq('school_id',sid).eq('grade',grade).order('full_name');
     if(stream) sq=sq.eq('stream',stream);
-    const {data:students=[]}=await sq;
+    const {data:rawStudents=[]}=await sq;
+    const students=filterStudentsForTeacher(rawStudents);
 
     if(!students.length){
       $('#gradingBody').innerHTML=`<div class="card"><div class="empty">
@@ -3493,6 +3601,31 @@ function multiOptions(items, selectedValue){
   const selected=selectedCsv(selectedValue);
   return items.map(x=>`<option value="${esc(x)}" ${selected.has(String(x).toLowerCase())?'selected':''}>${esc(x)}</option>`).join('');
 }
+function wireMultiSelectSearch(inputSel, selectSel, countSel){
+  const inp=$(inputSel), sel=$(selectSel), count=$(countSel);
+  if(!inp||!sel) return;
+  const all=[...sel.options].map(o=>({value:o.value,text:o.textContent,selected:o.selected}));
+  const updateCount=()=>{
+    if(count) count.textContent=`${[...sel.selectedOptions].length} selected`;
+  };
+  const render=()=>{
+    const selected=new Set([...sel.selectedOptions].map(o=>o.value));
+    const q=inp.value.trim().toLowerCase();
+    sel.innerHTML=all
+      .filter(o=>!q || o.text.toLowerCase().includes(q))
+      .map(o=>`<option value="${esc(o.value)}" ${selected.has(o.value)||o.selected?'selected':''}>${esc(o.text)}</option>`)
+      .join('');
+    all.forEach(o=>o.selected=selected.has(o.value)||o.selected);
+    updateCount();
+  };
+  sel.onchange=()=>{
+    const selected=new Set([...sel.selectedOptions].map(o=>o.value));
+    all.forEach(o=>o.selected=selected.has(o.value));
+    updateCount();
+  };
+  inp.oninput=render;
+  updateCount();
+}
 function roleLabel(role){
   return role==='headteacher'?'Head teacher':role==='admin'?'School admin':'Teacher';
 }
@@ -3540,8 +3673,8 @@ modules.teachers = async (m)=>{
         <div class="row"><div class="col field"><label>Date joined</label><input name="date_joined" type="date"></div>
           <div class="col field"><label>System role</label><select name="role"><option value="teacher">Teacher</option><option value="headteacher">Head teacher</option><option value="admin">School admin</option></select></div></div>
         <div class="row">
-          <div class="col field"><label>Classes taught</label><select name="classes_taught" multiple size="5">${multiOptions(gradeOptions,'')}</select><div class="small muted">Hold Ctrl to select several classes.</div></div>
-          <div class="col field"><label>Subjects taught</label><select name="subjects_taught" multiple size="5">${multiOptions(subjectOptions,'')}</select><div class="small muted">These subjects will guide grading and report access.</div></div>
+          <div class="col field"><label>Classes taught</label><input id="classPickSearch" placeholder="Search class..."><select id="classPick" name="classes_taught" multiple size="6">${multiOptions(gradeOptions,'')}</select><div class="small muted" id="classPickCount">0 selected</div></div>
+          <div class="col field"><label>Subjects taught</label><input id="subjectPickSearch" placeholder="Search subject..."><select id="subjectPick" name="subjects_taught" multiple size="6">${multiOptions(subjectOptions,'')}</select><div class="small muted" id="subjectPickCount">0 selected. These subjects guide grading access.</div></div>
         </div>
         <div class="field"><label>Streams taught</label><input name="streams_taught" placeholder="e.g. A, B, North"></div>
         <label class="small" style="display:flex;gap:.5rem;align-items:center"><input type="checkbox" name="is_class_teacher" id="isClassTeacher"> This teacher is also a class teacher</label>
@@ -3553,6 +3686,8 @@ modules.teachers = async (m)=>{
       </form></div>`;
     $('#c').onclick=()=>navigate('teachers');
     $('#isClassTeacher').onchange=()=>$('#classTeacherFields').style.display=$('#isClassTeacher').checked?'':'none';
+    wireMultiSelectSearch('#classPickSearch','#classPick','#classPickCount');
+    wireMultiSelectSearch('#subjectPickSearch','#subjectPick','#subjectPickCount');
     $('#f').onsubmit = async (e)=>{
       e.preventDefault();
       const fd=new FormData(e.target);
@@ -3589,8 +3724,8 @@ modules.teachers = async (m)=>{
           <div class="col field"><label>Specialisation</label><input name="specialisation" value="${esc(r.specialisation||'')}"></div>
         </div>
         <div class="row">
-          <div class="col field"><label>Classes taught</label><select name="classes_taught" multiple size="6">${multiOptions(gradeOptions,r.classes_taught)}</select></div>
-          <div class="col field"><label>Subjects taught</label><select name="subjects_taught" multiple size="6">${multiOptions(subjectOptions,r.subjects_taught||r.specialisation)}</select></div>
+          <div class="col field"><label>Classes taught</label><input id="editClassPickSearch" placeholder="Search class..."><select id="editClassPick" name="classes_taught" multiple size="6">${multiOptions(gradeOptions,r.classes_taught)}</select><div class="small muted" id="editClassPickCount">0 selected</div></div>
+          <div class="col field"><label>Subjects taught</label><input id="editSubjectPickSearch" placeholder="Search subject..."><select id="editSubjectPick" name="subjects_taught" multiple size="6">${multiOptions(subjectOptions,r.subjects_taught||r.specialisation)}</select><div class="small muted" id="editSubjectPickCount">0 selected</div></div>
         </div>
         <div class="field"><label>Streams taught</label><input name="streams_taught" value="${esc(r.streams_taught||'')}" placeholder="e.g. A, B, North"></div>
         <label class="small" style="display:flex;gap:.5rem;align-items:center"><input type="checkbox" name="is_class_teacher" id="editClassTeacher" ${r.is_class_teacher?'checked':''}> This teacher is also a class teacher</label>
@@ -3604,6 +3739,8 @@ modules.teachers = async (m)=>{
     $('#backStaff').onclick=(e)=>{e.preventDefault();navigate('teachers');};
     $('#cancelStaff').onclick=()=>navigate('teachers');
     $('#editClassTeacher').onchange=()=>$('#editClassTeacherFields').style.display=$('#editClassTeacher').checked?'':'none';
+    wireMultiSelectSearch('#editClassPickSearch','#editClassPick','#editClassPickCount');
+    wireMultiSelectSearch('#editSubjectPickSearch','#editSubjectPick','#editSubjectPickCount');
     $('#assignmentForm').onsubmit=async(e)=>{
       e.preventDefault();
       const fd=new FormData(e.target);
@@ -4194,11 +4331,17 @@ function printFeeStatement(student_id, studentName, balances){
 modules.reports = async (m)=>{
   const sid=state.profile.school_id;
   const role=state.profile.role;
+  if(isSchoolTeacher() && !isClassTeacher()){
+    toast('Report cards are available to class teachers and school admins.', true);
+    navigate('dashboard');
+    return;
+  }
   let students=[];
   if(role==='parent'){
     ({data:students=[]}=await sb.from('students').select('id,full_name,grade,stream,admission_number').eq('parent_id',state.profile.id));
   } else {
     ({data:students=[]}=await sb.from('students').select('id,full_name,grade,stream,admission_number').eq('school_id',sid).order('grade').order('full_name'));
+    students=filterStudentsForTeacher(students);
   }
 
   m.innerHTML=`
@@ -5520,6 +5663,18 @@ async function loadProfile(){
   return profile;
 }
 
+async function loadTeacherAssignment(){
+  state.teacherAssignment=null;
+  if(state.profile?.role!=='teacher' || !state.profile?.school_id) return null;
+  const {data}=await sb.from('teachers')
+    .select('id,full_name,email,subjects_taught,classes_taught,streams_taught,is_class_teacher,class_teacher_grade,class_teacher_stream,system_role')
+    .eq('school_id',state.profile.school_id)
+    .eq('user_id',state.profile.id)
+    .maybeSingle();
+  state.teacherAssignment=data||null;
+  return state.teacherAssignment;
+}
+
 async function boot(){
   if(location.hash.includes('type=signup')){
     await sb.auth.signOut();
@@ -5539,6 +5694,7 @@ async function boot(){
     const { data:school } = await sb.from('schools').select('*').eq('id',state.profile.school_id).maybeSingle();
     state.school = school;
   }
+  await loadTeacherAssignment();
   const deviceOk = await ensureTeacherDevicePolicy();
   if(!deviceOk) return;
   state.serviceAccess = serviceAccessStatus();
