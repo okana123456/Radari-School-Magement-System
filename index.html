@@ -4145,21 +4145,80 @@ modules.fees = async (m)=>{
   };
 
   $('#addBal').onclick = async ()=>{
-    const { data:students=[] } = await sb.from('students').select('id,full_name,grade').eq('school_id',sid).order('full_name');
-    m.innerHTML = `<div class="card" style="max-width:520px"><a href="#" id="bk2" class="small"><i class="ti ti-arrow-left"></i> Back</a><h2 style="margin-top:1rem">Add fee balance</h2>
-      <form id="f2" class="stack">
-        <div class="field"><label>Learner</label><select name="student_id">${students.map(s=>`<option value="${s.id}">${esc(s.full_name)} (${esc(s.grade||'')})</option>`).join('')}</select></div>
-        <div class="row"><div class="col field"><label>Term</label><select name="term"><option>1</option><option>2</option><option>3</option></select></div>
-          <div class="col field"><label>Year</label><input type="number" name="year" value="${new Date().getFullYear()}"></div></div>
-        <div class="row"><div class="col field"><label>Amount due (KSh)</label><input type="number" name="amount_due" required></div>
-          <div class="col field"><label>Amount paid (KSh)</label><input type="number" name="amount_paid" value="0"></div></div>
-        <div><button class="btn primary">Save</button></div>
-      </form></div>`;
+    const { data:students=[] } = await sb.from('students').select('id,full_name,grade,stream,admission_number').eq('school_id',sid).order('grade').order('full_name');
+    const classes = ['All classes', ...new Set(students.map(s=>s.grade).filter(Boolean).sort((a,b)=>String(a).localeCompare(String(b), undefined, {numeric:true})))];
+    let selectedStudent = null;
+    m.innerHTML = `<div class="card" style="max-width:900px">
+      <a href="#" id="bk2" class="small"><i class="ti ti-arrow-left"></i> Back to fees</a>
+      <div class="section-title" style="margin-top:1rem;align-items:flex-start">
+        <div>
+          <h2 style="margin:.1rem 0">Add fee balance</h2>
+          <p class="muted small" style="margin:.2rem 0 0">Find the learner first, then create the term balance. This keeps manual finance entries clear even on phone.</p>
+        </div>
+      </div>
+      <div class="row" style="align-items:flex-start">
+        <div class="col" style="min-width:280px">
+          <div class="card" style="box-shadow:none;border:1px solid var(--stone);margin:0">
+            <div class="field"><label>Grade / class filter</label><select id="balClass">${classes.map(g=>`<option>${esc(g)}</option>`).join('')}</select></div>
+            <div class="field"><label>Search learner</label><input id="balSearch" placeholder="Name or admission no." autocomplete="off"></div>
+            <div id="balResults" class="stack" style="gap:.45rem"></div>
+          </div>
+        </div>
+        <div class="col" style="min-width:280px">
+          <form id="f2" class="stack">
+            <div id="balSelected" class="card" style="box-shadow:none;border:1px dashed var(--stone-2);margin:0;background:var(--surface-2)">
+              <b>No learner selected</b>
+              <p class="small muted" style="margin:.25rem 0 0">Use the search panel to choose the learner whose balance you want to add.</p>
+            </div>
+            <div class="row"><div class="col field"><label>Term</label><select name="term"><option>1</option><option>2</option><option>3</option></select></div>
+              <div class="col field"><label>Year</label><input type="number" name="year" value="${new Date().getFullYear()}"></div></div>
+            <div class="row"><div class="col field"><label>Amount due (KSh)</label><input type="number" name="amount_due" min="0" step="1" required></div>
+              <div class="col field"><label>Amount paid (KSh)</label><input type="number" name="amount_paid" min="0" step="1" value="0"></div></div>
+            <div><button class="btn primary" id="saveBalBtn"><i class="ti ti-device-floppy"></i> Save balance</button></div>
+          </form>
+        </div>
+      </div>
+    </div>`;
     $('#bk2').onclick=(e)=>{e.preventDefault();navigate('fees');};
+    const renderBalanceLearners = ()=>{
+      const q = ($('#balSearch').value||'').toLowerCase().trim();
+      const cls = $('#balClass').value;
+      const filtered = students.filter(st=>{
+        const inClass = cls==='All classes' || st.grade===cls;
+        const text = `${st.full_name||''} ${st.admission_number||''} ${st.grade||''} ${st.stream||''}`.toLowerCase();
+        return inClass && (!q || text.includes(q));
+      }).slice(0,30);
+      $('#balResults').innerHTML = filtered.length ? filtered.map(st=>`
+        <button type="button" class="btn secondary balPick" data-id="${st.id}" style="height:auto;min-height:50px;justify-content:flex-start;text-align:left;white-space:normal;padding:.55rem .7rem">
+          <span>
+            <b>${esc(st.full_name)}</b>
+            <span class="small muted" style="display:block">${esc([st.grade, st.stream].filter(Boolean).join(' ') || 'Class not set')} &middot; ${esc(st.admission_number || 'No admission number')}</span>
+          </span>
+        </button>`).join('') : `<div class="empty" style="padding:1rem"><i class="ti ti-search"></i><div>No learner found</div><p class="small muted">Try another name, admission number, or class.</p></div>`;
+      $$('.balPick').forEach(btn=>btn.onclick=()=>{
+        selectedStudent = students.find(st=>st.id===btn.dataset.id);
+        if(!selectedStudent) return;
+        $('#balSelected').innerHTML = `<div style="display:flex;gap:.75rem;justify-content:space-between;align-items:flex-start">
+          <div>
+            <b>${esc(selectedStudent.full_name)}</b>
+            <div class="small muted">${esc([selectedStudent.grade, selectedStudent.stream].filter(Boolean).join(' ') || 'Class not set')} &middot; Adm. ${esc(selectedStudent.admission_number || 'not set')}</div>
+          </div>
+          <button type="button" class="btn secondary" id="clearBalStudent" style="height:30px;font-size:.78rem">Change</button>
+        </div>`;
+        $('#clearBalStudent').onclick=()=>{
+          selectedStudent = null;
+          $('#balSelected').innerHTML = `<b>No learner selected</b><p class="small muted" style="margin:.25rem 0 0">Use the search panel to choose the learner whose balance you want to add.</p>`;
+        };
+      });
+    };
+    $('#balClass').onchange = renderBalanceLearners;
+    $('#balSearch').oninput = renderBalanceLearners;
+    renderBalanceLearners();
     $('#f2').onsubmit = async (e)=>{
       e.preventDefault();
+      if(!selectedStudent){ toast('Select a learner first.', true); return; }
       const f=Object.fromEntries(new FormData(e.target));
-      f.school_id=sid; f.term=+f.term; f.year=+f.year; f.amount_due=+f.amount_due; f.amount_paid=+f.amount_paid;
+      f.school_id=sid; f.student_id=selectedStudent.id; f.term=+f.term; f.year=+f.year; f.amount_due=+f.amount_due; f.amount_paid=+f.amount_paid||0;
       const { error } = await sb.from('fee_balances').insert(f);
       if(error) toast(error.message,true); else { toast('Saved'); navigate('fees'); }
     };
