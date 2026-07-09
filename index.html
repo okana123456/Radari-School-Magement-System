@@ -18,7 +18,7 @@ After running, go to:
 --------------------------------------------------------------------------------
 -- enums
 do $$ begin
-  create type app_role as enum ('admin','headteacher','teacher','parent');
+  create type app_role as enum ('admin','headteacher','teacher','finance','parent');
 exception when duplicate_object then null; end $$;
 
 create table if not exists public.schools (
@@ -540,6 +540,11 @@ on conflict (school_code) do nothing;
     .badge.amber{background:var(--amber-bg);color:var(--amber)}
     .badge.terra{background:var(--terracotta-bg);color:var(--terracotta)}
     .badge.muted{background:var(--stone);color:var(--ink-2)}
+    .check-picker{border:1px solid var(--stone-2);border-radius:var(--radius);background:#fff;max-height:230px;overflow:auto;padding:.35rem}
+    .check-picker label{display:flex;align-items:center;gap:.45rem;margin:0;padding:.42rem .5rem;border-radius:8px;font-size:.86rem;cursor:pointer}
+    .check-picker label:hover{background:var(--green-50)}
+    .check-picker input[type="checkbox"]{width:auto;appearance:auto;-webkit-appearance:auto;margin:0;flex-shrink:0}
+    .check-picker-count{font-size:.76rem;color:var(--muted);margin-top:.28rem}
 
     /* GRADING TABLE — the most complex mobile layout */
     .grading-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--stone);border-radius:var(--radius)}
@@ -1219,6 +1224,10 @@ function isIndividualTeacher(){
   return state.profile?.role==='teacher' && isIndividualTeacherWorkspace();
 }
 
+function isFinanceRole(){
+  return String(state.profile?.role||'').toLowerCase()==='finance';
+}
+
 const SUPPORT_PHONE = '0708095461';
 
 function splitList(value){
@@ -1269,7 +1278,7 @@ function teacherAccessNotice(){
 
 const NAV_GROUPS = [
   { label:'Overview', items:[
-    { id:'dashboard',   label:'Dashboard',       icon:'ti-layout-dashboard', roles:['admin','headteacher','teacher','parent'] },
+    { id:'dashboard',   label:'Dashboard',       icon:'ti-layout-dashboard', roles:['admin','headteacher','teacher','parent','finance'] },
     { id:'notices',     label:'Notices',          icon:'ti-speakerphone',     roles:['admin','headteacher','teacher','parent'] },
   ]},
   { label:'Learners', items:[
@@ -1292,13 +1301,13 @@ const NAV_GROUPS = [
   ]},
   { label:'Finance', items:[
     { id:'fees',        label:'My Fees',          icon:'ti-wallet',           roles:['parent'] },
-    { id:'fees',        label:'Fees',             icon:'ti-wallet',           roles:['admin','headteacher'] },
+    { id:'fees',        label:'Fees',             icon:'ti-wallet',           roles:['admin','headteacher','finance'] },
     { id:'reports',     label:'Report Card',      icon:'ti-file-text',        roles:['parent'] },
     { id:'reports',     label:'Report Cards',     icon:'ti-file-text',        roles:['admin','headteacher'] },
     { id:'knec',        label:'KNEC SBA Export',  icon:'ti-table-export',     roles:['admin','headteacher'] },
   ]},
   { label:'Account', items:[
-    { id:'settings',    label:'Settings',         icon:'ti-settings',         roles:['admin','headteacher','teacher'] },
+    { id:'settings',    label:'Settings',         icon:'ti-settings',         roles:['admin','headteacher','teacher','finance'] },
   ]},
 ];
 
@@ -1342,6 +1351,16 @@ function buildNav(role, currentRoute){
     ];
     return '<div class="nav-group"><div class="nav-group-label">Teacher workspace</div><nav class="nav">'
       + teacherItems.map(n=>'<a href="#'+n.id+'" data-route="'+n.id+'" class="'+(currentRoute===n.id?'active':'')+'"><i class="ti '+n.icon+'"></i>'+n.label+'</a>').join('')
+      + '</nav></div>';
+  }
+  if(role==='finance'){
+    const financeItems=[
+      { id:'dashboard', label:'Home', icon:'ti-home' },
+      { id:'fees', label:'Fees', icon:'ti-wallet' },
+      { id:'settings', label:'Settings', icon:'ti-settings' },
+    ];
+    return '<div class="nav-group"><div class="nav-group-label">Finance workspace</div><nav class="nav">'
+      + financeItems.map(n=>'<a href="#'+n.id+'" data-route="'+n.id+'" class="'+(currentRoute===n.id?'active':'')+'"><i class="ti '+n.icon+'"></i>'+n.label+'</a>').join('')
       + '</nav></div>';
   }
   const baseNav = NAV_GROUPS.map(group=>{
@@ -1419,6 +1438,7 @@ function canAccessRoute(route){
     if(isClassTeacher()) allowed.push('reports');
     return allowed.includes(route);
   }
+  if(isFinanceRole()) return ['dashboard','fees','settings'].includes(route);
   const item=findNavItem(route);
   return !!item && item.roles.includes(state.profile.role);
 }
@@ -1455,8 +1475,29 @@ modules.dashboard = async (m)=>{
   const role=state.profile.role;
   if(role==='parent')  return dashboardParent(m);
   if(role==='teacher') return dashboardTeacher(m);
+  if(isFinanceRole()) return dashboardFinance(m);
   return dashboardAdmin(m);
 };
+
+async function dashboardFinance(m){
+  const sid=state.profile.school_id;
+  const [{data:bals=[]},{data:payments=[]}]=await Promise.all([
+    sb.from('fee_balances').select('amount_due,amount_paid,balance').eq('school_id',sid),
+    sb.from('mpesa_payments').select('amount,status,created_at').eq('school_id',sid).order('created_at',{ascending:false}).limit(8),
+  ]);
+  const due=bals.reduce((a,b)=>a+(+b.amount_due||0),0);
+  const paid=bals.reduce((a,b)=>a+(+b.amount_paid||0),0);
+  m.innerHTML=`<h1>Finance workspace</h1>
+    <p class="muted" style="margin-top:-.4rem;margin-bottom:1.25rem">Manage fee balances, manual receipts, and M-Pesa allocations.</p>
+    <div class="metrics">
+      <div class="metric lg"><div class="num">KSh ${paid.toLocaleString()}</div><div class="lbl">Collected</div></div>
+      <div class="metric"><div class="num">KSh ${Math.max(0,due-paid).toLocaleString()}</div><div class="lbl">Outstanding</div></div>
+      <div class="metric"><div class="num">${bals.filter(b=>+b.balance>0).length}</div><div class="lbl">Open balances</div></div>
+    </div>
+    <div class="card"><button class="btn primary" data-route="fees"><i class="ti ti-wallet"></i> Open Fees</button></div>
+    <div class="card"><h3>Recent payments</h3>${payments.length?payments.map(p=>`<div class="small" style="display:flex;justify-content:space-between;border-bottom:1px solid var(--stone);padding:.45rem 0"><span>${new Date(p.created_at).toLocaleString('en-KE')}</span><b>KSh ${(+p.amount||0).toLocaleString()}</b></div>`).join(''):'<div class="muted small">No recent fee payments.</div>'}</div>`;
+  m.querySelectorAll('[data-route]').forEach(a=>a.onclick=(e)=>{e.preventDefault();navigate(a.dataset.route);});
+}
 
 async function dashboardAdmin(m){
   const sid=state.profile.school_id;
@@ -3601,6 +3642,27 @@ function multiOptions(items, selectedValue){
   const selected=selectedCsv(selectedValue);
   return items.map(x=>`<option value="${esc(x)}" ${selected.has(String(x).toLowerCase())?'selected':''}>${esc(x)}</option>`).join('');
 }
+function checkPicker(items, name, selectedValue, id){
+  const selected=selectedCsv(selectedValue);
+  return `<input id="${id}Search" placeholder="Search..." autocomplete="off">
+    <div class="check-picker" id="${id}">
+      ${items.map(x=>`<label data-text="${esc(String(x).toLowerCase())}"><input type="checkbox" name="${esc(name)}" value="${esc(x)}" ${selected.has(String(x).toLowerCase())?'checked':''}> <span>${esc(x)}</span></label>`).join('')}
+    </div>
+    <div class="check-picker-count" id="${id}Count">0 selected</div>`;
+}
+function wireCheckPicker(id){
+  const box=$('#'+id), search=$('#'+id+'Search'), count=$('#'+id+'Count');
+  if(!box) return;
+  const update=()=>{
+    if(count) count.textContent=`${box.querySelectorAll('input:checked').length} selected`;
+  };
+  box.querySelectorAll('input').forEach(ch=>ch.onchange=update);
+  if(search) search.oninput=()=>{
+    const q=search.value.trim().toLowerCase();
+    box.querySelectorAll('label').forEach(l=>l.style.display=(!q||l.dataset.text.includes(q))?'flex':'none');
+  };
+  update();
+}
 function wireMultiSelectSearch(inputSel, selectSel, countSel){
   const inp=$(inputSel), sel=$(selectSel), count=$(countSel);
   if(!inp||!sel) return;
@@ -3627,7 +3689,7 @@ function wireMultiSelectSearch(inputSel, selectSel, countSel){
   updateCount();
 }
 function roleLabel(role){
-  return role==='headteacher'?'Head teacher':role==='admin'?'School admin':'Teacher';
+  return role==='headteacher'?'Head teacher':role==='admin'?'School admin':role==='finance'?'Finance officer':'Teacher';
 }
 
 /* --- TEACHERS --- */
@@ -3671,10 +3733,10 @@ modules.teachers = async (m)=>{
         <div class="row"><div class="col field"><label>Qualification</label><input name="qualification"></div>
           <div class="col field"><label>Specialisation</label><input name="specialisation"></div></div>
         <div class="row"><div class="col field"><label>Date joined</label><input name="date_joined" type="date"></div>
-          <div class="col field"><label>System role</label><select name="role"><option value="teacher">Teacher</option><option value="headteacher">Head teacher</option><option value="admin">School admin</option></select></div></div>
+          <div class="col field"><label>System role</label><select name="role"><option value="teacher">Teacher</option><option value="finance">Finance officer</option><option value="headteacher">Head teacher</option><option value="admin">School admin</option></select></div></div>
         <div class="row">
-          <div class="col field"><label>Classes taught</label><input id="classPickSearch" placeholder="Search class..."><select id="classPick" name="classes_taught" multiple size="6">${multiOptions(gradeOptions,'')}</select><div class="small muted" id="classPickCount">0 selected</div></div>
-          <div class="col field"><label>Subjects taught</label><input id="subjectPickSearch" placeholder="Search subject..."><select id="subjectPick" name="subjects_taught" multiple size="6">${multiOptions(subjectOptions,'')}</select><div class="small muted" id="subjectPickCount">0 selected. These subjects guide grading access.</div></div>
+          <div class="col field"><label>Classes taught</label>${checkPicker(gradeOptions,'classes_taught','','classPick')}</div>
+          <div class="col field"><label>Subjects taught</label>${checkPicker(subjectOptions,'subjects_taught','','subjectPick')}<div class="small muted">These subjects guide grading access.</div></div>
         </div>
         <div class="field"><label>Streams taught</label><input name="streams_taught" placeholder="e.g. A, B, North"></div>
         <label class="small" style="display:flex;gap:.5rem;align-items:center"><input type="checkbox" name="is_class_teacher" id="isClassTeacher"> This teacher is also a class teacher</label>
@@ -3686,8 +3748,8 @@ modules.teachers = async (m)=>{
       </form></div>`;
     $('#c').onclick=()=>navigate('teachers');
     $('#isClassTeacher').onchange=()=>$('#classTeacherFields').style.display=$('#isClassTeacher').checked?'':'none';
-    wireMultiSelectSearch('#classPickSearch','#classPick','#classPickCount');
-    wireMultiSelectSearch('#subjectPickSearch','#subjectPick','#subjectPickCount');
+    wireCheckPicker('classPick');
+    wireCheckPicker('subjectPick');
     $('#f').onsubmit = async (e)=>{
       e.preventDefault();
       const fd=new FormData(e.target);
@@ -3720,12 +3782,12 @@ modules.teachers = async (m)=>{
       <p class="muted small">${esc(r.full_name)} &middot; ${esc(r.email||'No email')}</p>
       <form id="assignmentForm" class="stack">
         <div class="row">
-          <div class="col field"><label>System role</label><select name="system_role"><option value="teacher" ${r.system_role!=='headteacher'&&r.system_role!=='admin'?'selected':''}>Teacher</option><option value="headteacher" ${r.system_role==='headteacher'?'selected':''}>Head teacher</option><option value="admin" ${r.system_role==='admin'?'selected':''}>School admin</option></select></div>
+          <div class="col field"><label>System role</label><select name="system_role"><option value="teacher" ${!['headteacher','admin','finance'].includes(r.system_role)?'selected':''}>Teacher</option><option value="finance" ${r.system_role==='finance'?'selected':''}>Finance officer</option><option value="headteacher" ${r.system_role==='headteacher'?'selected':''}>Head teacher</option><option value="admin" ${r.system_role==='admin'?'selected':''}>School admin</option></select></div>
           <div class="col field"><label>Specialisation</label><input name="specialisation" value="${esc(r.specialisation||'')}"></div>
         </div>
         <div class="row">
-          <div class="col field"><label>Classes taught</label><input id="editClassPickSearch" placeholder="Search class..."><select id="editClassPick" name="classes_taught" multiple size="6">${multiOptions(gradeOptions,r.classes_taught)}</select><div class="small muted" id="editClassPickCount">0 selected</div></div>
-          <div class="col field"><label>Subjects taught</label><input id="editSubjectPickSearch" placeholder="Search subject..."><select id="editSubjectPick" name="subjects_taught" multiple size="6">${multiOptions(subjectOptions,r.subjects_taught||r.specialisation)}</select><div class="small muted" id="editSubjectPickCount">0 selected</div></div>
+          <div class="col field"><label>Classes taught</label>${checkPicker(gradeOptions,'classes_taught',r.classes_taught,'editClassPick')}</div>
+          <div class="col field"><label>Subjects taught</label>${checkPicker(subjectOptions,'subjects_taught',r.subjects_taught||r.specialisation,'editSubjectPick')}</div>
         </div>
         <div class="field"><label>Streams taught</label><input name="streams_taught" value="${esc(r.streams_taught||'')}" placeholder="e.g. A, B, North"></div>
         <label class="small" style="display:flex;gap:.5rem;align-items:center"><input type="checkbox" name="is_class_teacher" id="editClassTeacher" ${r.is_class_teacher?'checked':''}> This teacher is also a class teacher</label>
@@ -3739,8 +3801,8 @@ modules.teachers = async (m)=>{
     $('#backStaff').onclick=(e)=>{e.preventDefault();navigate('teachers');};
     $('#cancelStaff').onclick=()=>navigate('teachers');
     $('#editClassTeacher').onchange=()=>$('#editClassTeacherFields').style.display=$('#editClassTeacher').checked?'':'none';
-    wireMultiSelectSearch('#editClassPickSearch','#editClassPick','#editClassPickCount');
-    wireMultiSelectSearch('#editSubjectPickSearch','#editSubjectPick','#editSubjectPickCount');
+    wireCheckPicker('editClassPick');
+    wireCheckPicker('editSubjectPick');
     $('#assignmentForm').onsubmit=async(e)=>{
       e.preventDefault();
       const fd=new FormData(e.target);
@@ -3960,6 +4022,10 @@ modules.fees = async (m)=>{
     });
     return;
   }
+  if(!['admin','headteacher','finance'].includes(role)){
+    m.innerHTML=`<div class="card"><h2>Fees access</h2><p class="muted">Only school admins and finance staff can manage fee records.</p></div>`;
+    return;
+  }
 
   const [{data:structs=[]},{data:allBals=[]},{data:payments=[]},{data:credits=[]}] = await Promise.all([
     sb.from('fee_structures').select('*').eq('school_id',sid).order('grade'),
@@ -3989,8 +4055,16 @@ modules.fees = async (m)=>{
           <button class="btn primary" id="recPay"><i class="ti ti-cash"></i> Finance: record payment</button>
           <button class="btn secondary" id="addS"><i class="ti ti-plus"></i> Add structure</button>
           <button class="btn secondary" id="addBal"><i class="ti ti-plus"></i> Add balance</button>
+          <button class="btn secondary" id="importFee"><i class="ti ti-upload"></i> Import balances</button>
+          <button class="btn secondary" id="feeTpl"><i class="ti ti-file-spreadsheet"></i> Template</button>
+          <button class="btn secondary" id="createTerm"><i class="ti ti-calendar-plus"></i> Create term balances</button>
           <button class="btn secondary" id="dlFee"><i class="ti ti-table-export"></i> Export CSV</button>
         </div>
+      </div>
+      <input type="file" id="feeImportFile" accept=".xlsx,.xls,.csv" style="display:none">
+      <div class="card" style="background:var(--green-50);box-shadow:none;border:1px solid var(--stone);margin-bottom:1rem">
+        <b>How fees work</b>
+        <p class="small muted" style="margin:.3rem 0 0">Set fee structures per grade/term, then create or import term balances. When parents pay by Paybill using the admission number, Daraja updates the oldest open balance and carries any extra amount forward as credit.</p>
       </div>
       <div class="toolbar" style="margin-bottom:1rem">
         <div class="field"><label>Grade</label><select id="gf">${grades.map(g=>`<option>${g}</option>`).join('')}</select></div>
@@ -4034,6 +4108,16 @@ modules.fees = async (m)=>{
   $('#qf').oninput=refreshFee;
   // wire the initial render's statement buttons
   refreshFee();
+  $('#feeTpl').onclick = downloadFeeImportTemplate;
+  $('#importFee').onclick = ()=>$('#feeImportFile').click();
+  $('#feeImportFile').onchange = async(e)=>{
+    const file=e.target.files?.[0];
+    if(!file) return;
+    await importFeeBalancesFile(file, sid);
+    e.target.value='';
+    navigate('fees');
+  };
+  $('#createTerm').onclick=()=>openCreateTermBalances(m, sid, structs);
 
   $('#addS').onclick = ()=>{
     m.innerHTML = `<div class="card" style="max-width:520px"><a href="#" id="bk" class="small"><i class="ti ti-arrow-left"></i> Back</a><h2 style="margin-top:1rem">Add fee structure</h2>
@@ -4233,6 +4317,113 @@ modules.fees = async (m)=>{
     };
   };
 };
+
+function downloadFeeImportTemplate(){
+  const rows=[
+    ['Admission No','Term','Year','Amount Due','Amount Paid'],
+    ['RADU/G4/001','1',new Date().getFullYear(),'15000','0'],
+    ['RADU/G4/002','1',new Date().getFullYear(),'15000','5000'],
+  ];
+  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='fee-balance-import-template.csv';
+  a.click();
+}
+
+function moneyNumber(value){
+  const n=Number(String(value??'').replace(/[^\d.-]/g,''));
+  return isNaN(n)?0:n;
+}
+
+async function importFeeBalancesFile(file, schoolId){
+  try{
+    const rawRows=await readStudentImportRows(file);
+    const admissions=[...new Set(rawRows.map(r=>pick(r,['admission_no','admission_number','adm','adm_no','adm_number'])).filter(Boolean))];
+    if(!admissions.length){ toast('No admission numbers found in the file.',true); return; }
+    const {data:students=[],error:stuErr}=await sb.from('students').select('id,admission_number,full_name').eq('school_id',schoolId).in('admission_number',admissions);
+    if(stuErr){ toast(stuErr.message,true); return; }
+    const byAdm=Object.fromEntries(students.map(s=>[String(s.admission_number||'').trim().toLowerCase(),s]));
+    let saved=0, skipped=0;
+    for(const r of rawRows){
+      const adm=pick(r,['admission_no','admission_number','adm','adm_no','adm_number']);
+      const stu=byAdm[String(adm||'').trim().toLowerCase()];
+      const term=Number(pick(r,['term','school_term']));
+      const year=Number(pick(r,['year','academic_year']));
+      const amount_due=moneyNumber(pick(r,['amount_due','due','fee','fees','term_fee']));
+      const amount_paid=moneyNumber(pick(r,['amount_paid','paid','paid_amount']));
+      if(!stu||!term||!year||!amount_due){ skipped++; continue; }
+      const {data:existing}=await sb.from('fee_balances').select('id').eq('student_id',stu.id).eq('term',term).eq('year',year).maybeSingle();
+      const payload={student_id:stu.id,school_id:schoolId,term,year,amount_due,amount_paid};
+      const res=existing?.id
+        ? await sb.from('fee_balances').update(payload).eq('id',existing.id)
+        : await sb.from('fee_balances').insert(payload);
+      if(res.error){ skipped++; } else { saved++; }
+    }
+    toast(`Imported ${saved} fee balance${saved===1?'':'s'}${skipped?`; skipped ${skipped} row${skipped===1?'':'s'}.`:'.'}`, skipped>0);
+  }catch(e){
+    toast('Fee import failed: '+(e.message||e), true);
+  }
+}
+
+function openCreateTermBalances(m, schoolId, structs=[]){
+  const year=new Date().getFullYear();
+  m.innerHTML=`<div class="card" style="max-width:560px">
+    <a href="#" id="bkTerm" class="small"><i class="ti ti-arrow-left"></i> Back to fees</a>
+    <h2 style="margin-top:1rem">Create term balances</h2>
+    <p class="muted small">Use this when a school moves to a new term. Radari will create one fee balance per learner using the fee structure for that learner's grade and the selected term/year. Existing balances for the same term are left unchanged.</p>
+    <form id="termBalanceForm" class="stack">
+      <div class="row">
+        <div class="col field"><label>Term</label><select name="term"><option>1</option><option>2</option><option>3</option></select></div>
+        <div class="col field"><label>Year</label><input type="number" name="year" value="${year}"></div>
+      </div>
+      <button class="btn primary"><i class="ti ti-calendar-plus"></i> Create balances</button>
+    </form>
+  </div>`;
+  $('#bkTerm').onclick=(e)=>{e.preventDefault();navigate('fees');};
+  $('#termBalanceForm').onsubmit=async(e)=>{
+    e.preventDefault();
+    const fd=new FormData(e.target);
+    const term=Number(fd.get('term')), y=Number(fd.get('year'));
+    const {data:students=[],error:stuErr}=await sb.from('students').select('id,grade,full_name').eq('school_id',schoolId);
+    if(stuErr){ toast(stuErr.message,true); return; }
+    const {data:existing=[]}=await sb.from('fee_balances').select('student_id').eq('school_id',schoolId).eq('term',term).eq('year',y);
+    const {data:credits=[]}=await sb.from('fee_credits').select('id,student_id,remaining_amount').eq('school_id',schoolId).gt('remaining_amount',0).order('created_at');
+    const has=new Set(existing.map(x=>x.student_id));
+    const matchingStructs=structs.filter(s=>Number(s.term)===term && Number(s.year)===y);
+    const byGrade=Object.fromEntries(matchingStructs.map(s=>[String(s.grade||'').trim().toLowerCase(),s]));
+    const rows=[];
+    const creditUpdates=[];
+    students.forEach(st=>{
+      if(has.has(st.id)) return;
+      const fs=byGrade[String(st.grade||'').trim().toLowerCase()];
+      if(fs){
+        const due=+fs.amount||0;
+        let need=due;
+        let creditPaid=0;
+        credits.filter(c=>c.student_id===st.id && need>0).forEach(c=>{
+          const available=+c.remaining_amount||0;
+          const use=Math.min(available,need);
+          if(use>0){
+            creditPaid+=use;
+            need-=use;
+            creditUpdates.push({id:c.id,remaining_amount:available-use});
+          }
+        });
+        rows.push({student_id:st.id,school_id:schoolId,term,year:y,amount_due:due,amount_paid:creditPaid});
+      }
+    });
+    if(!rows.length){ toast('No new balances created. Check fee structures or existing balances.', true); return; }
+    const {error}=await sb.from('fee_balances').insert(rows);
+    if(error){ toast(error.message,true); return; }
+    for(const c of creditUpdates){
+      await sb.from('fee_credits').update({remaining_amount:c.remaining_amount,status:c.remaining_amount>0?'open':'used'}).eq('id',c.id);
+    }
+    toast(`Created ${rows.length} term balance${rows.length===1?'':'s'}.`);
+    navigate('fees');
+  };
+}
 
 function filterBals(bals,grade,term,year,status,query){
   return bals.filter(b=>{
@@ -5337,7 +5528,11 @@ modules.settings = async (m)=>{
         </div>
         <div class="field"><label>Message shown to parents</label>
           <textarea name="fee_payment_instructions" rows="3" placeholder="Pay fees using the school Paybill and the learner admission number as the account number.">${esc(state.school.fee_payment_instructions||'')}</textarea></div>
-        <button class="btn primary">Save payment settings</button>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <button class="btn primary">Save payment settings</button>
+          <button class="btn secondary" type="button" id="registerFeeUrls">Register Paybill URLs</button>
+        </div>
+        <div class="small muted">After saving secrets in Supabase, click Register Paybill URLs once so normal Paybill payments can auto-update balances.</div>
       </form>
     </div>`:''}
     ${owner&&state.school?`<div class="card" style="max-width:640px"><h3>Platform owner controls</h3><p class="small muted">Open the owner subscriptions page to adjust prices, free months, locks, and discounts for any school or individual teacher.</p><button class="btn primary" id="openOwnerPage">Open subscription control</button></div>`:''}
@@ -5376,6 +5571,20 @@ modules.settings = async (m)=>{
     state.school=data;
     toast('Fee payment settings saved');
     navigate('settings');
+  };
+  if($('#registerFeeUrls')) $('#registerFeeUrls').onclick=async()=>{
+    $('#registerFeeUrls').disabled=true;
+    $('#registerFeeUrls').textContent='Registering...';
+    const {data,error}=await sb.functions.invoke('fee-register-urls',{
+      body:{mode:state.school.daraja_environment||'sandbox',shortcode:state.school.fee_paybill||undefined}
+    });
+    if(error || data?.ok===false){
+      toast(data?.message || error?.message || 'Paybill URL registration failed. Check Daraja secrets and mode.', true);
+    }else{
+      toast(data?.message || 'Paybill URLs registered.');
+    }
+    $('#registerFeeUrls').disabled=false;
+    $('#registerFeeUrls').textContent='Register Paybill URLs';
   };
 };
 
