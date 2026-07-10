@@ -2070,6 +2070,14 @@ async function student360(id){
     const latest=rows.slice().sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')))[0]||{};
     return {subject,avg,count:rows.length,latest};
   }).sort((a,b)=>b.avg-a.avg);
+  const progressByPeriod=Object.entries(groupBy(assess,a=>`${a.year||'Year'}|${a.term||'Term'}|${a.grade_recorded||s.grade||''}`)).map(([key,rows])=>{
+    const [year,term,gradeRecorded]=key.split('|');
+    const avg=Math.round(rows.reduce((sum,a)=>sum+scoreNum(a),0)/Math.max(rows.length,1));
+    return {year,term,grade:gradeRecorded,avg,count:rows.length,level:pctToRubricCode(avg)};
+  }).sort((a,b)=>(Number(a.year)-Number(b.year)) || (Number(a.term)-Number(b.term)));
+  const latestPeriod=progressByPeriod[progressByPeriod.length-1];
+  const firstPeriod=progressByPeriod[0];
+  const progressChange=firstPeriod&&latestPeriod&&progressByPeriod.length>1 ? Math.round((latestPeriod.avg-firstPeriod.avg)*10)/10 : null;
   const overall=bySubject.length?Math.round(bySubject.reduce((sum,x)=>sum+x.avg,0)/bySubject.length):null;
   const lastPayment=pay[0];
   m.innerHTML = `
@@ -2096,7 +2104,7 @@ async function student360(id){
         ${bySubject.length?`<table><thead><tr><th>Learning area</th><th>Average</th><th>Latest level</th><th>Records</th></tr></thead><tbody>
           ${bySubject.map(x=>`<tr><td>${esc(x.subject)}</td><td><b>${x.avg}%</b></td><td><span class="badge ${x.latest.score==='BE'?'terra':x.latest.score==='AE'?'amber':''}">${esc(x.latest.score||'Recorded')}</span></td><td>${x.count}</td></tr>`).join('')}
         </tbody></table>`:`<div class="muted small">No academic records yet.</div>`}
-        ${bySubject.length?`<div style="margin-top:1rem"><canvas id="studentProgressChart" height="180"></canvas></div>`:''}
+        ${progressByPeriod.length?`<div style="margin-top:1rem"><canvas id="studentProgressChart" height="180"></canvas></div>`:''}
         ${overall!==null?`<div class="small muted" style="margin-top:.65rem">${esc(autoOverallComment(overall,s.full_name))}</div>`:''}
       </div>
       <div class="col card"><h3>Fees and payments</h3>
@@ -2147,9 +2155,33 @@ async function student360(id){
       </div>
     </div>
 
+    <div class="card" style="margin-top:1.25rem"><div class="section-title">
+      <div><h3>Year-by-year progress</h3>
+      <p class="small muted" style="margin:.2rem 0 0">Use this to follow the learner across previous terms and classes, for example Grade 4 to Grade 8.</p></div>
+      ${progressChange!==null?`<span class="badge ${progressChange>=0?'':'terra'}">${progressChange>=0?'+':''}${progressChange}% change</span>`:''}
+    </div>
+      ${progressByPeriod.length?`
+        <div class="metrics" style="margin-bottom:1rem">
+          <div class="metric"><div class="num">${progressByPeriod.length}</div><div class="lbl">Recorded periods</div></div>
+          <div class="metric"><div class="num">${firstPeriod?firstPeriod.avg+'%':'-'}</div><div class="lbl">First record</div></div>
+          <div class="metric"><div class="num">${latestPeriod?latestPeriod.avg+'%':'-'}</div><div class="lbl">Latest record</div></div>
+          <div class="metric"><div class="num">${latestPeriod?latestPeriod.level:'-'}</div><div class="lbl">Latest CBC level</div></div>
+        </div>
+        <table><thead><tr><th>Period</th><th>Grade recorded</th><th>Average</th><th>CBC level</th><th>Subject records</th><th>Comment</th></tr></thead><tbody>
+          ${progressByPeriod.map(p=>`<tr>
+            <td>Term ${esc(p.term)} ${esc(p.year)}</td>
+            <td>${esc(p.grade||'Not recorded')}</td>
+            <td><b>${p.avg}%</b></td>
+            <td><span class="badge ${p.level==='BE'?'terra':p.level==='AE'?'amber':''}">${esc(p.level||'Recorded')}</span></td>
+            <td>${p.count}</td>
+            <td class="small muted">${esc(autoOverallComment(p.avg,s.full_name))}</td>
+          </tr>`).join('')}
+        </tbody></table>`:`<div class="muted small">No past academic records yet. Enter older marks in CBC Grading by choosing the correct year, term and grade.</div>`}
+    </div>
+
     <div class="card" style="margin-top:1.25rem"><h3>CBC competency record</h3>
-      ${assess.length? `<table><thead><tr><th>Subject</th><th>Strand</th><th>Sub-strand</th><th>Term</th><th>Year</th><th>Score</th></tr></thead>
-      <tbody>${assess.map(a=>`<tr><td>${esc(a.cbc_strands?.subject||'')}</td><td>${esc(a.cbc_strands?.strand||'')}</td><td>${esc(a.cbc_strands?.sub_strand||'')}</td><td>${esc(a.term)}</td><td>${esc(a.year)}</td><td><span class="badge ${a.score==='BE'?'terra':a.score==='AE'?'amber':''}">${esc(a.score)}</span></td></tr>`).join('')}</tbody></table>`
+      ${assess.length? `<table><thead><tr><th>Subject</th><th>Grade</th><th>Term</th><th>Year</th><th>Score</th><th>Average</th></tr></thead>
+      <tbody>${assess.slice().sort((a,b)=>(Number(b.year)-Number(a.year))||(Number(b.term)-Number(a.term))).map(a=>`<tr><td>${esc(a.learning_area||a.cbc_strands?.subject||'')}</td><td>${esc(a.grade_recorded||s.grade||'')}</td><td>${esc(a.term)}</td><td>${esc(a.year)}</td><td><span class="badge ${a.score==='BE'?'terra':a.score==='AE'?'amber':''}">${esc(a.score)}</span></td><td>${scoreNum(a)}%</td></tr>`).join('')}</tbody></table>`
       : `<div class="muted small">No assessments yet.</div>`}
     </div>
 
@@ -2174,8 +2206,8 @@ async function student360(id){
   };
   if($('#studentProgressChart') && window.Chart){
     new Chart($('#studentProgressChart'),{
-      type:'bar',
-      data:{labels:bySubject.map(x=>x.subject),datasets:[{label:'Average %',data:bySubject.map(x=>x.avg),backgroundColor:'#1f6f4a'}]},
+      type:'line',
+      data:{labels:progressByPeriod.map(x=>`T${x.term} ${x.year}`),datasets:[{label:'Average %',data:progressByPeriod.map(x=>x.avg),backgroundColor:'#1f6f4a',borderColor:'#1f6f4a',tension:.35,fill:false,pointRadius:4}]},
       options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,max:100}}}
     });
   }
