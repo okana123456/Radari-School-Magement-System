@@ -568,6 +568,8 @@ on conflict (school_code) do nothing;
     }
     .pct-inp::-webkit-inner-spin-button,.pct-inp::-webkit-outer-spin-button{-webkit-appearance:none}
     .pct-inp:focus{border-color:var(--green);outline:none;box-shadow:0 0 0 2px rgba(31,68,52,.15)}
+    .pct-inp.invalid{border-color:var(--terracotta)!important;background:var(--terracotta-bg);box-shadow:0 0 0 2px rgba(164,69,46,.16)}
+    .mark-warning{font-size:.68rem;color:var(--terracotta);font-weight:700;line-height:1.15;margin-top:.18rem}
     .grading-download-select{height:38px;min-width:190px;max-width:100%;padding:0 .75rem;border:1px solid var(--stone-2);border-radius:var(--radius);background:#fff;color:var(--ink);font-size:.86rem}
     .grading-subject-head{display:block;white-space:normal;overflow-wrap:anywhere;word-break:normal;line-height:1.18}
     .rc-badge{margin-top:.15rem;font-size:.7rem;font-weight:700;min-height:13px;line-height:1;text-align:center}
@@ -2581,6 +2583,7 @@ function renderGradeRows(students, displayAreas, amap, testCol, testNum, outOfMa
             class="pct-inp" data-la="${esc(la)}"
             value="${rawVal}"
             placeholder="0-${max}">
+          <div class="mark-warning"></div>
           <div class="rc-badge" style="color:${rc?levelColor(rc):'var(--muted)'};font-size:.7rem">
             ${rc?`${rc}<span style="color:var(--muted);font-weight:400"> (${pts})</span><br><span style="color:var(--muted);font-weight:400">${Number(val).toFixed(1).replace('.0','')}%</span>`:''}
           </div>
@@ -2593,9 +2596,28 @@ function wireRubricBadges(){
   document.querySelectorAll('.pct-inp').forEach(inp=>inp.oninput=()=>{
     const v=inp.value.trim();
     const badge=inp.parentElement.querySelector('.rc-badge');
+    const warn=inp.parentElement.querySelector('.mark-warning');
     const la=inp.dataset.la||'';
     const maxInp=document.querySelector(`.max-inp[data-la="${CSS.escape(la)}"]`);
     const max=Number(maxInp?.value||inp.max||100);
+    const raw=Number(v);
+    inp.classList.remove('invalid');
+    if(warn) warn.textContent='';
+    if(v!=='' && (!isNaN(raw)) && raw>max){
+      inp.classList.add('invalid');
+      if(warn) warn.textContent=`Max is ${max}`;
+      badge.innerHTML='';
+      badge.style.color='var(--terracotta)';
+      toast(`Mark cannot be above ${max}.`, true);
+      return;
+    }
+    if(v!=='' && (!isNaN(raw)) && raw<0){
+      inp.classList.add('invalid');
+      if(warn) warn.textContent='Cannot be below 0';
+      badge.innerHTML='';
+      badge.style.color='var(--terracotta)';
+      return;
+    }
     const pct=pctFromRawMark(v,max);
     if(v===''||pct==null||isNaN(pct)){ badge.innerHTML=''; badge.style.color='var(--muted)'; return; }
     const rc=pctToRubricCode(pct);
@@ -2826,6 +2848,11 @@ modules.grading = async (m)=>{
           const rawMark=Number(raw);
           if(isNaN(rawMark)||rawMark<0||rawMark>outOf){
             toast(`Invalid mark for ${la}: must be 0-${outOf}`,true);
+            inp.classList.add('invalid');
+            const warn=inp.parentElement.querySelector('.mark-warning');
+            if(warn) warn.textContent=rawMark>outOf?`Max is ${outOf}`:'Cannot be below 0';
+            inp.scrollIntoView({behavior:'smooth',block:'center',inline:'center'});
+            inp.focus();
             invalid=true;
             return;
           }
