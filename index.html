@@ -3212,7 +3212,7 @@ async function openLearningAreaManager(backRoute='grading'){
               <div class="small muted"><b>Topic:</b> ${esc(a.strand||'General')}</div>
               <div class="actions">
                 <button class="btn secondary edit-area" data-id="${a.custom?esc(a.id):''}" data-subject="${esc(a.subject)}" data-strand="${esc(a.strand)}" data-sub="${esc(a.sub_strand)}" data-teacher="${esc(a.teacher_id||'')}" data-instructor="${esc(a.instructor_name||'')}"><i class="ti ti-pencil"></i> Edit</button>
-                ${a.custom?`<button class="btn secondary del-area" data-id="${esc(a.id)}" style="color:var(--terracotta)"><i class="ti ti-trash"></i> Remove</button>`:''}
+                <button class="btn secondary del-area" data-id="${a.custom?esc(a.id):''}" data-subject="${esc(a.subject)}" data-custom="${a.custom?'1':'0'}" style="color:var(--terracotta)"><i class="ti ti-trash"></i> Remove</button>
               </div>
             </div>`;
           }).join('')}
@@ -3242,9 +3242,19 @@ async function openLearningAreaManager(backRoute='grading'){
   };
   $$('.del-area').forEach(a=>a.onclick=async(e)=>{
     e.preventDefault();
-    if(!confirm('Remove this school-added subject? Existing scores will remain, but the subject will stop showing as a configured option.')) return;
-    const {error}=await sb.from('cbc_strands').delete().eq('id',a.dataset.id);
-    if(error){ toast(error.message,true); return; }
+    const subject=a.dataset.subject||'this subject';
+    if(!confirm(`Remove ${subject}? Existing scores will remain, but the subject will stop showing in grading for this grade.`)) return;
+    if(a.dataset.custom==='1'){
+      const {error}=await sb.from('cbc_strands').delete().eq('id',a.dataset.id);
+      if(error){ toast(error.message,true); return; }
+    }else{
+      const grade=state._areaGrade||$('#areaGrade')?.value||selected;
+      const defaults=(CBC_LEARNING_AREAS[grade]||[]).filter(sub=>sub!==subject);
+      if(!defaults.length){ toast('At least one subject should remain for this grade.',true); return; }
+      const seedRows=defaults.map(sub=>({school_id:sid,grade,subject:sub,strand:'General',sub_strand:'CBC default'}));
+      const {error}=await sb.from('cbc_strands').insert(seedRows);
+      if(error){ toast('Could not create the editable subject list: '+error.message,true); return; }
+    }
     toast('Subject removed'); openLearningAreaManager(backRoute);
   });
   $$('.edit-area').forEach(a=>a.onclick=(e)=>{
