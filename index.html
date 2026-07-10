@@ -2244,12 +2244,30 @@ async function student360(id){
     const latest=periods[periods.length-1], first=periods[0];
     const avg=rows.length?Math.round(rows.reduce((sum,a)=>sum+scoreNum(a),0)/rows.length):null;
     const change=first&&latest&&periods.length>1?Math.round((latest.avg-first.avg)*10)/10:null;
+    const strong=subjects.filter(x=>x.avg>=75).slice(0,3);
+    const weak=subjects.slice().sort((a,b)=>a.avg-b.avg).filter(x=>x.avg<58).slice(0,3);
+    const improving=periods.length>1 && latest.avg>first.avg;
     $('#academicStats').innerHTML=rows.length?`
       <div class="metrics" style="margin-bottom:1rem">
         <div class="metric"><div class="num">${avg}%</div><div class="lbl">Filtered average</div></div>
         <div class="metric"><div class="num">${periods.length}</div><div class="lbl">Recorded periods</div></div>
         <div class="metric"><div class="num">${latest?latest.avg+'%':'-'}</div><div class="lbl">Latest period</div></div>
         <div class="metric"><div class="num">${change===null?'-':(change>=0?'+':'')+change+'%'}</div><div class="lbl">Change in range</div></div>
+      </div>
+      <div class="row" style="align-items:stretch;margin-bottom:1rem">
+        <div class="col card" style="box-shadow:none;border:1px solid var(--stone);margin:0;background:var(--green-50)">
+          <h3 style="margin-top:0">Strong areas</h3>
+          ${strong.length?strong.map(x=>`<div style="display:flex;justify-content:space-between;gap:.75rem;border-bottom:1px solid var(--stone);padding:.45rem 0"><span>${esc(x.subject)}</span><b style="color:var(--green)">${x.avg}%</b></div>`).join(''):`<div class="small muted">No clear strong area yet. Look for subjects above 75%.</div>`}
+        </div>
+        <div class="col card" style="box-shadow:none;border:1px solid var(--stone);margin:0;background:#fffaf5">
+          <h3 style="margin-top:0">Needs support</h3>
+          ${weak.length?weak.map(x=>`<div style="display:flex;justify-content:space-between;gap:.75rem;border-bottom:1px solid var(--stone);padding:.45rem 0"><span>${esc(x.subject)}</span><b style="color:var(--terracotta)">${x.avg}%</b></div>`).join(''):`<div class="small muted">No weak area below 58% in this filter.</div>`}
+        </div>
+        <div class="col card" style="box-shadow:none;border:1px solid var(--stone);margin:0">
+          <h3 style="margin-top:0">Quick interpretation</h3>
+          <div class="small muted">${change===null?'Add more term records to see improvement direction.':improving?'Performance is improving across the selected period.':'Performance has dropped or stayed low in the selected period.'}</div>
+          ${weak.length?`<div class="badge terra" style="margin-top:.6rem">Start follow-up with ${esc(weak[0].subject)}</div>`:''}
+        </div>
       </div>`:`<div class="empty"><i class="ti ti-chart-line"></i><div>No academic records match these filters.</div><p class="small muted">Try clearing the filters or enter past marks in CBC Grading.</p></div>`;
     $('#academicTimeline').innerHTML=periods.length?`
       <table><thead><tr><th>Period</th><th>Grade recorded</th><th>Average</th><th>CBC level</th><th>Records</th><th>Progress note</th></tr></thead><tbody>
