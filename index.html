@@ -568,6 +568,8 @@ on conflict (school_code) do nothing;
     }
     .pct-inp::-webkit-inner-spin-button,.pct-inp::-webkit-outer-spin-button{-webkit-appearance:none}
     .pct-inp:focus{border-color:var(--green);outline:none;box-shadow:0 0 0 2px rgba(31,68,52,.15)}
+    .grading-download-select{height:38px;min-width:190px;max-width:100%;padding:0 .75rem;border:1px solid var(--stone-2);border-radius:var(--radius);background:#fff;color:var(--ink);font-size:.86rem}
+    .grading-subject-head{display:block;white-space:normal;overflow-wrap:anywhere;word-break:normal;line-height:1.18}
     .rc-badge{margin-top:.15rem;font-size:.7rem;font-weight:700;min-height:13px;line-height:1;text-align:center}
     @media(max-width:600px){
       .pct-inp{width:48px;font-size:.82rem}
@@ -1439,7 +1441,7 @@ function canAccessRoute(route){
   if(isPlatformOwner()) return ['owner','settings','dashboard'].includes(route);
   if(isIndividualTeacher()) return ['dashboard','students','subjects','attendance','grading','analytics','reports','subscription','settings'].includes(route);
   if(isSchoolTeacher()){
-    const allowed=['dashboard','students','attendance','grading','lessons','assignments','leave','settings'];
+    const allowed=['dashboard','students','subjects','attendance','grading','lessons','assignments','leave','settings'];
     if(isClassTeacher()) allowed.push('reports');
     return allowed.includes(route);
   }
@@ -2369,6 +2371,31 @@ function pctToRubricCode(pct){
   for(const b of RUBRIC_BANDS){ if(p>=b.min&&p<=b.max) return b.code; }
   return 'BE2';
 }
+function rubricPointsFromPct(pct){
+  const code=pctToRubricCode(pct);
+  return code ? (RUBRIC_BANDS.find(b=>b.code===code)?.points||0) : 0;
+}
+function normalizePaperSubjectName(name=''){
+  return String(name||'')
+    .replace(/\s*[-–—:]?\s*(paper|pp|p)\s*[0-9ivx]+$/i,'')
+    .replace(/\s*\((paper|pp|p)\s*[0-9ivx]+\)$/i,'')
+    .trim();
+}
+function subjectPaperLabel(name='', fallbackIndex=1){
+  const text=String(name||'');
+  const m=text.match(/(?:paper|pp|p)\s*([0-9ivx]+)\s*$/i) || text.match(/\((?:paper|pp|p)\s*([0-9ivx]+)\)$/i);
+  return m ? `P${String(m[1]).toUpperCase()}` : `P${fallbackIndex}`;
+}
+function groupedSubjectColumns(displayAreas=[]){
+  const groups=[];
+  displayAreas.forEach(area=>{
+    const base=normalizePaperSubjectName(area)||area;
+    let group=groups.find(g=>g.base.toLowerCase()===base.toLowerCase());
+    if(!group){ group={base,areas:[]}; groups.push(group); }
+    group.areas.push(area);
+  });
+  return groups;
+}
 function bandLabel(band){ return {EE:'Exceeding Expectations',ME:'Meeting Expectations',AE:'Approaching Expectations',BE:'Below Expectations'}[band]||band; }
 function levelColor(code){
   const band=(code||'').slice(0,2);
@@ -2725,7 +2752,7 @@ modules.grading = async (m)=>{
             <div class="small muted">${esc(testLabel)} &nbsp;&middot;&nbsp; ${students.length} learner${students.length>1?'s':''}${teacherSubjects&&teacherSubjects.length?' &middot; Your subjects: <b>'+teacherSubjects.join(', ')+'</b>':''}${tch?.classes_taught?' &middot; Classes: <b>'+esc(tch.classes_taught)+'</b>':''}</div>
           </div>
           <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
-            <select id="gradePdfMode" style="height:38px;min-width:150px">
+            <select id="gradePdfMode" class="grading-download-select" title="Choose the filing copy to download">
               <option value="current">${esc(testLabel)} PDF</option>
               <option value="1">First Test PDF</option>
               <option value="2">Second Test PDF</option>
@@ -2751,7 +2778,7 @@ modules.grading = async (m)=>{
           <table id="gradeTable">
             <thead><tr>
               <th>Learner</th>
-              ${displayAreas.map(la=>`<th style="text-align:center">${esc(la.length>16?la.slice(0,15)+'…':la)}</th>`).join('')}
+              ${displayAreas.map(la=>`<th style="text-align:center"><span class="grading-subject-head" title="${esc(la)}">${esc(la)}</span></th>`).join('')}
             </tr></thead>
             <tbody id="gradeBody">
               ${renderGradeRows(students, displayAreas, amap, testCol, testNum, outOfMap)}
@@ -3027,6 +3054,7 @@ function downloadGradedExamPdf(students, displayAreas, amap, opts={}){
   const testNames={1:'First Test',2:'Second Test',3:'Third Test'};
   const testCols={1:'cat1',2:'cat2',3:'endterm_score'};
   const title=mode==='summary'?'Three-test Summary':`${testNames[mode]||'Assessment'} Analysis`;
+  const subjectGroups=groupedSubjectColumns(displayAreas);
   const getCurrentPct=(studentId, la)=>{
     if(String(opts.currentTestNum)!==mode) return null;
     const row=document.querySelector(`#gradeTable tbody tr[data-sid="${CSS.escape(studentId)}"]`);
@@ -3045,31 +3073,43 @@ function downloadGradedExamPdf(students, displayAreas, amap, opts={}){
     const clean=vals.filter(v=>v!=null&&!isNaN(+v)).map(Number);
     return clean.length?Math.round(clean.reduce((a,b)=>a+b,0)/clean.length*10)/10:null;
   };
-  const areaHeaders=displayAreas.map(la=>`<th>${esc(la)}</th>`).join('');
+  const areaHeaders=subjectGroups.map(group=>{
+    const paperHeaders=group.areas.map((la,idx)=>`<th>${esc(group.areas.length>1?subjectPaperLabel(la,idx+1):la)}</th>`).join('');
+    return paperHeaders + (group.areas.length>1?`<th class="avg-col">${esc(group.base)} Avg</th>`:'');
+  }).join('');
   const rows=students.map((stu,i)=>{
     const subjectCells=[];
-    const totalScores=[];
-    displayAreas.forEach(la=>{
-      if(mode==='summary'){
-        const t1=scoreFor(stu,la,'cat1'), t2=scoreFor(stu,la,'cat2'), t3=scoreFor(stu,la,'endterm_score');
-        const avg=subjectAverage([t1,t2,t3]);
-        if(avg!=null) totalScores.push(avg);
-        subjectCells.push(`<td><div class="mini">${[t1,t2,t3].map((v,idx)=>`T${idx+1}: ${v==null?'-':Math.round(v)}`).join(' | ')}</div><b>${avg==null?'-':Math.round(avg)+'%'}</b><div class="level">${avg==null?'':pctToRubricCode(avg)}</div></td>`);
-      }else{
-        const pct=scoreFor(stu,la,testCols[mode]||'cat1');
-        if(pct!=null) totalScores.push(pct);
-        const outOf=Number(opts.currentOutOfMap?.[la]||100);
-        const raw=pct!=null?rawMarkFromPct(pct,outOf):'';
-        subjectCells.push(`<td><b>${pct==null?'-':raw+'/'+outOf}</b><div class="mini">${pct==null?'':Math.round(pct)+'%'}</div><div class="level">${pct==null?'':pctToRubricCode(pct)}</div></td>`);
+    const finalSubjectScores=[];
+    subjectGroups.forEach(group=>{
+      const groupScores=[];
+      group.areas.forEach((la,idx)=>{
+        if(mode==='summary'){
+          const t1=scoreFor(stu,la,'cat1'), t2=scoreFor(stu,la,'cat2'), t3=scoreFor(stu,la,'endterm_score');
+          const avg=subjectAverage([t1,t2,t3]);
+          if(avg!=null) groupScores.push(avg);
+          subjectCells.push(`<td><div class="mini">${group.areas.length>1?esc(subjectPaperLabel(la,idx+1)):''}</div><b>${avg==null?'-':Math.round(avg)+'%'}</b><div class="mini">${[t1,t2,t3].map((v,n)=>`T${n+1}:${v==null?'-':Math.round(v)}`).join(' ')}</div><div class="level">${avg==null?'':pctToRubricCode(avg)}</div></td>`);
+        }else{
+          const pct=scoreFor(stu,la,testCols[mode]||'cat1');
+          if(pct!=null) groupScores.push(pct);
+          const outOf=Number(opts.currentOutOfMap?.[la]||100);
+          const raw=pct!=null?rawMarkFromPct(pct,outOf):'';
+          subjectCells.push(`<td><div class="mini">${group.areas.length>1?esc(subjectPaperLabel(la,idx+1)):''}</div><b>${pct==null?'-':raw+'/'+outOf}</b><div class="mini">${pct==null?'':Math.round(pct)+'%'}</div><div class="level">${pct==null?'':pctToRubricCode(pct)}</div></td>`);
+        }
+      });
+      const groupAvg=subjectAverage(groupScores);
+      if(groupAvg!=null) finalSubjectScores.push(groupAvg);
+      if(group.areas.length>1){
+        subjectCells.push(`<td class="avg-col"><b>${groupAvg==null?'-':Math.round(groupAvg)+'%'}</b><div class="level">${groupAvg==null?'':pctToRubricCode(groupAvg)}</div><div class="mini">${groupAvg==null?'':'Pts '+rubricPointsFromPct(groupAvg)}</div></td>`);
       }
     });
-    const overall=subjectAverage(totalScores);
+    const overall=subjectAverage(finalSubjectScores);
+    const totalPoints=finalSubjectScores.reduce((sum,p)=>sum+rubricPointsFromPct(p),0);
     return `<tr>
       <td class="idx">${i+1}</td>
       <td class="name">${esc(stu.full_name||'')}<div class="mini">${esc(stu.admission_number||'')}</div></td>
       ${subjectCells.join('')}
       <td class="total"><b>${overall==null?'-':Math.round(overall)+'%'}</b><div class="level">${overall==null?'':pctToRubricCode(overall)}</div></td>
-      <td class="comment">${esc(autoOverallComment(overall,stu.full_name||'Learner'))}</td>
+      <td class="points"><b>${totalPoints||'-'}</b></td>
     </tr>`;
   }).join('');
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -3083,15 +3123,16 @@ function downloadGradedExamPdf(students, displayAreas, amap, opts={}){
     .chips{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
     .chip{border:1px solid #d9d0bf;background:#f7f4ee;border-radius:999px;padding:4px 8px;font-size:10px}
     table{width:100%;border-collapse:collapse;table-layout:fixed}
-    th{background:#1f4434;color:#fff;padding:6px 4px;font-size:9px;text-transform:uppercase;letter-spacing:.03em;border:1px solid #173629;vertical-align:bottom}
+    th{background:#1f4434;color:#fff;padding:6px 4px;font-size:8.5px;text-transform:uppercase;letter-spacing:.02em;border:1px solid #173629;vertical-align:bottom;word-break:normal;overflow-wrap:anywhere}
     td{border:1px solid #e1dccf;padding:5px 4px;vertical-align:top;text-align:center;word-break:break-word}
     tr:nth-child(even) td{background:#fbfaf6}
     .idx{width:26px;color:#666}
-    .name{text-align:left;width:130px;font-weight:700;color:#1f4434}
+    .name{text-align:left;width:125px;font-weight:700;color:#1f4434}
     .mini{font-size:9px;color:#666;font-weight:400;line-height:1.25}
     .level{font-size:9px;color:#8f3d2d;font-weight:800;margin-top:2px}
-    .total{background:#f0f7f2!important;color:#1f4434;width:58px}
-    .comment{text-align:left;width:180px;font-size:9px;line-height:1.25;color:#333}
+    .avg-col{background:#fff7e8!important;color:#8f3d2d;font-weight:700}
+    .total{background:#f0f7f2!important;color:#1f4434;width:56px}
+    .points{background:#edf5ff!important;color:#154c79;width:52px;font-size:12px}
     .footer{margin-top:12px;color:#777;font-size:9px;display:flex;justify-content:space-between;border-top:1px solid #e1dccf;padding-top:8px}
     @media print{body{padding:10mm}.no-print{display:none} @page{size:landscape;margin:8mm}}
   </style></head><body>
@@ -3109,10 +3150,11 @@ function downloadGradedExamPdf(students, displayAreas, amap, opts={}){
       <span class="chip">Learners: ${students.length}</span>
       <span class="chip">Learning areas: ${displayAreas.length}</span>
       <span class="chip">CBC levels: EE, ME, AE, BE</span>
-      ${mode==='summary'?'<span class="chip">Shows Test 1, Test 2, Test 3 and average</span>':'<span class="chip">Raw mark and percentage shown per subject</span>'}
+      ${mode==='summary'?'<span class="chip">Shows Test 1, Test 2, Test 3 and average</span>':'<span class="chip">Raw mark and percentage shown per paper/subject</span>'}
+      <span class="chip">Paper subjects are averaged before total points</span>
     </div>
     <table>
-      <thead><tr><th class="idx">#</th><th class="name">Learner</th>${areaHeaders}<th class="total">Total</th><th class="comment">Auto comment</th></tr></thead>
+      <thead><tr><th class="idx">#</th><th class="name">Learner</th>${areaHeaders}<th class="total">Total Score</th><th class="points">Total Points</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <div class="footer"><span>Generated by Radari</span><span>Teacher filing copy</span></div>
@@ -3141,7 +3183,7 @@ async function openLearningAreaManager(backRoute='grading'){
     <div class="section-title" style="margin-top:1rem">
       <div>
         <h1 style="margin:0">Manage CBC subjects</h1>
-        <p class="muted small" style="margin-top:.2rem">Add the learning areas your school uses. They will appear in grading, report cards and KNEC export.</p>
+        <p class="muted small" style="margin-top:.2rem">Add the learning areas your school uses. For paper-based subjects, add them as English Paper 1 and English Paper 2; Radari will average them in the filing PDF.</p>
       </div>
     </div>
     <div class="row" style="align-items:flex-start">
@@ -3179,7 +3221,7 @@ async function openLearningAreaManager(backRoute='grading'){
       <div class="col card" style="min-width:260px">
         <h3>Add subject</h3>
         <form id="areaForm" class="stack">
-          <div class="field"><label>Learning area / Subject</label><input name="subject" required placeholder="e.g. Computer Studies"></div>
+          <div class="field"><label>Learning area / Subject</label><input name="subject" required placeholder="e.g. English Paper 1 or Computer Studies"></div>
           <div class="field"><label>Instructor from teacher list</label><select name="teacher_id" id="subjectTeacher"><option value="">Not linked</option>${teachers.map(t=>`<option value="${esc(t.id)}">${esc(t.full_name)}</option>`).join('')}</select></div>
           <div class="field"><label>Instructor name on report card</label><input name="instructor_name" id="subjectInstructor" placeholder="e.g. Madam Akinyi"></div>
           <div class="field"><label>Strand / Topic</label><input name="strand" placeholder="General"></div>
