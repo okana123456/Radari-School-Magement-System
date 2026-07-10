@@ -2571,7 +2571,7 @@ modules.grading = async (m)=>{
     <div class="section-title" style="margin-bottom:.85rem">
       <div>
         <h1 style="margin:0">CBC Grading</h1>
-        <p class="muted small" style="margin-top:.2rem">Enter marks per learning area. Schools can add their own classes and subjects.</p>
+        <p class="muted small" style="margin-top:.2rem">Enter marks per learning area. Use Term and Year to enter current or past records for learner progress tracking.</p>
       </div>
       ${canManageSubjects?`<button class="btn secondary" id="manageAreas"><i class="ti ti-settings"></i> Manage subjects</button>`:''}
     </div>
@@ -2692,7 +2692,18 @@ modules.grading = async (m)=>{
             <div style="font-weight:600;font-size:.95rem">${esc(grade)}${stream?' — '+esc(stream):''} <span class="badge amber" style="font-size:.72rem">Term ${term} ${year}</span></div>
             <div class="small muted">${esc(testLabel)} &nbsp;&middot;&nbsp; ${students.length} learner${students.length>1?'s':''}${teacherSubjects&&teacherSubjects.length?' &middot; Your subjects: <b>'+teacherSubjects.join(', ')+'</b>':''}${tch?.classes_taught?' &middot; Classes: <b>'+esc(tch.classes_taught)+'</b>':''}</div>
           </div>
-          <div style="display:flex;gap:.5rem;flex-wrap:wrap"><button class="btn secondary" id="downloadGrades"><i class="ti ti-download"></i> Download Excel</button><button class="btn primary" id="saveGrades"><i class="ti ti-device-floppy"></i> Save</button></div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+            <select id="gradePdfMode" style="height:38px;min-width:150px">
+              <option value="current">${esc(testLabel)} PDF</option>
+              <option value="1">First Test PDF</option>
+              <option value="2">Second Test PDF</option>
+              <option value="3">Third Test PDF</option>
+              <option value="summary">Three-test Summary PDF</option>
+            </select>
+            <button class="btn secondary" id="downloadGradesPdf"><i class="ti ti-file-type-pdf"></i> Download PDF</button>
+            <button class="btn secondary" id="downloadGrades"><i class="ti ti-download"></i> Download Excel</button>
+            <button class="btn primary" id="saveGrades"><i class="ti ti-device-floppy"></i> Save</button>
+          </div>
         </div>
         <div class="field" style="margin-bottom:.75rem">
           <input id="stuFilter" placeholder="Search learner by name or admission number...">
@@ -2733,6 +2744,10 @@ modules.grading = async (m)=>{
     });
 
     $('#downloadGrades').onclick=()=>downloadGradedExamExcel(students, displayAreas, amap, testCol, term, year, testLabel);
+    $('#downloadGradesPdf').onclick=()=>{
+      const mode=$('#gradePdfMode').value==='current'?String(testNum):$('#gradePdfMode').value;
+      downloadGradedExamPdf(students, displayAreas, amap, {grade, stream, term, year, mode, currentTestNum:testNum, currentOutOfMap:outOfMap});
+    };
 
     $('#saveGrades').onclick=async()=>{
       const tableRows=[...document.querySelectorAll('#gradeTable tbody tr')];
@@ -2772,6 +2787,7 @@ modules.grading = async (m)=>{
           toUpsert.push({
             student_id:studentId,
             teacher_id:tch?.id||null,
+            grade_recorded:grade,
             learning_area:la,
             term, year,
             score:pctToRubricCode(avg),
@@ -2791,8 +2807,13 @@ modules.grading = async (m)=>{
       const btn=$('#saveGrades');
       btn.disabled=true; btn.textContent='Saving...';
 
-      const {error}=await sb.from('assessments')
+      let {error}=await sb.from('assessments')
         .upsert(toUpsert,{onConflict:'student_id,learning_area,term,year',ignoreDuplicates:false});
+      if(error && String(error.message||'').toLowerCase().includes('grade_recorded')){
+        const fallbackRows=toUpsert.map(({grade_recorded,...row})=>row);
+        ({error}=await sb.from('assessments')
+          .upsert(fallbackRows,{onConflict:'student_id,learning_area,term,year',ignoreDuplicates:false}));
+      }
 
       btn.disabled=false; btn.innerHTML='<i class="ti ti-device-floppy"></i> Save scores';
 
@@ -2963,6 +2984,111 @@ function downloadGradedExamExcel(students, displayAreas, amap, testCol, term, ye
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Graded exam');
   XLSX.writeFile(wb,`graded-exam-${testLabel.replace(/\s+/g,'-')}-T${term}-${year}.xlsx`);
+}
+
+function downloadGradedExamPdf(students, displayAreas, amap, opts={}){
+  const school=state.school||{};
+  const mode=String(opts.mode||'1');
+  const term=opts.term, year=opts.year;
+  const grade=opts.grade||'Class';
+  const stream=opts.stream||'';
+  const testNames={1:'First Test',2:'Second Test',3:'Third Test'};
+  const testCols={1:'cat1',2:'cat2',3:'endterm_score'};
+  const title=mode==='summary'?'Three-test Summary':`${testNames[mode]||'Assessment'} Analysis`;
+  const getCurrentPct=(studentId, la)=>{
+    if(String(opts.currentTestNum)!==mode) return null;
+    const row=document.querySelector(`#gradeTable tbody tr[data-sid="${CSS.escape(studentId)}"]`);
+    const inp=row?.querySelector(`.pct-inp[data-la="${CSS.escape(la)}"]`);
+    if(!inp || inp.value==='') return null;
+    const outOf=Number(opts.currentOutOfMap?.[la]||100);
+    return pctFromRawMark(inp.value,outOf);
+  };
+  const scoreFor=(stu, la, col)=>{
+    const live = col===testCols[mode] ? getCurrentPct(stu.id, la) : null;
+    if(live!=null && !isNaN(live)) return live;
+    const saved=amap[stu.id]?.[la]?.[col];
+    return saved!=='' && saved!=null && !isNaN(+saved) ? +saved : null;
+  };
+  const subjectAverage=(vals)=>{
+    const clean=vals.filter(v=>v!=null&&!isNaN(+v)).map(Number);
+    return clean.length?Math.round(clean.reduce((a,b)=>a+b,0)/clean.length*10)/10:null;
+  };
+  const areaHeaders=displayAreas.map(la=>`<th>${esc(la)}</th>`).join('');
+  const rows=students.map((stu,i)=>{
+    const subjectCells=[];
+    const totalScores=[];
+    displayAreas.forEach(la=>{
+      if(mode==='summary'){
+        const t1=scoreFor(stu,la,'cat1'), t2=scoreFor(stu,la,'cat2'), t3=scoreFor(stu,la,'endterm_score');
+        const avg=subjectAverage([t1,t2,t3]);
+        if(avg!=null) totalScores.push(avg);
+        subjectCells.push(`<td><div class="mini">${[t1,t2,t3].map((v,idx)=>`T${idx+1}: ${v==null?'-':Math.round(v)}`).join(' | ')}</div><b>${avg==null?'-':Math.round(avg)+'%'}</b><div class="level">${avg==null?'':pctToRubricCode(avg)}</div></td>`);
+      }else{
+        const pct=scoreFor(stu,la,testCols[mode]||'cat1');
+        if(pct!=null) totalScores.push(pct);
+        const outOf=Number(opts.currentOutOfMap?.[la]||100);
+        const raw=pct!=null?rawMarkFromPct(pct,outOf):'';
+        subjectCells.push(`<td><b>${pct==null?'-':raw+'/'+outOf}</b><div class="mini">${pct==null?'':Math.round(pct)+'%'}</div><div class="level">${pct==null?'':pctToRubricCode(pct)}</div></td>`);
+      }
+    });
+    const overall=subjectAverage(totalScores);
+    return `<tr>
+      <td class="idx">${i+1}</td>
+      <td class="name">${esc(stu.full_name||'')}<div class="mini">${esc(stu.admission_number||'')}</div></td>
+      ${subjectCells.join('')}
+      <td class="total"><b>${overall==null?'-':Math.round(overall)+'%'}</b><div class="level">${overall==null?'':pctToRubricCode(overall)}</div></td>
+      <td class="comment">${esc(autoOverallComment(overall,stu.full_name||'Learner'))}</td>
+    </tr>`;
+  }).join('');
+  const html=`<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>${esc(title)} - ${esc(grade)} ${esc(stream)}</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;color:#1c1d1a;margin:0;padding:18px;background:#fff;font-size:11px}
+    .header{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;border-bottom:3px solid #1f4434;padding-bottom:10px;margin-bottom:12px}
+    .school{font-size:20px;font-weight:800;color:#1f4434}
+    .muted{color:#666;font-size:10px;margin-top:2px}
+    .title{text-align:right;font-size:15px;font-weight:800;color:#8f3d2d}
+    .chips{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+    .chip{border:1px solid #d9d0bf;background:#f7f4ee;border-radius:999px;padding:4px 8px;font-size:10px}
+    table{width:100%;border-collapse:collapse;table-layout:fixed}
+    th{background:#1f4434;color:#fff;padding:6px 4px;font-size:9px;text-transform:uppercase;letter-spacing:.03em;border:1px solid #173629;vertical-align:bottom}
+    td{border:1px solid #e1dccf;padding:5px 4px;vertical-align:top;text-align:center;word-break:break-word}
+    tr:nth-child(even) td{background:#fbfaf6}
+    .idx{width:26px;color:#666}
+    .name{text-align:left;width:130px;font-weight:700;color:#1f4434}
+    .mini{font-size:9px;color:#666;font-weight:400;line-height:1.25}
+    .level{font-size:9px;color:#8f3d2d;font-weight:800;margin-top:2px}
+    .total{background:#f0f7f2!important;color:#1f4434;width:58px}
+    .comment{text-align:left;width:180px;font-size:9px;line-height:1.25;color:#333}
+    .footer{margin-top:12px;color:#777;font-size:9px;display:flex;justify-content:space-between;border-top:1px solid #e1dccf;padding-top:8px}
+    @media print{body{padding:10mm}.no-print{display:none} @page{size:landscape;margin:8mm}}
+  </style></head><body>
+    <div class="header">
+      <div>
+        <div class="school">${esc(school.name||'Radari Teacher Workspace')}</div>
+        <div class="muted">${esc(school.county||'')} ${school.phone?' | '+esc(school.phone):''}</div>
+      </div>
+      <div>
+        <div class="title">${esc(title)}</div>
+        <div class="muted">${esc(grade)}${stream?' '+esc(stream):''} | Term ${esc(term)} ${esc(year)} | Printed ${new Date().toLocaleDateString('en-KE')}</div>
+      </div>
+    </div>
+    <div class="chips">
+      <span class="chip">Learners: ${students.length}</span>
+      <span class="chip">Learning areas: ${displayAreas.length}</span>
+      <span class="chip">CBC levels: EE, ME, AE, BE</span>
+      ${mode==='summary'?'<span class="chip">Shows Test 1, Test 2, Test 3 and average</span>':'<span class="chip">Raw mark and percentage shown per subject</span>'}
+    </div>
+    <table>
+      <thead><tr><th class="idx">#</th><th class="name">Learner</th>${areaHeaders}<th class="total">Total</th><th class="comment">Auto comment</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="footer"><span>Generated by Radari</span><span>Teacher filing copy</span></div>
+    <script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script>
+  </body></html>`;
+  const w=window.open('','_blank');
+  w.document.write(html);
+  w.document.close();
 }
 
 
