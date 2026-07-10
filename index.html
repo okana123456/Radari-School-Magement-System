@@ -2083,6 +2083,8 @@ async function student360(id){
   const firstPeriod=progressByPeriod[0];
   const progressChange=firstPeriod&&latestPeriod&&progressByPeriod.length>1 ? Math.round((latestPeriod.avg-firstPeriod.avg)*10)/10 : null;
   const overall=bySubject.length?Math.round(bySubject.reduce((sum,x)=>sum+x.avg,0)/bySubject.length):null;
+  const academicSubjects=[...new Set(assess.map(a=>a.learning_area || a.cbc_strands?.subject).filter(Boolean))].sort();
+  const academicYears=[...new Set(assess.map(a=>a.year).filter(Boolean))].sort((a,b)=>Number(a)-Number(b));
   const lastPayment=pay[0];
   m.innerHTML = `
     <a href="#" id="back" class="small"><i class="ti ti-arrow-left"></i> Back to students</a>
@@ -2103,14 +2105,33 @@ async function student360(id){
       <div class="col metric"><div class="num">${attPct===null?'No register':attPct+'%'}</div><div class="lbl">Attendance rate</div></div>
     </div>
 
-    <div class="row">
-      <div class="col card"><h3>Academic progress</h3>
-        ${bySubject.length?`<table><thead><tr><th>Learning area</th><th>Average</th><th>Latest level</th><th>Records</th></tr></thead><tbody>
-          ${bySubject.map(x=>`<tr><td>${esc(x.subject)}</td><td><b>${x.avg}%</b></td><td><span class="badge ${x.latest.score==='BE'?'terra':x.latest.score==='AE'?'amber':''}">${esc(x.latest.score||'Recorded')}</span></td><td>${x.count}</td></tr>`).join('')}
-        </tbody></table>`:`<div class="muted small">No academic records yet.</div>`}
-        ${progressByPeriod.length?`<div style="margin-top:1rem"><canvas id="studentProgressChart" height="180"></canvas></div>`:''}
-        ${overall!==null?`<div class="small muted" style="margin-top:.65rem">${esc(autoOverallComment(overall,s.full_name))}</div>`:''}
+    <div class="card" style="margin-top:1.25rem">
+      <div class="section-title">
+        <div>
+          <h3>Academic analytics</h3>
+          <p class="small muted" style="margin:.2rem 0 0">Filter the learner's record by year, term, subject, or a custom year range.</p>
+        </div>
+        ${progressChange!==null?`<span class="badge ${progressChange>=0?'':'terra'}">${progressChange>=0?'+':''}${progressChange}% overall change</span>`:''}
       </div>
+      <div class="toolbar" style="margin-bottom:1rem">
+        <div class="field"><label>Year</label><select id="acadYear"><option value="">All years</option>${academicYears.map(y=>`<option>${esc(y)}</option>`).join('')}</select></div>
+        <div class="field"><label>Term</label><select id="acadTerm"><option value="">All terms</option><option value="1">Term 1</option><option value="2">Term 2</option><option value="3">Term 3</option></select></div>
+        <div class="field"><label>Subject</label><select id="acadSubject"><option value="">All subjects</option>${academicSubjects.map(sub=>`<option>${esc(sub)}</option>`).join('')}</select></div>
+        <div class="field"><label>From year</label><input id="acadFrom" type="number" placeholder="e.g. 2025"></div>
+        <div class="field"><label>To year</label><input id="acadTo" type="number" placeholder="e.g. 2026"></div>
+        <button class="btn secondary" id="clearAcademicFilters" type="button">Clear</button>
+      </div>
+      <div id="academicStats"></div>
+      <div id="academicChartWrap" style="margin-top:1rem;display:none"><canvas id="studentProgressChart" height="190"></canvas></div>
+      <div id="academicTimeline" style="margin-top:1rem"></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title"><h3>Subject performance</h3></div>
+      <div id="subjectPerformance"></div>
+    </div>
+
+    <div class="row">
       <div class="col card"><h3>Fees and payments</h3>
         <div class="row" style="margin-bottom:.75rem">
           <div class="col"><div class="small muted">Billed</div><b>${money(totalDue)}</b></div>
@@ -2120,14 +2141,14 @@ async function student360(id){
         ${fees.length? `<table><thead><tr><th>Term</th><th>Due</th><th>Paid</th><th>Balance</th></tr></thead><tbody>${fees.map(f=>`<tr><td>Term ${esc(f.term)} ${esc(f.year)}</td><td>${money(f.amount_due)}</td><td>${money(f.amount_paid)}</td><td>${Number(f.balance||0)>0?`<span class="badge terra">${money(f.balance)}</span>`:`<span class="badge">Cleared</span>`}</td></tr>`).join('')}</tbody></table>`:`<div class="muted small">No fee records yet.</div>`}
         ${lastPayment?`<div class="small muted" style="margin-top:.65rem">Last payment: ${money(lastPayment.amount)} on ${new Date(lastPayment.payment_date||lastPayment.created_at).toLocaleString('en-KE')}</div>`:''}
       </div>
-    </div>
-
-    <div class="row">
       <div class="col card"><h3>Recent payment history</h3>
         ${pay.length?`<table><thead><tr><th>Date</th><th>Amount</th><th>Reference</th><th>Status</th></tr></thead><tbody>
           ${pay.map(p=>`<tr><td class="small muted">${new Date(p.payment_date||p.created_at).toLocaleString('en-KE')}</td><td>${money(p.amount)}</td><td>${esc(p.mpesa_ref||p.account_reference||'Manual record')}</td><td>${esc(p.allocation_status||p.status||'recorded')}</td></tr>`).join('')}
         </tbody></table>`:`<div class="muted small">No payment history yet.</div>`}
       </div>
+    </div>
+
+    <div class="row">
       <div class="col card"><h3>Attendance pattern</h3>
         <div class="metric" style="padding:0;box-shadow:none">
           <div class="num">${attPct===null?'\u2014':attPct+'%'}</div>
@@ -2136,9 +2157,6 @@ async function student360(id){
         ${att.length?`<div class="chips" style="margin-top:.75rem">${['present','late','excused','absent'].map(st=>`<span class="badge ${st==='absent'?'terra':st==='late'?'amber':''}">${st}: ${att.filter(a=>a.status===st).length}</span>`).join('')}</div>`:''}
         ${attPct!==null && attPct<75?`<div class="badge terra" style="margin-top:.5rem">Below 75% - intervention recommended</div>`:''}
       </div>
-    </div>
-
-    <div class="row">
       <div class="col card"><h3>Parent and emergency contacts</h3>
         <table><tbody>
           <tr><td>Father</td><td>${esc(s.father_name||'Not recorded')}</td></tr>
@@ -2159,34 +2177,8 @@ async function student360(id){
       </div>
     </div>
 
-    <div class="card" style="margin-top:1.25rem"><div class="section-title">
-      <div><h3>Year-by-year progress</h3>
-      <p class="small muted" style="margin:.2rem 0 0">Use this to follow the learner across previous terms and classes, for example Grade 4 to Grade 8.</p></div>
-      ${progressChange!==null?`<span class="badge ${progressChange>=0?'':'terra'}">${progressChange>=0?'+':''}${progressChange}% change</span>`:''}
-    </div>
-      ${progressByPeriod.length?`
-        <div class="metrics" style="margin-bottom:1rem">
-          <div class="metric"><div class="num">${progressByPeriod.length}</div><div class="lbl">Recorded periods</div></div>
-          <div class="metric"><div class="num">${firstPeriod?firstPeriod.avg+'%':'-'}</div><div class="lbl">First record</div></div>
-          <div class="metric"><div class="num">${latestPeriod?latestPeriod.avg+'%':'-'}</div><div class="lbl">Latest record</div></div>
-          <div class="metric"><div class="num">${latestPeriod?latestPeriod.level:'-'}</div><div class="lbl">Latest CBC level</div></div>
-        </div>
-        <table><thead><tr><th>Period</th><th>Grade recorded</th><th>Average</th><th>CBC level</th><th>Subject records</th><th>Comment</th></tr></thead><tbody>
-          ${progressByPeriod.map(p=>`<tr>
-            <td>Term ${esc(p.term)} ${esc(p.year)}</td>
-            <td>${esc(p.grade||'Not recorded')}</td>
-            <td><b>${p.avg}%</b></td>
-            <td><span class="badge ${p.level==='BE'?'terra':p.level==='AE'?'amber':''}">${esc(p.level||'Recorded')}</span></td>
-            <td>${p.count}</td>
-            <td class="small muted">${esc(autoOverallComment(p.avg,s.full_name))}</td>
-          </tr>`).join('')}
-        </tbody></table>`:`<div class="muted small">No past academic records yet. Enter older marks in CBC Grading by choosing the correct year, term and grade.</div>`}
-    </div>
-
-    <div class="card" style="margin-top:1.25rem"><h3>CBC competency record</h3>
-      ${assess.length? `<table><thead><tr><th>Subject</th><th>Grade</th><th>Term</th><th>Year</th><th>Score</th><th>Average</th></tr></thead>
-      <tbody>${assess.slice().sort((a,b)=>(Number(b.year)-Number(a.year))||(Number(b.term)-Number(a.term))).map(a=>`<tr><td>${esc(a.learning_area||a.cbc_strands?.subject||'')}</td><td>${esc(a.grade_recorded||s.grade||'')}</td><td>${esc(a.term)}</td><td>${esc(a.year)}</td><td><span class="badge ${a.score==='BE'?'terra':a.score==='AE'?'amber':''}">${esc(a.score)}</span></td><td>${scoreNum(a)}%</td></tr>`).join('')}</tbody></table>`
-      : `<div class="muted small">No assessments yet.</div>`}
+    <div class="card" style="margin-top:1.25rem"><h3>CBC competency levels by term</h3>
+      <div id="competencyBody"></div>
     </div>
 
     <div class="card"><h3>Incidents &amp; commendations</h3>
@@ -2208,13 +2200,97 @@ async function student360(id){
     const url=`https://wa.me/${normalized && normalized.startsWith('254')?normalized:''}?text=${encodeURIComponent(lines.join('\n'))}`;
     window.open(url,'_blank');
   };
-  if($('#studentProgressChart') && window.Chart){
-    new Chart($('#studentProgressChart'),{
-      type:'line',
-      data:{labels:progressByPeriod.map(x=>`T${x.term} ${x.year}`),datasets:[{label:'Average %',data:progressByPeriod.map(x=>x.avg),backgroundColor:'#1f6f4a',borderColor:'#1f6f4a',tension:.35,fill:false,pointRadius:4}]},
-      options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,max:100}}}
+  const academicRecords=assess.slice().sort((a,b)=>(Number(a.year)-Number(b.year))||(Number(a.term)-Number(b.term))||String(a.learning_area||a.cbc_strands?.subject||'').localeCompare(String(b.learning_area||b.cbc_strands?.subject||'')));
+  const filterAcademicRecords=()=>{
+    const year=$('#acadYear')?.value||'', term=$('#acadTerm')?.value||'', subject=$('#acadSubject')?.value||'';
+    const from=Number($('#acadFrom')?.value||''), to=Number($('#acadTo')?.value||'');
+    return academicRecords.filter(a=>{
+      const subj=a.learning_area||a.cbc_strands?.subject||'';
+      const y=Number(a.year||0);
+      if(year && String(a.year)!==String(year)) return false;
+      if(term && String(a.term)!==String(term)) return false;
+      if(subject && subj!==subject) return false;
+      if(from && y<from) return false;
+      if(to && y>to) return false;
+      return true;
     });
-  }
+  };
+  const rowsByPeriod=(rows)=>Object.entries(groupBy(rows,a=>`${a.year||'Year'}|${a.term||'Term'}|${a.grade_recorded||s.grade||''}`)).map(([key,items])=>{
+    const [year,term,gradeRecorded]=key.split('|');
+    const avg=Math.round(items.reduce((sum,a)=>sum+scoreNum(a),0)/Math.max(items.length,1));
+    return {year,term,grade:gradeRecorded,avg,count:items.length,level:pctToRubricCode(avg)};
+  }).sort((a,b)=>(Number(a.year)-Number(b.year))||(Number(a.term)-Number(b.term)));
+  const rowsBySubject=(rows)=>Object.entries(groupBy(rows,a=>a.learning_area||a.cbc_strands?.subject)).map(([subject,items])=>{
+    const avg=Math.round(items.reduce((sum,a)=>sum+scoreNum(a),0)/Math.max(items.length,1));
+    const latest=items.slice().sort((a,b)=>(Number(b.year)-Number(a.year))||(Number(b.term)-Number(a.term)))[0]||{};
+    return {subject,avg,count:items.length,latest};
+  }).sort((a,b)=>b.avg-a.avg);
+  const scoreCell=(v)=>{
+    if(v==null||v===''||isNaN(+v)) return '<span class="muted small">-</span>';
+    const pct=Math.round(+v);
+    const code=pctToRubricCode(pct);
+    const pts=rubricPointsFromPct(pct);
+    return `<b>${pct}%</b><div class="small muted">${esc(code||'')} ${pts?`&middot; ${pts} pts`:''}</div>`;
+  };
+  const competencyRows=(rows)=>rows.slice().sort((a,b)=>
+    (Number(b.year)-Number(a.year))||
+    (Number(b.term)-Number(a.term))||
+    String(a.learning_area||a.cbc_strands?.subject||'').localeCompare(String(b.learning_area||b.cbc_strands?.subject||''))
+  );
+  const renderAcademicAnalytics=()=>{
+    const rows=filterAcademicRecords();
+    const periods=rowsByPeriod(rows);
+    const subjects=rowsBySubject(rows);
+    const latest=periods[periods.length-1], first=periods[0];
+    const avg=rows.length?Math.round(rows.reduce((sum,a)=>sum+scoreNum(a),0)/rows.length):null;
+    const change=first&&latest&&periods.length>1?Math.round((latest.avg-first.avg)*10)/10:null;
+    $('#academicStats').innerHTML=rows.length?`
+      <div class="metrics" style="margin-bottom:1rem">
+        <div class="metric"><div class="num">${avg}%</div><div class="lbl">Filtered average</div></div>
+        <div class="metric"><div class="num">${periods.length}</div><div class="lbl">Recorded periods</div></div>
+        <div class="metric"><div class="num">${latest?latest.avg+'%':'-'}</div><div class="lbl">Latest period</div></div>
+        <div class="metric"><div class="num">${change===null?'-':(change>=0?'+':'')+change+'%'}</div><div class="lbl">Change in range</div></div>
+      </div>`:`<div class="empty"><i class="ti ti-chart-line"></i><div>No academic records match these filters.</div><p class="small muted">Try clearing the filters or enter past marks in CBC Grading.</p></div>`;
+    $('#academicTimeline').innerHTML=periods.length?`
+      <table><thead><tr><th>Period</th><th>Grade recorded</th><th>Average</th><th>CBC level</th><th>Records</th><th>Progress note</th></tr></thead><tbody>
+        ${periods.map(p=>`<tr><td>Term ${esc(p.term)} ${esc(p.year)}</td><td>${esc(p.grade||'Not recorded')}</td><td><b>${p.avg}%</b></td><td><span class="badge ${p.level==='BE'?'terra':p.level==='AE'?'amber':''}">${esc(p.level||'Recorded')}</span></td><td>${p.count}</td><td class="small muted">${esc(autoOverallComment(p.avg,s.full_name))}</td></tr>`).join('')}
+      </tbody></table>`:`<div class="muted small">No chronological progress to show for this filter.</div>`;
+    $('#subjectPerformance').innerHTML=subjects.length?`
+      <table><thead><tr><th>Learning area</th><th>Average</th><th>Latest level</th><th>Records</th></tr></thead><tbody>
+        ${subjects.map(x=>`<tr><td>${esc(x.subject)}</td><td><b>${x.avg}%</b></td><td><span class="badge ${x.latest.score==='BE'?'terra':x.latest.score==='AE'?'amber':''}">${esc(x.latest.score||'Recorded')}</span></td><td>${x.count}</td></tr>`).join('')}
+      </tbody></table>`:`<div class="muted small">No subject records match these filters.</div>`;
+    $('#competencyBody').innerHTML=rows.length?`
+      <div class="small muted" style="margin-bottom:.65rem">Each row shows the learner's scores for that subject in the selected term. Use the filters above to focus on one term or subject.</div>
+      <table><thead><tr><th>Period</th><th>Subject</th><th>First Test</th><th>Second Test</th><th>Third Test</th><th>Term Average</th><th>Level</th><th>Points</th></tr></thead>
+      <tbody>${competencyRows(rows).map(a=>{
+        const avg=scoreNum(a);
+        const code=pctToRubricCode(avg);
+        const pts=rubricPointsFromPct(avg);
+        return `<tr>
+          <td>Term ${esc(a.term)} ${esc(a.year)}<div class="small muted">${esc(a.grade_recorded||s.grade||'')}</div></td>
+          <td><b>${esc(a.learning_area||a.cbc_strands?.subject||'')}</b></td>
+          <td>${scoreCell(a.cat1)}</td>
+          <td>${scoreCell(a.cat2)}</td>
+          <td>${scoreCell(a.endterm_score)}</td>
+          <td><b>${avg}%</b></td>
+          <td><span class="badge ${code==='BE1'||code==='BE2'?'terra':code==='AE1'||code==='AE2'?'amber':''}">${esc(code||a.score||'Recorded')}</span></td>
+          <td><b>${pts||'-'}</b></td>
+        </tr>`;
+      }).join('')}</tbody></table>`:`<div class="muted small">No detailed academic records for this filter.</div>`;
+    const wrap=$('#academicChartWrap');
+    if(wrap) wrap.style.display=periods.length?'block':'none';
+    if(state._studentProgressChart){ state._studentProgressChart.destroy(); state._studentProgressChart=null; }
+    if($('#studentProgressChart') && window.Chart && periods.length){
+      state._studentProgressChart=new Chart($('#studentProgressChart'),{
+        type:'line',
+        data:{labels:periods.map(x=>`T${x.term} ${x.year}`),datasets:[{label:'Average %',data:periods.map(x=>x.avg),backgroundColor:'#1f6f4a',borderColor:'#1f6f4a',tension:.35,fill:false,pointRadius:4}]},
+        options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,max:100}}}
+      });
+    }
+  };
+  ['acadYear','acadTerm','acadSubject','acadFrom','acadTo'].forEach(fid=>{ const el=$('#'+fid); if(el) el.oninput=renderAcademicAnalytics; if(el) el.onchange=renderAcademicAnalytics; });
+  $('#clearAcademicFilters').onclick=()=>{ ['acadYear','acadTerm','acadSubject','acadFrom','acadTo'].forEach(fid=>{ const el=$('#'+fid); if(el) el.value=''; }); renderAcademicAnalytics(); };
+  renderAcademicAnalytics();
   $('#addHealth').onclick = ()=>{
     const wrap = el(`<div class="card" style="max-width:560px;margin-top:1rem"><h3>Add health condition</h3>
       <form id="hf" class="stack">
