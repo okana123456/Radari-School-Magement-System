@@ -443,6 +443,8 @@ on conflict (school_code) do nothing;
     .btn.secondary:hover{background:var(--green-50)}
     .btn.danger{background:var(--terracotta);color:#fff;border-color:var(--terracotta)}
     .btn.block{width:100%;height:48px}
+    .link-btn{border:0;background:transparent;color:var(--terracotta);padding:0;font:inherit;cursor:pointer;text-decoration:underline}
+    .link-btn:hover{color:#7f2d1c}
     .divider{display:flex;align-items:center;gap:.75rem;color:var(--muted);font-size:.8rem;margin:1.25rem 0}
     .divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--stone-2)}
     .pwd-check{font-size:.78rem;color:var(--muted);margin-top:.4rem}
@@ -875,6 +877,31 @@ const $ = (sel, root=document) => root.querySelector(sel);
 const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
 const el = (html) => { const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstElementChild; };
 const esc = (s) => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const localDateISO = (d=new Date()) => new Date(d).toLocaleDateString('en-CA',{timeZone:'Africa/Nairobi'});
+const dateDMY = (value) => {
+  if(!value) return '';
+  const d = String(value).includes('T') ? new Date(value) : new Date(`${value}T00:00:00`);
+  if(isNaN(d)) return String(value);
+  return d.toLocaleDateString('en-GB',{timeZone:'Africa/Nairobi',day:'2-digit',month:'2-digit',year:'numeric'});
+};
+const dateTimeDMY = (value) => {
+  if(!value) return '';
+  const d = new Date(value);
+  if(isNaN(d)) return String(value);
+  return d.toLocaleString('en-GB',{timeZone:'Africa/Nairobi',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+};
+function normalizeKenyanPhone(phone=''){
+  let p=String(phone||'').replace(/\D/g,'');
+  if(p.startsWith('0')) p='254'+p.slice(1);
+  if(p.startsWith('7') || p.startsWith('1')) p='254'+p;
+  return /^254(7|1)\d{8}$/.test(p) ? p : '';
+}
+function openWhatsAppMessage(phone, message){
+  const normalized=normalizeKenyanPhone(phone);
+  if(!normalized) return false;
+  window.open(`https://wa.me/${normalized}?text=${encodeURIComponent(message)}`,'_blank');
+  return true;
+}
 const progress = {
   start(){ const b=$('#progress'); b.style.width='15%'; this._t=setInterval(()=>{const w=parseFloat(b.style.width); if(w<85) b.style.width=(w+5)+'%';},250); },
   done(){ clearInterval(this._t); const b=$('#progress'); b.style.width='100%'; setTimeout(()=>b.style.width='0',300); }
@@ -1504,7 +1531,7 @@ async function dashboardFinance(m){
       <div class="metric"><div class="num">${bals.filter(b=>+b.balance>0).length}</div><div class="lbl">Open balances</div></div>
     </div>
     <div class="card"><button class="btn primary" data-route="fees"><i class="ti ti-wallet"></i> Open Fees</button></div>
-    <div class="card"><h3>Recent payments</h3>${payments.length?payments.map(p=>`<div class="small" style="display:flex;justify-content:space-between;border-bottom:1px solid var(--stone);padding:.45rem 0"><span>${new Date(p.created_at).toLocaleString('en-KE')}</span><b>KSh ${(+p.amount||0).toLocaleString()}</b></div>`).join(''):'<div class="muted small">No recent fee payments.</div>'}</div>`;
+    <div class="card"><h3>Recent payments</h3>${payments.length?payments.map(p=>`<div class="small" style="display:flex;justify-content:space-between;border-bottom:1px solid var(--stone);padding:.45rem 0"><span>${new Date(p.created_at).toLocaleString('en-GB')}</span><b>KSh ${(+p.amount||0).toLocaleString()}</b></div>`).join(''):'<div class="muted small">No recent fee payments.</div>'}</div>`;
   m.querySelectorAll('[data-route]').forEach(a=>a.onclick=(e)=>{e.preventDefault();navigate(a.dataset.route);});
 }
 
@@ -1527,7 +1554,7 @@ async function dashboardAdmin(m){
   const outstanding=due-paid;
   m.innerHTML=`
     <h1>Good ${new Date().getHours()<12?'morning':'afternoon'}, ${esc((state.profile.full_name||'').split(' ')[0])}.</h1>
-    <p class="muted small" style="margin-top:-.25rem;margin-bottom:1.1rem">${esc(state.school?.name||'')} &mdash; ${new Date().toLocaleDateString('en-KE',{weekday:'long',day:'numeric',month:'long'})}</p>
+    <p class="muted small" style="margin-top:-.25rem;margin-bottom:1.1rem">${esc(state.school?.name||'')} &mdash; ${new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}</p>
     <div class="metrics">
       <div class="metric"><div class="num">${students.count||0}</div><div class="lbl">Learners enrolled</div></div>
       <div class="metric"><div class="num">${teachers.count||0}</div><div class="lbl">Active teachers</div></div>
@@ -1595,7 +1622,7 @@ async function dashboardTeacher(m){
   const todaySlots=(myTimetable.data||[]).filter(r=>r.day_of_week===todayDay);
   m.innerHTML=`
     <h1>Good ${new Date().getHours()<12?'morning':'afternoon'}, ${esc((state.profile.full_name||tch?.full_name||'').split(' ')[0])}.</h1>
-    <p class="muted" style="margin-top:-.4rem;margin-bottom:1.75rem">${new Date().toLocaleDateString('en-KE',{weekday:'long',day:'numeric',month:'long'})}</p>
+    <p class="muted" style="margin-top:-.4rem;margin-bottom:1.75rem">${new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}</p>
     ${!tch?`<div class="card" style="border:1px solid var(--amber);margin-bottom:1rem"><p class="muted small">Your account is not yet linked to a teacher record. Ask your school admin to link your account under Staff Management.</p></div>`:teacherAccessNotice()}
     <div class="row" style="align-items:flex-start;gap:1.25rem">
       <div style="flex:2;min-width:0;display:flex;flex-direction:column;gap:1.25rem">
@@ -1662,7 +1689,7 @@ async function dashboardParent(m){
   const balMap={};(bals.data||[]).forEach(b=>{if(!balMap[b.student_id])balMap[b.student_id]=[];balMap[b.student_id].push(b);});
   m.innerHTML=`
     <h1>Hello, ${esc((state.profile.full_name||'').split(' ')[0])}.</h1>
-    <p class="muted" style="margin-top:-.4rem;margin-bottom:1.75rem">${new Date().toLocaleDateString('en-KE',{weekday:'long',day:'numeric',month:'long'})}</p>
+    <p class="muted" style="margin-top:-.4rem;margin-bottom:1.75rem">${new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}</p>
     ${kids.map(k=>{
       const status=attMap[k.id];
       const kidBals=balMap[k.id]||[];
@@ -1689,7 +1716,7 @@ async function dashboardParent(m){
         ${(notices.data||[]).length?(notices.data||[]).map(n=>`
           <div style="padding:.5rem 0;border-bottom:1px solid var(--stone)">
             <div style="font-weight:500">${esc(n.title)}</div>
-            <div class="small muted">${new Date(n.created_at).toLocaleDateString('en-KE',{day:'numeric',month:'short'})}</div>
+            <div class="small muted">${new Date(n.created_at).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</div>
             <div class="small">${esc((n.body||'').slice(0,120))}</div>
           </div>`).join(''):`<div class="muted small">No notices yet.</div>`}
       </div>
@@ -1730,6 +1757,7 @@ modules.students = async (m)=>{
   const { data:allStudents=[] } = await sb.from('students').select('*').eq('school_id',sid).order('full_name');
   const students = filterStudentsForTeacher(allStudents);
   const grades = ['All',...new Set(students.map(s=>s.grade).filter(Boolean).sort())];
+  const streams = ['All',...new Set(students.map(s=>s.stream).filter(Boolean).sort())];
   const quickClass = getTeacherQuickClass(students);
   const quickGradeOptions = [...new Set([...DEFAULT_GRADES,...students.map(s=>s.grade).filter(Boolean)])];
   m.innerHTML = `
@@ -1738,6 +1766,8 @@ modules.students = async (m)=>{
         ${canManage?`<button class="btn secondary" id="importStu"><i class="ti ti-upload"></i> Import Excel</button>`:''}
         ${canManage?`<button class="btn secondary" id="tplStu"><i class="ti ti-file-spreadsheet"></i> Template</button>`:''}
         ${canManage?`<button class="btn secondary" id="dlXls"><i class="ti ti-file-spreadsheet"></i> Download list</button>`:''}
+        ${canManage?`<button class="btn secondary" id="bulkAcademicWa"><i class="ti ti-brand-whatsapp"></i> Academic WhatsApp</button>`:''}
+        ${canManage?`<button class="btn secondary" id="bulkFinanceWa"><i class="ti ti-brand-whatsapp"></i> Finance WhatsApp</button>`:''}
         ${canManage?`<button class="btn primary" id="addStu"><i class="ti ti-plus"></i> Add learner</button>`:''}
       </div>
     </div>
@@ -1754,6 +1784,9 @@ modules.students = async (m)=>{
       <div class="field"><label>Filter by grade</label>
         <select id="gradeFilter">${grades.map(g=>`<option>${g}</option>`).join('')}</select>
       </div>
+      <div class="field"><label>Filter by stream</label>
+        <select id="streamFilter">${streams.map(s=>`<option>${esc(s)}</option>`).join('')}</select>
+      </div>
       <div class="field"><label>Search</label>
         <input id="search" placeholder="Name or admission no.">
       </div>
@@ -1764,11 +1797,13 @@ modules.students = async (m)=>{
     <input type="file" id="studentImportFile" accept=".xlsx,.xls,.csv" style="display:none">`;
 
   const refresh = ()=>{
-    const g=$('#gradeFilter').value, q=$('#search').value.toLowerCase();
-    $('#stuTable').innerHTML = renderStudentTable(students, g, q);
+    const g=$('#gradeFilter').value, stream=$('#streamFilter').value, q=$('#search').value.toLowerCase();
+    $('#stuTable').innerHTML = renderStudentTable(students, g, stream, q, canManage);
     $('#stuTable').querySelectorAll('.open').forEach(a=>a.onclick=(e)=>{e.preventDefault(); student360(a.dataset.id);});
+    $('#stuTable').querySelectorAll('.remove-student').forEach(btn=>btn.onclick=()=>removeStudent(btn.dataset.id, btn.dataset.name));
   };
   $('#gradeFilter').onchange = refresh;
+  $('#streamFilter').onchange = refresh;
   $('#search').oninput = refresh;
   refresh();
 
@@ -1798,16 +1833,19 @@ modules.students = async (m)=>{
   };
   if($('#tplStu')) $('#tplStu').onclick = downloadStudentImportTemplate;
   if($('#dlXls')) $('#dlXls').onclick = ()=>{
-    const g=$('#gradeFilter').value, q=$('#search').value.toLowerCase();
-    const filtered = students.filter(s=>(g==='All'||s.grade===g)&&(!q||s.full_name.toLowerCase().includes(q)||( s.admission_number||'').toLowerCase().includes(q)));
+    const g=$('#gradeFilter').value, stream=$('#streamFilter').value, q=$('#search').value.toLowerCase();
+    const filtered = students.filter(s=>(g==='All'||s.grade===g)&&(stream==='All'||s.stream===stream)&&(!q||s.full_name.toLowerCase().includes(q)||( s.admission_number||'').toLowerCase().includes(q)));
     const csv = [['Admission No','Full Name','Grade','Stream','Gender','Date of Birth'],...filtered.map(s=>[s.admission_number||'',s.full_name,s.grade||'',s.stream||'',s.gender||'',s.date_of_birth||''])].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
     const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`students-${g}.csv`; a.click();
   };
+  if($('#bulkAcademicWa')) $('#bulkAcademicWa').onclick = ()=>sendBulkParentWhatsApp(students, 'academic');
+  if($('#bulkFinanceWa')) $('#bulkFinanceWa').onclick = ()=>sendBulkParentWhatsApp(students, 'finance');
 };
 
-function renderStudentTable(students, grade, query){
+function renderStudentTable(students, grade, stream, query, canManage=false){
   const filtered = students.filter(s=>
     (grade==='All'||s.grade===grade) &&
+    (stream==='All'||s.stream===stream) &&
     (!query||(s.full_name||'').toLowerCase().includes(query)||(s.admission_number||'').toLowerCase().includes(query))
   );
   if(!filtered.length) return `<div class="empty"><i class="ti ti-users"></i><div>No learners match this filter.</div></div>`;
@@ -1818,7 +1856,7 @@ function renderStudentTable(students, grade, query){
       <td class="small muted">${esc(s.nemis_number||s.admission_number||'')}</td>
       <td>${esc([s.grade,s.stream].filter(Boolean).join(' ')||'')}</td>
       <td>${esc(s.gender||'')}</td>
-      <td><a href="#" data-id="${s.id}" class="open small">View</a></td>
+      <td><a href="#" data-id="${s.id}" class="open small">View</a>${canManage?` &middot; <button class="link-btn remove-student small" data-id="${esc(s.id)}" data-name="${esc(s.full_name)}" type="button">Remove</button>`:''}</td>
     </tr>`).join('')}</tbody></table>`;
   }
   return `<table><thead><tr><th>Name</th><th>Adm.</th><th>Grade</th><th>Stream</th><th>Gender</th><th>DOB</th><th></th></tr></thead>
@@ -1826,9 +1864,43 @@ function renderStudentTable(students, grade, query){
     <td><a href="#" data-id="${s.id}" class="open">${esc(s.full_name)}</a></td>
     <td class="small muted">${esc(s.admission_number||'')}</td>
     <td>${esc(s.grade||'')}</td><td>${esc(s.stream||'')}</td><td>${esc(s.gender||'')}</td>
-    <td class="small muted">${esc(s.date_of_birth||'')}</td>
-    <td><a href="#" data-id="${s.id}" class="open small">View</a></td>
+    <td class="small muted">${dateDMY(s.date_of_birth)}</td>
+    <td><a href="#" data-id="${s.id}" class="open small">View</a>${canManage?` &middot; <button class="link-btn remove-student small" data-id="${esc(s.id)}" data-name="${esc(s.full_name)}" type="button">Remove</button>`:''}</td>
   </tr>`).join('')}</tbody></table>`;
+}
+
+async function removeStudent(id, name='this learner'){
+  if(!confirm(`Remove ${name} from the school records? This also removes linked attendance, fee, report, incident and assessment records.`)) return;
+  const {error}=await sb.from('students').delete().eq('id',id).eq('school_id',state.profile.school_id);
+  if(error){ toast('Could not remove learner: '+error.message,true); return; }
+  toast('Learner removed from the system.');
+  navigate('students');
+}
+
+async function sendBulkParentWhatsApp(students=[], type='academic'){
+  const sid=state.profile.school_id;
+  const g=$('#gradeFilter')?.value||'All', stream=$('#streamFilter')?.value||'All', q=($('#search')?.value||'').toLowerCase();
+  const target=students.filter(s=>(g==='All'||s.grade===g)&&(stream==='All'||s.stream===stream)&&(!q||(s.full_name||'').toLowerCase().includes(q)||(s.admission_number||'').toLowerCase().includes(q)));
+  if(!target.length){ toast('No learners match the current filter.',true); return; }
+  let feeMap={}, scoreMap={};
+  if(type==='finance'){
+    const {data:fees=[]}=await sb.from('fee_balances').select('student_id,amount_due,amount_paid,balance,term,year').eq('school_id',sid).in('student_id',target.map(s=>s.id));
+    fees.forEach(f=>{ const cur=feeMap[f.student_id]; if(!cur || Number(f.year||0)>Number(cur.year||0) || Number(f.term||0)>Number(cur.term||0)) feeMap[f.student_id]=f; });
+  }else{
+    const {data:assess=[]}=await sb.from('assessments').select('student_id,weighted_score,learning_area,term,year').in('student_id',target.map(s=>s.id)).not('learning_area','is',null);
+    const grouped={}; assess.forEach(a=>{ (grouped[a.student_id]||(grouped[a.student_id]=[])).push(Number(a.weighted_score||0)); });
+    Object.keys(grouped).forEach(id=>{ const vals=grouped[id].filter(v=>!isNaN(v)); scoreMap[id]=vals.length?Math.round(vals.reduce((a,b)=>a+b,0)/vals.length):null; });
+  }
+  let opened=0, skipped=0;
+  target.forEach((s,i)=>{
+    const phone=s.contact_phone||s.contact_phone2||s.emergency_phone;
+    const msg=type==='finance'
+      ? (()=>{ const f=feeMap[s.id]; return `Hello parent/guardian, fee update for ${s.full_name}: ${f?`Term ${f.term} ${f.year}, billed KSh ${Number(f.amount_due||0).toLocaleString()}, paid KSh ${Number(f.amount_paid||0).toLocaleString()}, balance KSh ${Number(f.balance||0).toLocaleString()}.`:'fee statement is not yet updated.'}`; })()
+      : (()=>{ const avg=scoreMap[s.id]; return `Hello parent/guardian, academic update for ${s.full_name}: ${avg!=null?`current average is ${avg}%. ${autoOverallComment(avg,s.full_name)}`:'assessment records are not yet complete.'}`; })();
+    if(!normalizeKenyanPhone(phone)){ skipped++; return; }
+    setTimeout(()=>{ if(openWhatsAppMessage(phone,msg)) opened++; }, i*350);
+  });
+  toast(`Preparing ${type} WhatsApp messages. Invalid or missing numbers skipped: ${skipped}.`);
 }
 
 function downloadStudentImportTemplate(){
@@ -2139,11 +2211,11 @@ async function student360(id){
           <div class="col"><div class="small muted">Credit</div><b>${money(availableCredit)}</b></div>
         </div>
         ${fees.length? `<table><thead><tr><th>Term</th><th>Due</th><th>Paid</th><th>Balance</th></tr></thead><tbody>${fees.map(f=>`<tr><td>Term ${esc(f.term)} ${esc(f.year)}</td><td>${money(f.amount_due)}</td><td>${money(f.amount_paid)}</td><td>${Number(f.balance||0)>0?`<span class="badge terra">${money(f.balance)}</span>`:`<span class="badge">Cleared</span>`}</td></tr>`).join('')}</tbody></table>`:`<div class="muted small">No fee records yet.</div>`}
-        ${lastPayment?`<div class="small muted" style="margin-top:.65rem">Last payment: ${money(lastPayment.amount)} on ${new Date(lastPayment.payment_date||lastPayment.created_at).toLocaleString('en-KE')}</div>`:''}
+        ${lastPayment?`<div class="small muted" style="margin-top:.65rem">Last payment: ${money(lastPayment.amount)} on ${new Date(lastPayment.payment_date||lastPayment.created_at).toLocaleString('en-GB')}</div>`:''}
       </div>
       <div class="col card"><h3>Recent payment history</h3>
         ${pay.length?`<table><thead><tr><th>Date</th><th>Amount</th><th>Reference</th><th>Status</th></tr></thead><tbody>
-          ${pay.map(p=>`<tr><td class="small muted">${new Date(p.payment_date||p.created_at).toLocaleString('en-KE')}</td><td>${money(p.amount)}</td><td>${esc(p.mpesa_ref||p.account_reference||'Manual record')}</td><td>${esc(p.allocation_status||p.status||'recorded')}</td></tr>`).join('')}
+          ${pay.map(p=>`<tr><td class="small muted">${new Date(p.payment_date||p.created_at).toLocaleString('en-GB')}</td><td>${money(p.amount)}</td><td>${esc(p.mpesa_ref||p.account_reference||'Manual record')}</td><td>${esc(p.allocation_status||p.status||'recorded')}</td></tr>`).join('')}
         </tbody></table>`:`<div class="muted small">No payment history yet.</div>`}
       </div>
     </div>
@@ -2189,16 +2261,13 @@ async function student360(id){
   $('#back').onclick=(e)=>{e.preventDefault();navigate('students');};
   $('#edit').onclick = ()=>studentForm(s);
   $('#shareWhatsApp').onclick=()=>{
-    const phone=String(s.contact_phone||s.contact_phone2||'').replace(/\D/g,'');
-    const normalized=phone.startsWith('0')?'254'+phone.slice(1):phone;
     const lines=[
       `Hello, this is an academic update for ${s.full_name}.`,
       overall!==null?`Current average: ${overall}%.`:'Assessment records are not complete yet.',
       bySubject.slice(0,4).map(x=>`${x.subject}: ${x.avg}%`).join('; '),
       overall!==null?autoOverallComment(overall,s.full_name):'The teacher will update more scores soon.'
     ].filter(Boolean);
-    const url=`https://wa.me/${normalized && normalized.startsWith('254')?normalized:''}?text=${encodeURIComponent(lines.join('\n'))}`;
-    window.open(url,'_blank');
+    if(!openWhatsAppMessage(s.contact_phone||s.contact_phone2, lines.join('\n'))) toast('No valid WhatsApp phone number found for this learner.', true);
   };
   const academicRecords=assess.slice().sort((a,b)=>(Number(a.year)-Number(b.year))||(Number(a.term)-Number(b.term))||String(a.learning_area||a.cbc_strands?.subject||'').localeCompare(String(b.learning_area||b.cbc_strands?.subject||'')));
   const filterAcademicRecords=()=>{
@@ -2332,7 +2401,7 @@ async function student360(id){
 /* --- ATTENDANCE --- */
 modules.attendance = async (m)=>{
   const sid = state.profile.school_id;
-  const today = new Date().toISOString().slice(0,10);
+  const today = localDateISO();
   const teacherGrades=assignedTeacherGrades();
   const teacherStreams=assignedTeacherStreams();
   const gradeOptions=isSchoolTeacher() && teacherGrades.length ? teacherGrades : DEFAULT_GRADES;
@@ -2349,6 +2418,7 @@ modules.attendance = async (m)=>{
     </div><div id="att"></div>`;
   $('#load').onclick = async ()=>{
     const grade=$('#g').value, stream=$('#s').value, date=$('#d').value;
+    if(date > today){ toast('Future dates cannot be marked for attendance.', true); return; }
     let q = sb.from('students').select('id,full_name,admission_number,grade,stream').eq('school_id',sid).order('full_name');
     if(grade) q=q.eq('grade',grade); if(stream) q=q.eq('stream',stream);
     const { data:rawStudents=[] } = await q;
@@ -2356,9 +2426,10 @@ modules.attendance = async (m)=>{
     const { data:existing=[] } = await sb.from('student_attendance').select('student_id,status').eq('date',date).in('student_id', students.map(s=>s.id).concat('00000000-0000-0000-0000-000000000000'));
     const map = Object.fromEntries(existing.map(e=>[e.student_id, e.status]));
     const a=$('#att'); a.innerHTML = `<div class="card">${students.length?`
+      <div class="section-title" style="margin-bottom:.75rem"><div><h3 style="margin:0">Register for ${dateDMY(date)}</h3><p class="small muted" style="margin:.2rem 0 0">${esc(grade||'All classes')}${stream?' - '+esc(stream):''}</p></div></div>
       <table class="attendance-table"><thead><tr><th>Learner</th><th>Mark</th><th>History</th></tr></thead>
       <tbody>${students.map(s=>{
-        const cur = map[s.id]||'present';
+        const cur = map[s.id]||'';
         const alreadyMarked = !!map[s.id];
         return `<tr data-id="${s.id}" class="${alreadyMarked?'marked':''}"><td><div class="attendance-name">${esc(s.full_name)}</div><div class="attendance-meta">${esc([s.grade,s.stream].filter(Boolean).join(' ')||'Class not set')} &middot; ${esc(s.admission_number||'No adm.')}</div></td>
           <td><div class="attendance-status">
@@ -2379,12 +2450,19 @@ modules.attendance = async (m)=>{
       showAttendanceHistory(learner, $('#fromDate').value||date, $('#toDate').value||date);
     });
     if($('#downloadAttendance')) $('#downloadAttendance').onclick=()=>{
-      const rows=[['Date','Name','Admission No','Grade','Stream','Status'],...students.map(s=>[date,s.full_name||'',s.admission_number||'',s.grade||'',s.stream||'',a.querySelector(`tr[data-id="${s.id}"] .score-btn.active`)?.dataset.st||map[s.id]||'present'])];
+      const rows=[['Date','Name','Admission No','Grade','Stream','Status'],...students.map(s=>[dateDMY(date),s.full_name||'',s.admission_number||'',s.grade||'',s.stream||'',a.querySelector(`tr[data-id="${s.id}"] .score-btn.active`)?.dataset.st||map[s.id]||''])];
       const ws=XLSX.utils.aoa_to_sheet(rows); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Attendance'); XLSX.writeFile(wb,`attendance-${date}.xlsx`);
     };
     if($('#save')) $('#save').onclick = async ()=>{
+      if(date > today){ toast('Future dates cannot be marked for attendance.', true); return; }
+      const unmarked=$$('#att tbody tr').filter(tr=>!tr.querySelector('.score-btn.active'));
+      if(unmarked.length){
+        toast(`Please mark every learner before saving. ${unmarked.length} learner${unmarked.length>1?'s are':' is'} not marked.`, true);
+        unmarked[0].scrollIntoView({behavior:'smooth',block:'center'});
+        return;
+      }
       const rows = $$('#att tbody tr').map(tr=>{
-        const st = tr.querySelector('.score-btn.active')?.dataset.st || 'present';
+        const st = tr.querySelector('.score-btn.active')?.dataset.st;
         return { student_id:tr.dataset.id, school_id:sid, date, status:st, noted_by:state.profile.id };
       });
       const { error } = await sb.from('student_attendance').upsert(rows, { onConflict:'student_id,date' });
@@ -2396,6 +2474,7 @@ modules.attendance = async (m)=>{
   $('#downloadRange').onclick=async()=>{
     const grade=$('#g').value, stream=$('#s').value, from=$('#fromDate').value, to=$('#toDate').value;
     if(!from||!to){ toast('Choose the date range first.',true); return; }
+    if(from > today || to > today){ toast('Attendance reports cannot include future dates.', true); return; }
     let q=sb.from('students').select('id,full_name,admission_number,grade,stream').eq('school_id',sid).order('full_name');
     if(grade) q=q.eq('grade',grade); if(stream) q=q.eq('stream',stream);
     const {data:rawStudents=[]}=await q;
@@ -2434,7 +2513,7 @@ async function showAttendanceHistory(student, from, to){
       <div class="metric"><div class="num">${counts.late||0}</div><div class="lbl">Late</div></div>
       <div class="metric"><div class="num">${counts.excused||0}</div><div class="lbl">Excused</div></div>
     </div>
-    ${rows.length?`<div class="small muted">${rows.slice(0,8).map(r=>`${esc(r.date)}: ${esc(r.status)}`).join(' &middot; ')}</div>`:'<div class="small muted">No attendance has been recorded in this date range.</div>'}
+    ${rows.length?`<div class="small muted">${rows.slice(0,8).map(r=>`${dateDMY(r.date)}: ${esc(r.status)}`).join(' &middot; ')}</div>`:'<div class="small muted">No attendance has been recorded in this date range.</div>'}
   </div>`;
 }
 
@@ -2673,8 +2752,9 @@ function renderGradeRows(students, displayAreas, amap, testCol, testNum, outOfMa
         const rc=val!==''&&val!=null?pctToRubricCode(+val):null;
         const pts=rc?RUBRIC_BANDS.find(b=>b.code===rc)?.points||'':'';
         return `<td class="grading-mark-cell">
-          <input type="number" min="0" max="${max}" step="0.1"
+          <input type="text" inputmode="decimal"
             class="pct-inp" data-la="${esc(la)}"
+            data-max="${max}"
             value="${rawVal}"
             placeholder="0-${max}">
           <div class="mark-warning"></div>
@@ -2693,7 +2773,15 @@ function wireRubricBadges(){
     const warn=inp.parentElement.querySelector('.mark-warning');
     const la=inp.dataset.la||'';
     const maxInp=document.querySelector(`.max-inp[data-la="${CSS.escape(la)}"]`);
-    const max=Number(maxInp?.value||inp.max||100);
+    const max=Number(maxInp?.value||inp.dataset.max||100);
+    if(v!=='' && !/^\d+(\.\d+)?$/.test(v)){
+      inp.classList.add('invalid');
+      if(warn) warn.textContent='Numbers only';
+      badge.innerHTML='';
+      badge.style.color='var(--terracotta)';
+      toast('Marks should be numbers only.', true);
+      return;
+    }
     const raw=Number(v);
     inp.classList.remove('invalid');
     if(warn) warn.textContent='';
@@ -2939,6 +3027,16 @@ modules.grading = async (m)=>{
           if(raw==='') return;
 
           const outOf=Number(outOfMap[la]||100);
+          if(!/^\d+(\.\d+)?$/.test(raw)){
+            toast(`Invalid mark for ${la}: numbers only.`,true);
+            inp.classList.add('invalid');
+            const warn=inp.parentElement.querySelector('.mark-warning');
+            if(warn) warn.textContent='Numbers only';
+            inp.scrollIntoView({behavior:'smooth',block:'center',inline:'center'});
+            inp.focus();
+            invalid=true;
+            return;
+          }
           const rawMark=Number(raw);
           if(isNaN(rawMark)||rawMark<0||rawMark>outOf){
             toast(`Invalid mark for ${la}: must be 0-${outOf}`,true);
@@ -3110,6 +3208,7 @@ modules.analytics = async (m)=>{
       <div class="card chart-box"><h3>Term trend</h3><canvas id="trendChart"></canvas></div>
       <div class="card chart-box"><h3>Teacher result entries</h3><canvas id="teacherChart"></canvas></div>
       <div class="card chart-box"><h3>Attendance pattern</h3><canvas id="attendanceChart"></canvas></div>
+      <div class="card chart-box"><h3>Top learners</h3><canvas id="topLearnersChart"></canvas></div>
       <div class="card chart-box"><h3>Fee balance by class</h3><canvas id="feeChart"></canvas></div>
     </div>
     <div class="row" style="align-items:flex-start;margin-top:1rem">
@@ -3137,6 +3236,7 @@ modules.analytics = async (m)=>{
     draw('trendChart',termTrend,'Mean score','#1565c0','line');
     draw('teacherChart',teacherAvg.slice(0,10),'Teacher mean','#8f3d2d');
     draw('attendanceChart',attendanceStatus,'Attendance entries','#2d6a4f','bar','count',null);
+    draw('topLearnersChart',top.map(x=>({label:x.student.full_name,avg:x.avg})),'Top learner mean','#1f4434');
     draw('feeChart',feeBalanceByClass.slice(0,12),'Outstanding balance','#b45309','bar','amount',null);
   },80);
 };
@@ -3264,7 +3364,7 @@ function downloadGradedExamPdf(students, displayAreas, amap, opts={}){
       </div>
       <div>
         <div class="title">${esc(title)}</div>
-        <div class="muted">${esc(grade)}${stream?' '+esc(stream):''} | Term ${esc(term)} ${esc(year)} | Printed ${new Date().toLocaleDateString('en-KE')}</div>
+        <div class="muted">${esc(grade)}${stream?' '+esc(stream):''} | Term ${esc(term)} ${esc(year)} | Printed ${new Date().toLocaleDateString('en-GB')}</div>
       </div>
     </div>
     <div class="chips">
@@ -3787,7 +3887,7 @@ function printLessonPlan(plan){
     <tr><td></td><td></td><td></td><td></td></tr>
   </table>
 
-  <div style="text-align:center;font-size:8px;color:#888;margin-top:16px">${esc(school.name||'')} &bull; Generated via Radari on ${new Date().toLocaleDateString('en-KE',{day:'numeric',month:'long',year:'numeric'})}</div>
+  <div style="text-align:center;font-size:8px;color:#888;margin-top:16px">${esc(school.name||'')} &bull; Generated via Radari on ${new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})}</div>
 
   <script>window.onload=()=>{window.print();}<\/script>
   </body></html>`;
@@ -3868,6 +3968,7 @@ modules.timetable = async (m)=>{
   const DAYS=['Mon','Tue','Wed','Thu','Fri'];
   m.innerHTML = `<div class="section-title"><h1 style="margin:0">Timetable</h1>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+      ${['admin','headteacher'].includes(state.profile.role)?`<button class="btn secondary" id="breakSettings"><i class="ti ti-coffee"></i> Break settings</button>`:''}
       <button class="btn secondary" id="printTimetable"><i class="ti ti-printer"></i> Print timetable</button>
       ${['admin','headteacher'].includes(state.profile.role)?`<button class="btn primary" id="add">Add slot</button>`:''}
     </div></div>
@@ -3877,6 +3978,7 @@ modules.timetable = async (m)=>{
         <tr><td>${esc(r.day_of_week)}</td><td>${esc(r.start_time||'')} \u2013 ${esc(r.end_time||'')}</td><td>${esc(r.grade)}</td><td>${esc(r.stream||'')}</td><td>${esc(r.subject)}</td><td>${esc(r.teachers?.full_name||'')}</td></tr>`).join('')}</tbody></table>
       `:`<div class="empty"><i class="ti ti-calendar-time"></i><div>No timetable entries yet.</div></div>`}</div>`;
   $('#printTimetable').onclick=()=>printTimetable(rows);
+  if($('#breakSettings')) $('#breakSettings').onclick=()=>openTimetableBreakSettings();
   if($('#add')) $('#add').onclick = async ()=>{
     const { data:teachers=[] } = await sb.from('teachers').select('id,full_name').eq('school_id',sid);
     m.innerHTML = `<div class="card" style="max-width:560px"><h2>Add timetable slot</h2>
@@ -3889,7 +3991,7 @@ modules.timetable = async (m)=>{
         <div class="row">
           <div class="col field"><label>Grade</label><input name="grade" required></div>
           <div class="col field"><label>Stream</label><input name="stream"></div>
-          <div class="col field"><label>Subject</label><input name="subject" required></div>
+          <div class="col field"><label>Subject / Break</label><input name="subject" required placeholder="e.g. Mathematics, Tea break, Lunch"></div>
         </div>
         <div class="field"><label>Teacher</label><select name="teacher_id">${teachers.map(t=>`<option value="${t.id}">${esc(t.full_name)}</option>`).join('')}</select></div>
         <div><button class="btn primary">Save</button> <button type="button" class="btn secondary" id="c">Cancel</button></div>
@@ -3912,18 +4014,38 @@ modules.timetable = async (m)=>{
 function printTimetable(rows=[]){
   const school=state.school||{};
   const DAYS=['Mon','Tue','Wed','Thu','Fri'];
-  const sorted=[...rows].sort((a,b)=>
+  const breaks=getTimetableBreaks();
+  const breakRows=breaks.map(b=>({
+    day_of_week:'__ALL__',
+    start_time:b.start_time,
+    end_time:b.end_time,
+    grade:'__BREAK__',
+    stream:'',
+    subject:b.label,
+    teachers:{full_name:''},
+    isBreak:true
+  }));
+  const sorted=[...rows,...breakRows].sort((a,b)=>
     (a.grade||'').localeCompare(b.grade||'') ||
     (a.stream||'').localeCompare(b.stream||'') ||
     DAYS.indexOf(a.day_of_week)-DAYS.indexOf(b.day_of_week) ||
     (a.start_time||'').localeCompare(b.start_time||'')
   );
   const groups={};
-  sorted.forEach(r=>{
+  sorted.filter(r=>!r.isBreak).forEach(r=>{
     const key=`${r.grade||'Class'} ${r.stream||''}`.trim();
     if(!groups[key]) groups[key]=[];
     groups[key].push(r);
   });
+  const allTimes=[...new Map([...rows,...breakRows].filter(r=>r.start_time&&r.end_time).map(r=>[`${r.start_time}-${r.end_time}`,{start:r.start_time,end:r.end_time,label:`${r.start_time} - ${r.end_time}`}])).values()]
+    .sort((a,b)=>a.start.localeCompare(b.start));
+  const findBreak=(time)=>breaks.find(b=>b.start_time===time.start&&b.end_time===time.end);
+  const cellFor=(items,day,time)=>{
+    const br=findBreak(time);
+    if(br) return `<td class="break-cell"><b>${esc(br.label)}</b></td>`;
+    const slot=items.find(r=>r.day_of_week===day && r.start_time===time.start && r.end_time===time.end);
+    return `<td>${slot?`<b>${esc(slot.subject||'')}</b><div class="teacher">${esc(slot.teachers?.full_name||'')}</div>`:''}</td>`;
+  };
   const html=`<!doctype html><html><head><meta charset="utf-8"><title>Timetable</title>
   <style>
     @page{size:A4 landscape;margin:1cm}
@@ -3935,26 +4057,26 @@ function printTimetable(rows=[]){
     .date{text-align:right;font-size:11px;color:#555}
     h2{font-size:15px;margin:18px 0 8px;color:#1a3c2a}
     table{width:100%;border-collapse:collapse;margin-bottom:12px;page-break-inside:avoid}
-    th{background:#1a3c2a;color:#fff;text-align:left;padding:7px;font-size:11px}
-    td{border:1px solid #d8ded8;padding:7px;vertical-align:top}
+    th{background:#1a3c2a;color:#fff;text-align:center;padding:7px;font-size:10px}
+    td{border:1px solid #d8ded8;padding:7px;vertical-align:top;text-align:center;min-height:48px}
     tr:nth-child(even) td{background:#f7fbf7}
-    .time{font-weight:700;white-space:nowrap}
+    .day{font-weight:800;color:#1a3c2a;text-align:left;width:64px}
+    .teacher{font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:#555;margin-top:3px}
+    .break-cell{background:#fff3d6!important;color:#8a4b00;font-weight:800}
     .empty{border:1px dashed #aaa;padding:20px;text-align:center;color:#777}
     @media(max-width:700px){body{font-size:11px}.school{font-size:17px}th,td{padding:5px}}
   </style></head><body>
     <div class="head">
       <div><div class="school">${esc(school.name||'School Timetable')}</div><div class="sub">Printable weekly timetable</div></div>
-      <div class="date">Generated ${new Date().toLocaleDateString('en-KE',{day:'numeric',month:'long',year:'numeric'})}</div>
+      <div class="date">Generated ${new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})}</div>
     </div>
     ${Object.keys(groups).length?Object.entries(groups).map(([klass,items])=>`
       <h2>${esc(klass)}</h2>
       <table>
-        <thead><tr><th>Day</th><th>Time</th><th>Learning Area</th><th>Teacher</th></tr></thead>
-        <tbody>${items.map(r=>`<tr>
-          <td>${esc(r.day_of_week||'')}</td>
-          <td class="time">${esc(r.start_time||'')} - ${esc(r.end_time||'')}</td>
-          <td>${esc(r.subject||'')}</td>
-          <td>${esc(r.teachers?.full_name||'')}</td>
+        <thead><tr><th>Day</th>${allTimes.map(t=>`<th>${esc(t.label)}</th>`).join('')}</tr></thead>
+        <tbody>${DAYS.map(day=>`<tr>
+          <td class="day">${esc(day)}</td>
+          ${allTimes.map(time=>cellFor(items,day,time)).join('')}
         </tr>`).join('')}</tbody>
       </table>`).join(''):'<div class="empty">No timetable entries yet.</div>'}
     <script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script>
@@ -3962,6 +4084,55 @@ function printTimetable(rows=[]){
   const w=window.open('','_blank');
   w.document.write(html);
   w.document.close();
+}
+
+function timetableBreakKey(){
+  return `radari_timetable_breaks_${state.profile?.school_id||'default'}`;
+}
+function getTimetableBreaks(){
+  try{
+    const saved=JSON.parse(localStorage.getItem(timetableBreakKey())||'[]');
+    if(Array.isArray(saved)) return saved;
+  }catch(e){}
+  return [
+    {label:'Tea break',start_time:'10:30',end_time:'11:00'},
+    {label:'Lunch break',start_time:'12:40',end_time:'13:40'}
+  ];
+}
+function saveTimetableBreaks(rows=[]){
+  localStorage.setItem(timetableBreakKey(), JSON.stringify(rows.filter(r=>r.label&&r.start_time&&r.end_time)));
+}
+function openTimetableBreakSettings(){
+  const m=$('#main');
+  const breaks=getTimetableBreaks();
+  m.innerHTML=`<div class="card" style="max-width:720px">
+    <a href="#" id="backTimetable" class="small"><i class="ti ti-arrow-left"></i> Back to timetable</a>
+    <h2 style="margin-top:1rem">Timetable break settings</h2>
+    <p class="muted small">These breaks appear across every printed class timetable.</p>
+    <div id="breakRows" class="stack">
+      ${breaks.map((b,i)=>breakRowHtml(b,i)).join('')}
+    </div>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:1rem">
+      <button class="btn secondary" id="addBreak" type="button">Add break</button>
+      <button class="btn primary" id="saveBreaks" type="button">Save breaks</button>
+    </div>
+  </div>`;
+  $('#backTimetable').onclick=(e)=>{e.preventDefault();navigate('timetable');};
+  const redraw=()=>{ $('#breakRows').innerHTML=getBreakFormRows().map((b,i)=>breakRowHtml(b,i)).join(''); wireBreakRemove(); };
+  const getRowsFromDom=()=>$$('.break-row').map(row=>({label:row.querySelector('[name=label]').value.trim(),start_time:row.querySelector('[name=start_time]').value,end_time:row.querySelector('[name=end_time]').value}));
+  function getBreakFormRows(){ return getRowsFromDom().length?getRowsFromDom():breaks; }
+  function wireBreakRemove(){ $$('.remove-break').forEach(btn=>btn.onclick=()=>{ btn.closest('.break-row').remove(); }); }
+  wireBreakRemove();
+  $('#addBreak').onclick=()=>{ const box=$('#breakRows'); box.insertAdjacentHTML('beforeend',breakRowHtml({label:'Long break',start_time:'',end_time:''}, $$('.break-row').length)); wireBreakRemove(); };
+  $('#saveBreaks').onclick=()=>{ const rows=getRowsFromDom(); if(rows.some(r=>!r.label||!r.start_time||!r.end_time)){ toast('Fill label, start and end time for every break.',true); return; } saveTimetableBreaks(rows); toast('Break settings saved.'); navigate('timetable'); };
+}
+function breakRowHtml(b={},i=0){
+  return `<div class="break-row row" style="align-items:end">
+    <div class="col field"><label>Break name</label><input name="label" value="${esc(b.label||'')}" placeholder="Tea break"></div>
+    <div class="col field"><label>Start</label><input name="start_time" type="time" value="${esc(b.start_time||'')}"></div>
+    <div class="col field"><label>End</label><input name="end_time" type="time" value="${esc(b.end_time||'')}"></div>
+    <button class="btn secondary remove-break" type="button">Remove</button>
+  </div>`;
 }
 
 function csvParts(value){
@@ -4031,7 +4202,8 @@ function roleLabel(role){
 /* --- TEACHERS --- */
 modules.teachers = async (m)=>{
   const sid = state.profile.school_id;
-  const { data:rows=[] } = await sb.from('teachers').select('*').eq('school_id',sid).order('full_name');
+  let { data:rows=[] } = await sb.from('teachers').select('*').eq('school_id',sid).order('full_name');
+  rows = rows.filter(r => (r.employment_status || 'active') !== 'terminated');
   const canManageStaff = ['admin','headteacher'].includes(state.profile.role);
   const subjectOptions=allSchoolSubjects();
   const gradeOptions=DEFAULT_GRADES;
@@ -4413,7 +4585,7 @@ modules.fees = async (m)=>{
     </div>
     <div class="card"><div class="section-title"><h3>Recent M-Pesa / fee payments</h3></div>
       ${recentPayments.length?`<table><thead><tr><th>Date</th><th>Learner</th><th>Reference</th><th>Amount</th><th>Status</th><th>Allocation</th></tr></thead><tbody>${recentPayments.map(p=>`<tr>
-        <td class="small muted">${new Date(p.payment_date||p.created_at).toLocaleString('en-KE')}</td>
+        <td class="small muted">${new Date(p.payment_date||p.created_at).toLocaleString('en-GB')}</td>
         <td>${esc(p.students?.full_name||'')}<div class="small muted">${esc(p.students?.admission_number||'')}</div></td>
         <td>${esc(p.mpesa_ref||p.checkout_request_id||'')}</td>
         <td>KSh ${(+p.amount||0).toLocaleString()}</td>
@@ -4889,7 +5061,7 @@ function printFeeStatement(student_id, studentName, balances){
     </div>
     <div>
       <div class="doc-title">Fee Statement</div>
-      <div class="doc-date">Printed: ${new Date().toLocaleDateString('en-KE',{day:'numeric',month:'long',year:'numeric'})}</div>
+      <div class="doc-date">Printed: ${new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'})}</div>
     </div>
   </div>
   <div class="student-box">
@@ -5283,7 +5455,7 @@ function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMar
   </div>
 
   <div class="footer-row">
-    <span>Generated on: ${new Date().toLocaleDateString('en-KE',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</span>
+    <span>Generated on: ${new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</span>
     <span>${esc(school.name||'')} &bull; Powered by Radari</span>
   </div>
 
@@ -5296,15 +5468,19 @@ function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMar
 modules.incidents = async (m)=>{
   const sid = state.profile.school_id;
   const { data:rows=[] } = await sb.from('incidents').select('*, students(full_name,grade)').eq('school_id',sid).order('incident_date',{ascending:false});
-  m.innerHTML = `<div class="section-title"><h1 style="margin:0">Incidents</h1><button class="btn primary" id="add">Log incident</button></div>
-    <div class="card">${rows.length?`<table><thead><tr><th>Date</th><th>Learner</th><th>Type</th><th>Description</th><th>Action</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.incident_date||'')}</td><td>${esc(r.students?.full_name||'')}</td><td><span class="badge ${r.incident_type==='discipline'?'terra':r.incident_type==='commendation'?'':'amber'}">${esc(r.incident_type)}</span></td><td>${esc(r.description||'')}</td><td>${esc(r.action_taken||'')}</td></tr>`).join('')}</tbody></table>`:'<div class="empty"><i class="ti ti-shield"></i><div>No incidents logged.</div></div>'}</div>`;
+  m.innerHTML = `<div class="section-title"><h1 style="margin:0">Incidents</h1><div style="display:flex;gap:.5rem;flex-wrap:wrap"><button class="btn secondary" id="exportIncidents"><i class="ti ti-file-spreadsheet"></i> Export Excel</button><button class="btn primary" id="add">Log incident</button></div></div>
+    <div class="card">${rows.length?`<table><thead><tr><th>Date</th><th>Learner</th><th>Type</th><th>Description</th><th>Action</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${dateDMY(r.incident_date)}</td><td>${esc(r.students?.full_name||'')}</td><td><span class="badge ${r.incident_type==='discipline'?'terra':r.incident_type==='commendation'?'':'amber'}">${esc(r.incident_type)}</span></td><td>${esc(r.description||'')}</td><td>${esc(r.action_taken||'')}</td></tr>`).join('')}</tbody></table>`:'<div class="empty"><i class="ti ti-shield"></i><div>No incidents logged.</div></div>'}</div>`;
+  $('#exportIncidents').onclick=()=>{
+    const sheetRows=[['Date','Learner','Grade','Type','Description','Action Taken'],...rows.map(r=>[dateDMY(r.incident_date),r.students?.full_name||'',r.students?.grade||'',r.incident_type||'',r.description||'',r.action_taken||''])];
+    const ws=XLSX.utils.aoa_to_sheet(sheetRows); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Incidents'); XLSX.writeFile(wb,`incidents-${localDateISO()}.xlsx`);
+  };
   $('#add').onclick = async ()=>{
     const { data:students=[] } = await sb.from('students').select('id,full_name,grade').eq('school_id',sid).order('full_name');
     m.innerHTML = `<div class="card" style="max-width:560px"><h2>Log incident</h2>
       <form id="f" class="stack">
         <div class="field"><label>Learner</label><select name="student_id">${students.map(s=>`<option value="${s.id}">${esc(s.full_name)} \u2014 ${esc(s.grade||'')}</option>`).join('')}</select></div>
         <div class="field"><label>Type</label><select name="incident_type"><option>discipline</option><option>counseling</option><option>commendation</option><option>medical</option></select></div>
-        <div class="field"><label>Date</label><input type="date" name="incident_date" value="${new Date().toISOString().slice(0,10)}"></div>
+        <div class="field"><label>Date</label><input type="date" name="incident_date" value="${localDateISO()}"></div>
         <div class="field"><label>Description</label><textarea name="description"></textarea></div>
         <div class="field"><label>Action taken</label><textarea name="action_taken"></textarea></div>
         <div><button class="btn primary">Save</button> <button type="button" class="btn secondary" id="c">Cancel</button></div>
@@ -5701,7 +5877,7 @@ modules.owner = async (m)=>{
       return `<tr>
         <td class="owner-line"><b>${esc(customer.full_name||s.name||'Unnamed customer')}</b><div class="small muted">${esc(customer.email||'No email')}</div><div class="small muted">${esc(customer.phone||'No phone added')} ${individual?'&middot; Teacher':''}</div></td>
         <td class="owner-line"><b>${esc(s.name||'Workspace')}</b><div class="small muted">ID: ${esc(s.service_customer_code||String(s.id).slice(0,8).toUpperCase())}</div><div class="small muted">Users: ${userCountBySchool[s.id]||0} &middot; Learners: ${learnerCountBySchool[s.id]||0}</div>${s.service_discount_note?`<div class="small muted">Note: ${esc(s.service_discount_note)}</div>`:''}</td>
-        <td class="owner-line"><b>${serviceCurrency(price)}</b><div class="small muted">Paid until: ${esc(s.service_paid_until||'Not active')}</div>${lastPayment?`<div class="small muted">Last: ${serviceCurrency(lastPayment.amount)} on ${esc(new Date(lastPayment.paid_at||lastPayment.created_at).toLocaleString('en-KE'))}</div>`:''}</td>
+        <td class="owner-line"><b>${serviceCurrency(price)}</b><div class="small muted">Paid until: ${esc(s.service_paid_until||'Not active')}</div>${lastPayment?`<div class="small muted">Last: ${serviceCurrency(lastPayment.amount)} on ${esc(new Date(lastPayment.paid_at||lastPayment.created_at).toLocaleString('en-GB'))}</div>`:''}</td>
         <td class="owner-line"><span class="badge ${expired||s.service_status==='locked'?'terra':''}">${expired?'expired':esc(s.service_status||'active')}</span><div class="small muted">${esc(String(s.service_last_paid_at||s.created_at||'').slice(0,10)||'')}</div></td>
         <td><div class="owner-actions"><button class="btn secondary owner-edit" data-id="${esc(s.id)}">Edit</button><button class="btn secondary reset-device" data-id="${esc(s.id)}">Reset device</button></div></td>
       </tr>`;
@@ -5750,13 +5926,13 @@ modules.owner = async (m)=>{
             <td><b>${esc(customer.full_name||'Unknown')}</b><div class="small muted">${esc(customer.email||'')}</div><div class="small muted">${esc(p.phone||customer.phone||'')}</div></td>
             <td>${esc(school.name||'Workspace')}<div class="small muted">ID: ${esc(school.service_customer_code||String(p.school_id||'').slice(0,8).toUpperCase())}</div></td>
             <td><b>${serviceCurrency(p.amount)}</b><div class="small muted">${esc(p.receipt_number||'No receipt yet')}</div></td>
-            <td class="small muted">${esc(new Date(p.paid_at||p.created_at).toLocaleString('en-KE'))}</td>
+            <td class="small muted">${esc(new Date(p.paid_at||p.created_at).toLocaleString('en-GB'))}</td>
             <td><span class="badge ${p.status==='completed'?'':'amber'}">${esc(p.status||'pending')}</span><div class="small muted">${esc(p.result_description||'')}</div></td>
           </tr>`; }).join('')}
         </tbody></table></div>
         <div class="owner-mobile-list">${paymentRows.map(p=>{ const school=schools.find(s=>s.id===p.school_id)||{}; const customer=primaryUserBySchool[p.school_id]||{}; return `<div class="owner-mobile-card">
           <div class="top"><div><b>${esc(customer.full_name||'Unknown')}</b><div class="small muted">${esc(school.name||'Workspace')}</div><div class="small muted">${esc(p.phone||customer.phone||'')}</div></div><span class="badge ${p.status==='completed'?'':'amber'}">${esc(p.status||'pending')}</span></div>
-          <div style="margin-top:.55rem"><b>${serviceCurrency(p.amount)}</b><div class="small muted">${esc(new Date(p.paid_at||p.created_at).toLocaleString('en-KE'))}</div><div class="small muted">${esc(p.receipt_number||p.result_description||'No receipt yet')}</div></div>
+          <div style="margin-top:.55rem"><b>${serviceCurrency(p.amount)}</b><div class="small muted">${esc(new Date(p.paid_at||p.created_at).toLocaleString('en-GB'))}</div><div class="small muted">${esc(p.receipt_number||p.result_description||'No receipt yet')}</div></div>
         </div>`; }).join('')}</div>`:`<div class="empty"><i class="ti ti-cash"></i><div>No matching payments.</div></div>`}
       </div>` : `
       <div class="card">
@@ -6581,3 +6757,4 @@ boot();
 </script>
 </body>
 </html>
+
