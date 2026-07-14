@@ -3350,6 +3350,15 @@ function downloadGradedExamExcel(students, displayAreas, amap, testCol, term, ye
   XLSX.writeFile(wb,`graded-exam-${testLabel.replace(/\s+/g,'-')}-T${term}-${year}.xlsx`);
 }
 
+function assessmentLevelTitle(grade=''){
+  const g=String(grade||'');
+  if(['PP1','PP2'].includes(g)) return 'KENYA PRE-PRIMARY SCHOOL EDUCATION ASSESSMENT';
+  if(['Grade 1','Grade 2','Grade 3'].includes(g)) return 'KENYA LOWER PRIMARY SCHOOL EDUCATION ASSESSMENT';
+  if(['Grade 4','Grade 5','Grade 6'].includes(g)) return 'KENYA UPPER PRIMARY SCHOOL EDUCATION ASSESSMENT';
+  if(['Grade 7','Grade 8','Grade 9'].includes(g)) return 'KENYA JUNIOR SCHOOL EDUCATION ASSESSMENT';
+  return 'KENYA SCHOOL EDUCATION ASSESSMENT';
+}
+
 function downloadGradedExamPdf(students, displayAreas, amap, opts={}){
   const school=state.school||{};
   const mode=String(opts.mode||'1');
@@ -3358,7 +3367,9 @@ function downloadGradedExamPdf(students, displayAreas, amap, opts={}){
   const stream=opts.stream||'';
   const testNames={1:'First Test',2:'Second Test',3:'Third Test'};
   const testCols={1:'cat1',2:'cat2',3:'endterm_score'};
-  const title=mode==='summary'?'Three-test Summary':`${testNames[mode]||'Assessment'} Analysis`;
+  const examPeriodTitle=mode==='summary'?'TERM SUMMARY ASSESSMENT':mode==='1'?'OPENER ASSESSMENT':mode==='2'?'MID TERM ASSESSMENT':'END TERM ASSESSMENT';
+  const levelTitle=assessmentLevelTitle(grade);
+  const title=`${examPeriodTitle} - ${levelTitle}`;
   const subjectGroups=groupedSubjectColumns(displayAreas);
   const getCurrentPct=(studentId, la)=>{
     if(String(opts.currentTestNum)!==mode) return null;
@@ -3382,7 +3393,7 @@ function downloadGradedExamPdf(students, displayAreas, amap, opts={}){
     const paperHeaders=group.areas.map((la,idx)=>`<th>${esc(group.areas.length>1?subjectPaperLabel(la,idx+1):la)}</th>`).join('');
     return paperHeaders + (group.areas.length>1?`<th class="avg-col">${esc(group.base)} Avg</th>`:'');
   }).join('');
-  const rows=students.map((stu,i)=>{
+  const rankedRows=students.map((stu)=>{
     const subjectCells=[];
     const finalSubjectScores=[];
     subjectGroups.forEach(group=>{
@@ -3409,12 +3420,20 @@ function downloadGradedExamPdf(students, displayAreas, amap, opts={}){
     });
     const overall=subjectAverage(finalSubjectScores);
     const totalPoints=finalSubjectScores.reduce((sum,p)=>sum+rubricPointsFromPct(p),0);
+    return {stu,subjectCells,overall,totalPoints};
+  }).sort((a,b)=>(b.overall??-1)-(a.overall??-1)||String(a.stu.full_name||'').localeCompare(String(b.stu.full_name||'')));
+  let lastScore=null, lastPosition=0;
+  const rows=rankedRows.map((row,i)=>{
+    const score=row.overall;
+    const position = score==null ? '-' : (lastScore!==null && score===lastScore ? lastPosition : i+1);
+    if(score!=null && score!==lastScore){ lastScore=score; lastPosition=position; }
     return `<tr>
       <td class="idx">${i+1}</td>
-      <td class="name">${esc(stu.full_name||'')}<div class="mini">${esc(stu.admission_number||'')}</div></td>
-      ${subjectCells.join('')}
-      <td class="total"><b>${overall==null?'-':Math.round(overall)+'%'}</b><span class="level">${overall==null?'':pctToRubricCode(overall)}</span></td>
-      <td class="points"><b>${totalPoints||'-'}</b></td>
+      <td class="name">${esc(row.stu.full_name||'')}<div class="mini">${esc(row.stu.admission_number||'')}</div></td>
+      ${row.subjectCells.join('')}
+      <td class="total"><b>${row.overall==null?'-':Math.round(row.overall)+'%'}</b><span class="level">${row.overall==null?'':pctToRubricCode(row.overall)}</span></td>
+      <td class="points"><b>${row.totalPoints||'-'}</b></td>
+      <td class="pos"><b>${position}</b></td>
     </tr>`;
   }).join('');
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8">
@@ -3439,6 +3458,10 @@ function downloadGradedExamPdf(students, displayAreas, amap, opts={}){
     .avg-col{background:#fff7e8!important;color:#8f3d2d;font-weight:700}
     .total{background:#f0f7f2!important;color:#1f4434;width:38px}
     .points{background:#edf5ff!important;color:#154c79;width:34px;font-size:8px}
+    .pos{background:#fff!important;color:#111;width:24px;font-size:8px}
+    .exam-title{text-align:center;margin:2px 0 5px;text-transform:uppercase;color:#1f4434}
+    .exam-title .line1{font-size:11px;font-weight:800;letter-spacing:.02em}
+    .exam-title .line2{font-size:9px;font-weight:800;color:#8f3d2d;margin-top:1px}
     .footer{margin-top:4px;color:#777;font-size:6.5px;display:flex;justify-content:space-between;border-top:1px solid #e1dccf;padding-top:3px}
     @media print{body{padding:0}.no-print{display:none} @page{size:A4 landscape;margin:4mm}}
   </style></head><body>
@@ -3448,9 +3471,13 @@ function downloadGradedExamPdf(students, displayAreas, amap, opts={}){
         <div class="muted">${esc(school.county||'')} ${school.phone?' | '+esc(school.phone):''}</div>
       </div>
       <div>
-        <div class="title">${esc(title)}</div>
+        <div class="title">Filing Copy</div>
         <div class="muted">${esc(grade)}${stream?' '+esc(stream):''} | Term ${esc(term)} ${esc(year)} | Printed ${new Date().toLocaleDateString('en-GB')}</div>
       </div>
+    </div>
+    <div class="exam-title">
+      <div class="line1">${esc(levelTitle)}</div>
+      <div class="line2">${esc(examPeriodTitle)}</div>
     </div>
     <div class="chips">
       <span class="chip">Learners: ${students.length}</span>
@@ -3460,7 +3487,7 @@ function downloadGradedExamPdf(students, displayAreas, amap, opts={}){
       <span class="chip">Paper subjects are averaged before total points</span>
     </div>
     <table>
-      <thead><tr><th class="idx">#</th><th class="name">Learner</th>${areaHeaders}<th class="total">Total Score</th><th class="points">Total Points</th></tr></thead>
+      <thead><tr><th class="idx">#</th><th class="name">Learner</th>${areaHeaders}<th class="total">Total Score</th><th class="points">Total Points</th><th class="pos">Position</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     <div class="footer"><span>Generated by Radari</span><span>Teacher filing copy</span></div>
