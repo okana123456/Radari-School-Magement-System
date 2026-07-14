@@ -3392,19 +3392,19 @@ function downloadGradedExamPdf(students, displayAreas, amap, opts={}){
           const t1=scoreFor(stu,la,'cat1'), t2=scoreFor(stu,la,'cat2'), t3=scoreFor(stu,la,'endterm_score');
           const avg=subjectAverage([t1,t2,t3]);
           if(avg!=null) groupScores.push(avg);
-          subjectCells.push(`<td><div class="mini">${group.areas.length>1?esc(subjectPaperLabel(la,idx+1)):''}</div><b>${avg==null?'-':Math.round(avg)+'%'}</b><div class="mini">${[t1,t2,t3].map((v,n)=>`T${n+1}:${v==null?'-':Math.round(v)}`).join(' ')}</div><div class="level">${avg==null?'':pctToRubricCode(avg)}</div></td>`);
+          subjectCells.push(`<td><div class="mini">${group.areas.length>1?esc(subjectPaperLabel(la,idx+1)):''}</div><b>${avg==null?'-':Math.round(avg)+'%'}</b><span class="level">${avg==null?'':pctToRubricCode(avg)}</span><div class="mini tests">${[t1,t2,t3].map((v,n)=>`T${n+1}:${v==null?'-':Math.round(v)}`).join(' ')}</div></td>`);
         }else{
           const pct=scoreFor(stu,la,testCols[mode]||'cat1');
           if(pct!=null) groupScores.push(pct);
           const outOf=Number(opts.currentOutOfMap?.[la]||100);
           const raw=pct!=null?rawMarkFromPct(pct,outOf):'';
-          subjectCells.push(`<td><div class="mini">${group.areas.length>1?esc(subjectPaperLabel(la,idx+1)):''}</div><b>${pct==null?'-':raw+'/'+outOf}</b><div class="mini">${pct==null?'':Math.round(pct)+'%'}</div><div class="level">${pct==null?'':pctToRubricCode(pct)}</div></td>`);
+          subjectCells.push(`<td><div class="mini">${group.areas.length>1?esc(subjectPaperLabel(la,idx+1)):''}</div><b>${pct==null?'-':raw+'/'+outOf}</b><span class="level">${pct==null?'':pctToRubricCode(pct)}</span></td>`);
         }
       });
       const groupAvg=subjectAverage(groupScores);
       if(groupAvg!=null) finalSubjectScores.push(groupAvg);
       if(group.areas.length>1){
-        subjectCells.push(`<td class="avg-col"><b>${groupAvg==null?'-':Math.round(groupAvg)+'%'}</b><div class="level">${groupAvg==null?'':pctToRubricCode(groupAvg)}</div><div class="mini">${groupAvg==null?'':'Pts '+rubricPointsFromPct(groupAvg)}</div></td>`);
+        subjectCells.push(`<td class="avg-col"><b>${groupAvg==null?'-':Math.round(groupAvg)+'%'}</b><span class="level">${groupAvg==null?'':pctToRubricCode(groupAvg)}</span></td>`);
       }
     });
     const overall=subjectAverage(finalSubjectScores);
@@ -3413,33 +3413,34 @@ function downloadGradedExamPdf(students, displayAreas, amap, opts={}){
       <td class="idx">${i+1}</td>
       <td class="name">${esc(stu.full_name||'')}<div class="mini">${esc(stu.admission_number||'')}</div></td>
       ${subjectCells.join('')}
-      <td class="total"><b>${overall==null?'-':Math.round(overall)+'%'}</b><div class="level">${overall==null?'':pctToRubricCode(overall)}</div></td>
+      <td class="total"><b>${overall==null?'-':Math.round(overall)+'%'}</b><span class="level">${overall==null?'':pctToRubricCode(overall)}</span></td>
       <td class="points"><b>${totalPoints||'-'}</b></td>
     </tr>`;
   }).join('');
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8">
   <title>${esc(title)} - ${esc(grade)} ${esc(stream)}</title>
   <style>
-    body{font-family:Arial,Helvetica,sans-serif;color:#1c1d1a;margin:0;padding:18px;background:#fff;font-size:11px}
-    .header{display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;border-bottom:3px solid #1f4434;padding-bottom:10px;margin-bottom:12px}
-    .school{font-size:20px;font-weight:800;color:#1f4434}
-    .muted{color:#666;font-size:10px;margin-top:2px}
-    .title{text-align:right;font-size:15px;font-weight:800;color:#8f3d2d}
-    .chips{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
-    .chip{border:1px solid #d9d0bf;background:#f7f4ee;border-radius:999px;padding:4px 8px;font-size:10px}
+    body{font-family:Arial,Helvetica,sans-serif;color:#1c1d1a;margin:0;padding:8px;background:#fff;font-size:8px}
+    .header{display:flex;justify-content:space-between;gap:.6rem;align-items:flex-start;border-bottom:2px solid #1f4434;padding-bottom:5px;margin-bottom:5px}
+    .school{font-size:14px;font-weight:800;color:#1f4434}
+    .muted{color:#666;font-size:7.5px;margin-top:1px}
+    .title{text-align:right;font-size:11px;font-weight:800;color:#8f3d2d}
+    .chips{display:flex;gap:3px;flex-wrap:wrap;margin:4px 0}
+    .chip{border:1px solid #d9d0bf;background:#f7f4ee;border-radius:999px;padding:2px 5px;font-size:7.5px}
     table{width:100%;border-collapse:collapse;table-layout:fixed}
-    th{background:#1f4434;color:#fff;padding:6px 4px;font-size:8.5px;text-transform:uppercase;letter-spacing:.02em;border:1px solid #173629;vertical-align:bottom;word-break:normal;overflow-wrap:anywhere}
-    td{border:1px solid #e1dccf;padding:5px 4px;vertical-align:top;text-align:center;word-break:break-word}
+    th{background:#1f4434;color:#fff;padding:2.5px 2px;font-size:6.5px;text-transform:uppercase;letter-spacing:0;border:1px solid #173629;vertical-align:bottom;word-break:normal;overflow-wrap:anywhere;line-height:1.05}
+    td{border:1px solid #e1dccf;padding:2px 2px;vertical-align:middle;text-align:center;word-break:break-word;line-height:1.05}
     tr:nth-child(even) td{background:#fbfaf6}
-    .idx{width:26px;color:#666}
-    .name{text-align:left;width:125px;font-weight:700;color:#1f4434}
-    .mini{font-size:9px;color:#666;font-weight:400;line-height:1.25}
-    .level{font-size:9px;color:#8f3d2d;font-weight:800;margin-top:2px}
+    .idx{width:16px;color:#666}
+    .name{text-align:left;width:92px;font-weight:700;color:#1f4434}
+    .mini{font-size:6.5px;color:#666;font-weight:400;line-height:1}
+    .tests{display:none}
+    .level{display:block;font-size:6.5px;color:#8f3d2d;font-weight:800;margin-top:1px;line-height:1}
     .avg-col{background:#fff7e8!important;color:#8f3d2d;font-weight:700}
-    .total{background:#f0f7f2!important;color:#1f4434;width:56px}
-    .points{background:#edf5ff!important;color:#154c79;width:52px;font-size:12px}
-    .footer{margin-top:12px;color:#777;font-size:9px;display:flex;justify-content:space-between;border-top:1px solid #e1dccf;padding-top:8px}
-    @media print{body{padding:10mm}.no-print{display:none} @page{size:landscape;margin:8mm}}
+    .total{background:#f0f7f2!important;color:#1f4434;width:38px}
+    .points{background:#edf5ff!important;color:#154c79;width:34px;font-size:8px}
+    .footer{margin-top:4px;color:#777;font-size:6.5px;display:flex;justify-content:space-between;border-top:1px solid #e1dccf;padding-top:3px}
+    @media print{body{padding:0}.no-print{display:none} @page{size:A4 landscape;margin:4mm}}
   </style></head><body>
     <div class="header">
       <div>
