@@ -549,10 +549,10 @@ on conflict (school_code) do nothing;
     .check-picker-count{font-size:.76rem;color:var(--muted);margin-top:.28rem}
 
     /* GRADING TABLE — the most complex mobile layout */
-    .grading-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--stone);border-radius:var(--radius)}
+    .grading-wrap{overflow:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--stone);border-radius:var(--radius);max-height:68vh;overscroll-behavior:contain;background:#fff}
     .grading-wrap table{min-width:720px;border-collapse:collapse;table-layout:fixed}
     .grading-wrap th,.grading-wrap td{padding:.45rem .4rem;border-bottom:1px solid var(--stone);font-size:.82rem}
-    .grading-wrap th{background:var(--green);color:#fff;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.03em;position:sticky;top:0;z-index:3}
+    .grading-wrap th{background:var(--green);color:#fff;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.03em;position:sticky;top:0;z-index:6;box-shadow:0 2px 0 rgba(0,0,0,.08)}
     .grading-wrap th:not(:first-child){width:86px;white-space:normal;line-height:1.15;overflow-wrap:anywhere;text-align:center}
     .grading-wrap th:first-child,.grading-wrap td:first-child{position:sticky;left:0;z-index:2;background:var(--surface);border-right:2px solid var(--stone);width:190px;min-width:190px;max-width:190px;white-space:normal}
     .grading-wrap th:first-child{background:var(--green);z-index:4}
@@ -575,6 +575,13 @@ on conflict (school_code) do nothing;
     .grading-download-select{height:38px;min-width:190px;max-width:100%;padding:0 .75rem;border:1px solid var(--stone-2);border-radius:var(--radius);background:#fff;color:var(--ink);font-size:.86rem}
     .grading-subject-head{display:block;white-space:normal;overflow-wrap:anywhere;word-break:normal;line-height:1.18}
     .rc-badge{margin-top:.15rem;font-size:.7rem;font-weight:700;min-height:13px;line-height:1;text-align:center}
+    .row-actions{position:relative;display:inline-flex;justify-content:flex-end}
+    .dot-btn{width:32px;height:32px;border:1px solid var(--stone);border-radius:8px;background:#fff;color:var(--ink);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+    .row-menu{position:absolute;right:0;top:36px;min-width:140px;background:#fff;border:1px solid var(--stone);border-radius:10px;box-shadow:var(--shadow);padding:.35rem;z-index:20;display:none}
+    .row-actions.open .row-menu{display:block}
+    .row-menu button,.row-menu a{display:block;width:100%;border:0;background:transparent;color:var(--ink);text-align:left;padding:.5rem .6rem;border-radius:8px;text-decoration:none;font-size:.86rem;cursor:pointer}
+    .row-menu button:hover,.row-menu a:hover{background:var(--green-50)}
+    .row-menu .danger{color:var(--terracotta);font-weight:700}
     @media(max-width:600px){
       .pct-inp{width:48px;font-size:.82rem}
       .grading-wrap table{min-width:680px}
@@ -1800,6 +1807,17 @@ modules.students = async (m)=>{
     const g=$('#gradeFilter').value, stream=$('#streamFilter').value, q=$('#search').value.toLowerCase();
     $('#stuTable').innerHTML = renderStudentTable(students, g, stream, q, canManage);
     $('#stuTable').querySelectorAll('.open').forEach(a=>a.onclick=(e)=>{e.preventDefault(); student360(a.dataset.id);});
+    $('#stuTable').querySelectorAll('.student-dots').forEach(btn=>btn.onclick=(e)=>{
+      e.stopPropagation();
+      const wrap=btn.closest('.row-actions');
+      $$('.row-actions.open').forEach(x=>{ if(x!==wrap) x.classList.remove('open'); });
+      wrap?.classList.toggle('open');
+    });
+    $('#stuTable').querySelectorAll('.edit-student').forEach(btn=>btn.onclick=async()=>{
+      const {data:s,error}=await sb.from('students').select('*').eq('id',btn.dataset.id).single();
+      if(error){ toast(error.message,true); return; }
+      studentForm(s);
+    });
     $('#stuTable').querySelectorAll('.remove-student').forEach(btn=>btn.onclick=()=>removeStudent(btn.dataset.id, btn.dataset.name));
   };
   $('#gradeFilter').onchange = refresh;
@@ -1849,6 +1867,14 @@ function renderStudentTable(students, grade, stream, query, canManage=false){
     (!query||(s.full_name||'').toLowerCase().includes(query)||(s.admission_number||'').toLowerCase().includes(query))
   );
   if(!filtered.length) return `<div class="empty"><i class="ti ti-users"></i><div>No learners match this filter.</div></div>`;
+  const actionMenu=(s)=>`<div class="row-actions">
+    <button class="dot-btn student-dots" type="button" aria-label="Learner actions"><i class="ti ti-dots-vertical"></i></button>
+    <div class="row-menu">
+      <a href="#" data-id="${esc(s.id)}" class="open">View profile</a>
+      ${canManage?`<button class="edit-student" data-id="${esc(s.id)}" type="button">Edit details</button>
+      <button class="remove-student danger" data-id="${esc(s.id)}" data-name="${esc(s.full_name)}" type="button">Remove learner</button>`:''}
+    </div>
+  </div>`;
   if(isIndividualTeacher()){
     return `<table><thead><tr><th>Name</th><th>Adm/NEMIS</th><th>Class</th><th>Gender</th><th></th></tr></thead>
     <tbody>${filtered.map(s=>`<tr>
@@ -1856,7 +1882,7 @@ function renderStudentTable(students, grade, stream, query, canManage=false){
       <td class="small muted">${esc(s.nemis_number||s.admission_number||'')}</td>
       <td>${esc([s.grade,s.stream].filter(Boolean).join(' ')||'')}</td>
       <td>${esc(s.gender||'')}</td>
-      <td><a href="#" data-id="${s.id}" class="open small">View</a>${canManage?` &middot; <button class="link-btn remove-student small" data-id="${esc(s.id)}" data-name="${esc(s.full_name)}" type="button">Remove</button>`:''}</td>
+      <td>${actionMenu(s)}</td>
     </tr>`).join('')}</tbody></table>`;
   }
   return `<table><thead><tr><th>Name</th><th>Adm.</th><th>Grade</th><th>Stream</th><th>Gender</th><th>DOB</th><th></th></tr></thead>
@@ -1865,7 +1891,7 @@ function renderStudentTable(students, grade, stream, query, canManage=false){
     <td class="small muted">${esc(s.admission_number||'')}</td>
     <td>${esc(s.grade||'')}</td><td>${esc(s.stream||'')}</td><td>${esc(s.gender||'')}</td>
     <td class="small muted">${dateDMY(s.date_of_birth)}</td>
-    <td><a href="#" data-id="${s.id}" class="open small">View</a>${canManage?` &middot; <button class="link-btn remove-student small" data-id="${esc(s.id)}" data-name="${esc(s.full_name)}" type="button">Remove</button>`:''}</td>
+    <td>${actionMenu(s)}</td>
   </tr>`).join('')}</tbody></table>`;
 }
 
@@ -3184,21 +3210,38 @@ modules.analytics = async (m)=>{
     acc[key].count++;
     return acc;
   },{})).sort((a,b)=>b.amount-a.amount);
-  m.innerHTML=`<div class="section-title"><div><h1 style="margin:0">School Analytics</h1><p class="muted small">Academic, attendance, fee and teacher-performance analysis in one place.</p></div></div>
+  const mode=state.analyticsMode||'academic';
+  const financeRows=feeBalanceByClass;
+  m.innerHTML=`<div class="section-title"><div><h1 style="margin:0">School Analytics</h1><p class="muted small">View academics and finance separately for cleaner decisions.</p></div></div>
+    <div class="tabs" style="margin-bottom:1rem">
+      <button class="${mode==='academic'?'active':''}" id="anaAcademicTab" type="button"><i class="ti ti-chart-line"></i> Academics</button>
+      <button class="${mode==='finance'?'active':''}" id="anaFinanceTab" type="button"><i class="ti ti-wallet"></i> Finance</button>
+    </div>
     <div class="card analytics-filter-card">
       <div class="toolbar">
         <div class="field"><label>Year</label><select id="anaYear"><option value="all">All years</option>${yearList.map(y=>`<option value="${y}" ${String(filters.year)===String(y)?'selected':''}>${y}</option>`).join('')}</select></div>
         <div class="field"><label>Term</label><select id="anaTerm"><option value="all">All terms</option>${termList.map(t=>`<option value="${t}" ${String(filters.term)===String(t)?'selected':''}>Term ${t}</option>`).join('')}</select></div>
         <div class="field"><label>Class</label><select id="anaGrade"><option value="all">All classes</option>${gradeList.map(g=>`<option ${filters.grade===g?'selected':''}>${esc(g)}</option>`).join('')}</select></div>
         <div class="field"><label>Stream</label><select id="anaStream"><option value="all">All streams</option>${streamList.map(s=>`<option ${filters.stream===s?'selected':''}>${esc(s)}</option>`).join('')}</select></div>
-        <div class="field"><label>Subject</label><select id="anaSubject"><option value="all">All subjects</option>${subjectList.map(s=>`<option ${filters.subject===s?'selected':''}>${esc(s)}</option>`).join('')}</select></div>
+        ${mode==='academic'?`<div class="field"><label>Subject</label><select id="anaSubject"><option value="all">All subjects</option>${subjectList.map(s=>`<option ${filters.subject===s?'selected':''}>${esc(s)}</option>`).join('')}</select></div>`:''}
       </div>
     </div>
+    ${mode==='finance'?`
+    <div class="owner-kpis">
+      <div class="metric"><div class="num">${feeRate}%</div><div class="lbl">Fee collection</div></div>
+      <div class="metric"><div class="num">KSh ${paid.toLocaleString()}</div><div class="lbl">Total paid</div></div>
+      <div class="metric"><div class="num">KSh ${due.toLocaleString()}</div><div class="lbl">Total billed</div></div>
+      <div class="metric"><div class="num">KSh ${(due-paid).toLocaleString()}</div><div class="lbl">Outstanding</div></div>
+    </div>
+    <div class="analytics-grid">
+      <div class="card chart-box"><h3>Fee balance by class</h3><canvas id="feeChart"></canvas></div>
+    </div>
+    <div class="card" style="margin-top:1rem"><h3>Fee balance summary</h3>${financeRows.length?`<table><thead><tr><th>Class</th><th>Learners</th><th>Outstanding balance</th></tr></thead><tbody>${financeRows.map(r=>`<tr><td>${esc(r.label)}</td><td>${r.count}</td><td><b>KSh ${Number(r.amount||0).toLocaleString()}</b></td></tr>`).join('')}</tbody></table>`:'<p class="muted small">No fee balances match these filters.</p>'}</div>
+    `:`
     <div class="owner-kpis">
       <div class="metric"><div class="num">${overall||'--'}%</div><div class="lbl">Mean score</div></div>
       <div class="metric"><div class="num">${scoreRows.length}</div><div class="lbl">Score records</div></div>
       <div class="metric"><div class="num">${attRate}%</div><div class="lbl">Attendance rate</div></div>
-      <div class="metric"><div class="num">${feeRate}%</div><div class="lbl">Fee collection</div></div>
       <div class="metric"><div class="num">${weak.length}</div><div class="lbl">Support cases</div></div>
     </div>
     ${scoreRows.length?`<div class="analytics-grid">
@@ -3209,15 +3252,16 @@ modules.analytics = async (m)=>{
       <div class="card chart-box"><h3>Teacher result entries</h3><canvas id="teacherChart"></canvas></div>
       <div class="card chart-box"><h3>Attendance pattern</h3><canvas id="attendanceChart"></canvas></div>
       <div class="card chart-box"><h3>Top learners</h3><canvas id="topLearnersChart"></canvas></div>
-      <div class="card chart-box"><h3>Fee balance by class</h3><canvas id="feeChart"></canvas></div>
     </div>
     <div class="row" style="align-items:flex-start;margin-top:1rem">
       <div class="col card"><h3>Learners needing academic support</h3>${weak.length?`<table><thead><tr><th>Learner</th><th>Class</th><th>Mean</th><th>Action</th></tr></thead><tbody>${weak.map(x=>`<tr><td>${esc(x.student.full_name)}<div class="small muted">${esc(x.student.admission_number||'')}</div></td><td>${esc([x.student.grade,x.student.stream].filter(Boolean).join(' '))}</td><td><span class="badge terra">${x.avg}%</span></td><td class="small muted">Remedial work / parent follow-up</td></tr>`).join('')}</tbody></table>`:'<p class="muted small">No learner is below the support line.</p>'}</div>
       <div class="col card"><h3>Top learners</h3>${top.length?`<table><thead><tr><th>Learner</th><th>Class</th><th>Mean</th></tr></thead><tbody>${top.map(x=>`<tr><td>${esc(x.student.full_name)}</td><td>${esc([x.student.grade,x.student.stream].filter(Boolean).join(' '))}</td><td><span class="badge">${x.avg}%</span></td></tr>`).join('')}</tbody></table>`:'<p class="muted small">No scores yet.</p>'}</div>
-    </div>`:`<div class="card empty"><i class="ti ti-chart-line"></i><div>No matching scores for these filters.</div></div>`}`;
+    </div>`:`<div class="card empty"><i class="ti ti-chart-line"></i><div>No matching scores for these filters.</div></div>`}`}`;
+  $('#anaAcademicTab').onclick=()=>{ state.analyticsMode='academic'; modules.analytics(m); };
+  $('#anaFinanceTab').onclick=()=>{ state.analyticsMode='finance'; modules.analytics(m); };
   ['anaYear','anaTerm','anaGrade','anaStream','anaSubject'].forEach(id=>{
     const el=document.getElementById(id);
-    if(el) el.onchange=()=>{ state.analyticsFilters={year:$('#anaYear').value,term:$('#anaTerm').value,grade:$('#anaGrade').value,stream:$('#anaStream').value,subject:$('#anaSubject').value}; modules.analytics(m); };
+    if(el) el.onchange=()=>{ state.analyticsFilters={year:$('#anaYear').value,term:$('#anaTerm').value,grade:$('#anaGrade').value,stream:$('#anaStream').value,subject:$('#anaSubject')?.value||'all'}; modules.analytics(m); };
   });
   const draw=(id,data,label,color,type='bar',valueKey='avg',maxY=100)=>{
     if(!window.Chart || !data.length) return;
