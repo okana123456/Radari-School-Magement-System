@@ -458,6 +458,14 @@ on conflict (school_code) do nothing;
     .auth-brand>*{position:relative}
     .auth-brand h1{font-size:2.4rem;color:#fbf7ec}
     .auth-brand .tag{opacity:.8;max-width:380px}
+    .auth-photo-grid{display:grid;grid-template-columns:1.25fr .85fr;gap:.75rem;margin:1.5rem 0;max-width:640px}
+    .auth-photo-grid figure{margin:0;position:relative;overflow:hidden;border-radius:10px;min-height:128px;background:rgba(255,255,255,.12);box-shadow:0 16px 42px rgba(0,0,0,.22)}
+    .auth-photo-grid figure:first-child{grid-row:span 2;min-height:270px}
+    .auth-photo-grid img{width:100%;height:100%;object-fit:cover;display:block;filter:saturate(.96)}
+    .auth-photo-grid figcaption{position:absolute;left:.6rem;right:.6rem;bottom:.55rem;padding:.35rem .5rem;border-radius:8px;background:rgba(22,56,42,.78);color:#fbf7ec;font-size:.72rem;line-height:1.25;backdrop-filter:blur(6px)}
+    .auth-proof{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.55rem;max-width:640px}
+    .auth-proof span{border:1px solid rgba(255,255,255,.18);border-radius:9px;padding:.55rem .6rem;background:rgba(255,255,255,.08);font-size:.78rem;line-height:1.25;color:#fbf7ec}
+    @media(max-width:1100px){.auth-photo-grid{grid-template-columns:1fr}.auth-photo-grid figure:first-child{grid-row:auto;min-height:180px}.auth-proof{grid-template-columns:1fr}}
     .brand-mark{font-family:'Fraunces',serif;font-size:1.6rem;letter-spacing:.02em}
     @media(max-width:860px){.auth-brand{display:none}}
     .auth-form{background:var(--bg);padding:2rem 1.25rem;display:flex;flex-direction:column;justify-content:center;align-items:center}
@@ -1071,6 +1079,18 @@ function brandPanel(){
     <div>
       <h1>School life, gathered in one place.</h1>
       <p class="tag">${TAGLINE} Track CBC competencies, attendance, fees and lesson plans from any phone.</p>
+    </div>
+    <div class="auth-photo-grid" aria-label="Radari being used by Kenyan schools">
+      <figure><img src="/assets/radari-training-session.png" alt="Kenyan teachers being trained on the Radari CBC school management system" loading="eager"><figcaption>Teacher onboarding and staff training</figcaption></figure>
+      <figure><img src="/assets/radari-teacher-mobile.png" alt="Teacher using Radari on a phone at school" loading="lazy"><figcaption>Works from phone or computer</figcaption></figure>
+      <figure><img src="/assets/radari-admin-training.png" alt="School administrators learning Radari in an office" loading="lazy"><figcaption>Simple for school administrators</figcaption></figure>
+      <figure><img src="/assets/radari-cbc-grading.png" alt="Teacher entering CBC marks and grading records with Radari" loading="lazy"><figcaption>CBC marks and report cards</figcaption></figure>
+      <figure><img src="/assets/radari-fee-reports.png" alt="Headteacher and bursar reviewing fee balances in Radari" loading="lazy"><figcaption>Fees, balances and reports</figcaption></figure>
+    </div>
+    <div class="auth-proof">
+      <span>CBC grading and report cards</span>
+      <span>Attendance and learner records</span>
+      <span>Fees and M-Pesa updates</span>
     </div>
     <div class="small" style="opacity:.7">Designed for Kenyan primary and junior secondary schools.</div>
   </div>`;
