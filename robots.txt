@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://radari.rudderdatanalytics.co.ke/sitemap.xml
