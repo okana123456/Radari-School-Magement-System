@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <!--
 ================================================================================
 RADARI â€” CBC School Management System
@@ -514,7 +514,7 @@ on conflict (school_code) do nothing;
     .landing-links{display:flex;gap:.9rem;align-items:center;flex-wrap:wrap}
     .landing-links a{font-size:.9rem;color:var(--ink-2)}
     .landing-hero{max-width:1180px;margin:0 auto;padding:3.2rem 1.1rem 2rem;display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,.92fr);gap:2rem;align-items:center}
-    .landing-eyebrow{display:inline-flex;gap:.45rem;align-items:center;border:1px solid rgba(31,68,52,.16);border-radius:999px;padding:.32rem .7rem;background:#fff;color:var(--green);font-weight:700;font-size:.78rem;margin-bottom:1rem}
+    .landing-eyebrow{display:inline-flex;border:1px solid rgba(31,68,52,.16);border-radius:999px;padding:.32rem .7rem;background:#fff;color:var(--green);font-weight:700;font-size:.78rem;margin-bottom:1rem}
     .landing h1{font-size:clamp(2.1rem,5vw,4.5rem);line-height:.98;letter-spacing:0;color:#153625;margin-bottom:1rem}
     .landing-lead{font-size:1.07rem;color:#506359;max-width:620px;margin-bottom:1.2rem}
     .landing-actions{display:flex;gap:.75rem;flex-wrap:wrap;margin:1.15rem 0}
@@ -530,11 +530,20 @@ on conflict (school_code) do nothing;
     .landing-section h2{font-size:2rem;color:#153625}
     .feature-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;margin-top:1rem}
     .feature-card{background:#fff;border:1px solid rgba(26,60,42,.1);border-radius:12px;padding:1rem;box-shadow:0 12px 28px rgba(26,60,42,.06)}
-    .feature-card i{color:var(--green);font-size:1.4rem}
+    .feature-card .feature-kicker{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--terracotta);font-weight:800;margin-bottom:.35rem}
     .feature-card p{color:#59675f;margin:.25rem 0 0}
+    .landing-copy-band{background:#fff;border-block:1px solid rgba(26,60,42,.1)}
+    .landing-copy-grid{max-width:1180px;margin:0 auto;padding:2.4rem 1.1rem;display:grid;grid-template-columns:.9fr 1.1fr;gap:2rem;align-items:start}
+    .landing-copy-grid ul{margin:.5rem 0 0;padding-left:1.05rem;color:#506359}
+    .landing-copy-grid li{margin:.42rem 0}
+    .landing-product{background:#fff;border:1px solid rgba(26,60,42,.12);border-radius:16px;padding:1rem;box-shadow:0 18px 45px rgba(26,60,42,.09)}
+    .landing-product-row{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;margin-top:.7rem}
+    .landing-product-panel{border:1px solid rgba(26,60,42,.1);border-radius:10px;padding:.8rem;background:#fbf8ef}
+    .landing-product-panel b{display:block;color:#153625}
+    .landing-product-panel span{display:block;color:#66736b;font-size:.84rem;margin-top:.2rem}
     .landing-contact{background:#123824;color:#f8f1df;border-radius:16px;padding:1.4rem;display:flex;justify-content:space-between;gap:1rem;align-items:center;flex-wrap:wrap}
     .landing-contact a{color:#fff;font-weight:700}
-    @media(max-width:900px){.landing-hero{grid-template-columns:1fr;padding-top:2rem}.landing-proof,.feature-grid{grid-template-columns:1fr}.landing-links a:not(.btn){display:none}.landing-photos figure:first-child{min-height:230px}}
+    @media(max-width:900px){.landing-hero,.landing-copy-grid{grid-template-columns:1fr;padding-top:2rem}.landing-proof,.feature-grid,.landing-product-row{grid-template-columns:1fr}.landing-links a:not(.btn){display:none}.landing-photos figure:first-child{min-height:230px}}
 
     /* APP SHELL */
     .shell{display:flex;min-height:100vh;align-items:stretch}
@@ -1143,8 +1152,8 @@ function viewLanding(){
       <div class="landing-nav-inner">
         <a href="#" class="landing-brand" aria-label="Radari home"><span class="landing-brand-badge">R</span><span>Radari</span></a>
         <div class="landing-links">
-          <a href="#features">Features</a>
-          <a href="#reports">Reports</a>
+          <a href="#features">CBC grading</a>
+          <a href="#fees">Fees</a>
           <a href="#contact">Contact</a>
           <button class="btn secondary" id="landingLogin">Sign in</button>
           <button class="btn primary" id="landingSignup">Create account</button>
@@ -1153,17 +1162,17 @@ function viewLanding(){
     </nav>
     <section class="landing-hero">
       <div>
-        <div class="landing-eyebrow"><i class="ti ti-school"></i> CBC school management for Kenyan schools</div>
-        <h1>Simple records, clean report cards, calmer school days.</h1>
-        <p class="landing-lead">Radari helps private primary and junior schools manage learners, CBC grading, report cards, attendance, fees, M-Pesa updates and school analytics from phone or computer.</p>
+        <div class="landing-eyebrow">CBC school management system for Kenyan schools</div>
+        <h1>Radari helps schools grade, report and track learners without stress.</h1>
+        <p class="landing-lead">A simple Kenyan school management system for CBC grading, report cards, learner records, class attendance, school fees, M-Pesa fee payments, KNEC SBA records, teacher accounts and school analytics.</p>
         <div class="landing-actions">
-          <button class="btn primary" id="heroSignup"><i class="ti ti-user-plus"></i> Start with Radari</button>
-          <a class="btn secondary" href="https://wa.me/254708095461?text=Hello%20Radari%2C%20I%20would%20like%20a%20school%20demo" target="_blank" rel="noopener"><i class="ti ti-brand-whatsapp"></i> WhatsApp demo</a>
+          <button class="btn primary" id="heroSignup">Start with Radari</button>
+          <a class="btn secondary" href="https://wa.me/254708095461?text=Hello%20Radari%2C%20I%20would%20like%20a%20school%20demo" target="_blank" rel="noopener">Request a demo</a>
         </div>
         <div class="landing-proof">
-          <div><b>CBC</b><span class="small muted">Marks, levels, comments and reports.</span></div>
-          <div><b>M-Pesa</b><span class="small muted">Fee payments and balances.</span></div>
-          <div><b>Phone ready</b><span class="small muted">Built for busy teachers.</span></div>
+          <div><b>CBC</b><span class="small muted">Marks, levels, comments, positions and report cards.</span></div>
+          <div><b>Fees</b><span class="small muted">Balances, fee statements and M-Pesa updates.</span></div>
+          <div><b>Mobile</b><span class="small muted">Responsive app experience for teachers and admins.</span></div>
         </div>
       </div>
       <div class="landing-photos" aria-label="Teachers and school administrators using Radari">
@@ -1174,15 +1183,32 @@ function viewLanding(){
         <figure><img src="${LANDING_PHOTOS[4]}" alt="Learner writing during assessment" loading="lazy"><figcaption>Assessment history</figcaption></figure>
       </div>
     </section>
-    <section class="landing-section" id="features">
-      <h2>Everything schools ask for first</h2>
+    <section class="landing-copy-band" id="features">
+      <div class="landing-copy-grid">
+        <div>
+          <h2>CBC grading and report cards built for real school work</h2>
+          <p class="landing-lead" style="font-size:1rem">Radari supports the daily academic work that private primary schools and junior schools ask for first: entering marks, calculating CBC levels, generating printable report cards and following learner performance over time.</p>
+        </div>
+        <div class="landing-product">
+          <h3>What the school gets</h3>
+          <div class="landing-product-row">
+            <div class="landing-product-panel"><b>CBC marks entry</b><span>Flexible subjects, paper scores, marks out of any total and automatic grading.</span></div>
+            <div class="landing-product-panel"><b>Report card generation</b><span>Clean PDFs with comments, colours, positions and learner progress movement.</span></div>
+            <div class="landing-product-panel"><b>Learner progress analytics</b><span>Track strengths, weak areas, term movement and class performance.</span></div>
+            <div class="landing-product-panel"><b>KNEC SBA support</b><span>Keep assessment records organised for easier school reporting.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="landing-section">
+      <h2>One system for school records, fees and daily classroom work</h2>
       <div class="feature-grid">
-        <div class="feature-card"><i class="ti ti-users"></i><h3>Learner records</h3><p>Admissions, streams, parent details, progress and attendance in one place.</p></div>
-        <div class="feature-card"><i class="ti ti-chart-bar"></i><h3>CBC grading</h3><p>Flexible subjects, custom marks out of any score, automatic levels and comments.</p></div>
-        <div class="feature-card"><i class="ti ti-file-text"></i><h3>Report cards</h3><p>Clean printable reports with school colours, comments, position and performance trend.</p></div>
-        <div class="feature-card"><i class="ti ti-cash"></i><h3>Fees</h3><p>Manual fee posting, M-Pesa fee updates, balances and finance analytics.</p></div>
-        <div class="feature-card"><i class="ti ti-calendar-check"></i><h3>Attendance</h3><p>Daily attendance, history and downloadable class registers.</p></div>
-        <div class="feature-card"><i class="ti ti-report-analytics"></i><h3>School analytics</h3><p>Academic and finance insights for class teachers, heads and directors.</p></div>
+        <div class="feature-card"><div class="feature-kicker">Admissions</div><h3>Learner records</h3><p>Student registration, admission numbers, grade, stream, parent contacts, attendance and academic history in one place.</p></div>
+        <div class="feature-card"><div class="feature-kicker">Assessments</div><h3>CBC grading system</h3><p>Flexible learning areas, term exams, test scores, competency levels, total points and teacher comments.</p></div>
+        <div class="feature-card"><div class="feature-kicker">Reports</div><h3>Report card software</h3><p>Printable school reports with colours, positions, comments, learner movement and class teacher review.</p></div>
+        <div class="feature-card" id="fees"><div class="feature-kicker">Finance</div><h3>School fees tracking</h3><p>Fee balances, manual payments, M-Pesa fee payment updates, fee statements and finance analytics.</p></div>
+        <div class="feature-card"><div class="feature-kicker">Classroom</div><h3>Attendance registers</h3><p>Daily class attendance, attendance history and downloadable registers for teachers and administrators.</p></div>
+        <div class="feature-card"><div class="feature-kicker">Management</div><h3>School analytics</h3><p>Academic analysis, fee balance analysis, class comparison and student progress dashboards.</p></div>
       </div>
     </section>
     <section class="landing-section" id="reports">
@@ -1198,9 +1224,9 @@ function viewLanding(){
       </div>
     </section>
   </main>`;
-  $('#landingLogin').onclick=viewLogin;
-  $('#landingSignup').onclick=viewSignup;
-  $('#heroSignup').onclick=viewSignup;
+  $('#landingLogin').onclick=()=>{ history.replaceState(null,'','#login'); viewLogin(); };
+  $('#landingSignup').onclick=()=>{ history.replaceState(null,'','#signup'); viewSignup(); };
+  $('#heroSignup').onclick=()=>{ history.replaceState(null,'','#signup'); viewSignup(); };
   wireInstallButton();
 }
 
@@ -5690,23 +5716,7 @@ function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMar
     ${myRank?`<div class="perf-item"><div class="perf-num">${myRank}<span style="font-size:12px">/${streamSize}</span></div><div class="perf-lbl">Stream Position</div></div>`:''}
   </div>`:''}
 
-  ${trendPoints.length?`
-  <div class="trend-box">
-    <div>
-      <div class="trend-title">Performance movement</div>
-      <div class="trend-copy">
-        ${trendPoints.length>1
-          ? `Previous Term ${trendPoints[0].term}, ${trendPoints[0].year}: <b>${trendPoints[0].avg}%</b>. Current Term ${term}, ${year}: <b>${overallAvg??'â€”'}%</b>. <span class="trend-delta">${trendDelta>=0?'Improved by':'Dropped by'} ${Math.abs(trendDelta)}%</span>.`
-          : `Current average: <b>${overallAvg??'â€”'}%</b>. More trend detail will appear after another exam or term is recorded.`}
-      </div>
-    </div>
-    <svg class="trend-chart" viewBox="0 0 120 82" role="img" aria-label="Student performance trend">
-      <line x1="10" y1="78" x2="110" y2="78" stroke="#ddd" stroke-width="1"/>
-      <line x1="10" y1="20" x2="110" y2="20" stroke="#eee" stroke-width="1"/>
-      ${trendPoints.length>1?`<polyline points="${trendPoints.map(p=>`${p.x},${p.y}`).join(' ')}" fill="none" stroke="${trendStroke}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`:''}
-      ${trendPoints.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="4" fill="${trendStroke}"/><text x="${p.x}" y="${Math.max(11,p.y-8)}" text-anchor="middle" font-size="8" fill="#333">${p.avg}%</text><text x="${p.x}" y="81" text-anchor="middle" font-size="7" fill="#666">T${p.term}</text>`).join('')}
-    </svg>
-  </div>`:''}
+
 
   ${health.length?`<div style="background:#fff8e1;border-left:4px solid #f9a825;border-radius:3px;padding:4px 8px;margin-bottom:8px;font-size:10px">
     <b>Health note:</b> ${health.map(h=>`${esc(h.condition_name)} (${esc(h.severity)})`).join(', ')}
@@ -5750,6 +5760,24 @@ function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMar
     </tbody>
   </table>
 
+
+  ${trendPoints.length?`
+  <div class="trend-box">
+    <div>
+      <div class="trend-title">Performance movement</div>
+      <div class="trend-copy">
+        ${trendPoints.length>1
+          ? `Previous Term ${trendPoints[0].term}, ${trendPoints[0].year}: <b>${trendPoints[0].avg}%</b>. Current Term ${term}, ${year}: <b>${overallAvg??'â€”'}%</b>. <span class="trend-delta">${trendDelta>=0?'Improved by':'Dropped by'} ${Math.abs(trendDelta)}%</span>.`
+          : `Current average: <b>${overallAvg??'â€”'}%</b>. More trend detail will appear after another exam or term is recorded.`}
+      </div>
+    </div>
+    <svg class="trend-chart" viewBox="0 0 120 82" role="img" aria-label="Student performance trend">
+      <line x1="10" y1="78" x2="110" y2="78" stroke="#ddd" stroke-width="1"/>
+      <line x1="10" y1="20" x2="110" y2="20" stroke="#eee" stroke-width="1"/>
+      ${trendPoints.length>1?`<polyline points="${trendPoints.map(p=>`${p.x},${p.y}`).join(' ')}" fill="none" stroke="${trendStroke}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`:''}
+      ${trendPoints.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="4" fill="${trendStroke}"/><text x="${p.x}" y="${Math.max(11,p.y-8)}" text-anchor="middle" font-size="8" fill="#333">${p.avg}%</text><text x="${p.x}" y="81" text-anchor="middle" font-size="7" fill="#666">T${p.term}</text>`).join('')}
+    </svg>
+  </div>`:''}
   <!-- Subject groupings â€” Arts & Sports / Social Sciences / STEM (from Image 2) -->
   <div class="group-row">
     <div class="group-cell"><div class="g-lbl">Arts &amp; Sports</div></div>
@@ -6787,6 +6815,10 @@ async function loadTeacherAssignment(){
   return state.teacherAssignment;
 }
 
+function isInstalledApp(){
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
 async function boot(){
   if(location.hash.includes('type=signup')){
     await sb.auth.signOut();
@@ -6799,7 +6831,12 @@ async function boot(){
     viewSetPassword(); return;
   }
   const { data:{ session } } = await sb.auth.getSession();
-  if(!session){ viewLanding(); return; }
+  if(!session){
+    const publicRoute = location.hash.replace('#','').toLowerCase();
+    if(publicRoute==='login' || isInstalledApp()){ viewLogin(); return; }
+    if(publicRoute==='signup'){ viewSignup(); return; }
+    viewLanding(); return;
+  }
   state.session = session;
   state.profile = await loadProfile();
   if(state.profile?.school_id){
@@ -6822,7 +6859,7 @@ window.addEventListener('hashchange', ()=>{
 });
 
 sb.auth.onAuthStateChange((event)=>{
-  if(event==='SIGNED_OUT'){ viewLanding(); }
+  if(event==='SIGNED_OUT'){ isInstalledApp()?viewLogin():viewLanding(); }
   if(event==='PASSWORD_RECOVERY'){ viewSetPassword(); }
 });
 
@@ -7089,4 +7126,5 @@ boot();
 </script>
 </body>
 </html>
+
 

@@ -1,8 +1,8 @@
 {
   "name": "Radari School Management",
   "short_name": "Radari",
-  "description": "CBC grading, attendance, reports and fee tracking for Kenyan schools.",
-  "start_url": "/",
+  "description": "CBC grading, report cards, learner records, attendance, fees and school analytics for Kenyan schools.",
+  "start_url": "/#login",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f7f4ee",

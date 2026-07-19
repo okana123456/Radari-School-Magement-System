@@ -1,4 +1,4 @@
-const CACHE_NAME = "radari-v1";
+const CACHE_NAME = "radari-v2";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
