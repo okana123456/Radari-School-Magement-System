@@ -1,11 +1,11 @@
-<!doctype html>
+﻿<!doctype html>
 <!--
 ================================================================================
-RADARI — CBC School Management System
+RADARI â€” CBC School Management System
 Single-file HTML + Supabase application for Kenyan primary & junior secondary.
 ================================================================================
 
-SUPABASE SETUP — Run the following SQL ONCE in the Supabase SQL editor.
+SUPABASE SETUP â€” Run the following SQL ONCE in the Supabase SQL editor.
 After running, go to:
   Authentication > URL Configuration  -> set Site URL to your deployed URL
                                          and add it to Redirect URLs.
@@ -235,7 +235,7 @@ grant all on public.users, public.students, public.student_health,
   to authenticated;
 
 --------------------------------------------------------------------------------
--- RLS — security definer helpers to avoid recursion
+-- RLS â€” security definer helpers to avoid recursion
 --------------------------------------------------------------------------------
 create or replace function public.current_school_id() returns uuid
 language sql stable security definer set search_path = public as $$
@@ -354,7 +354,7 @@ on conflict (school_code) do nothing;
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Radari — CBC School Management</title>
+  <title>Radari â€” CBC School Management</title>
   <meta name="application-name" content="Radari" />
   <meta name="title" content="Radari - CBC School Management System for Kenyan Schools" />
   <meta name="description" content="Radari is a simple CBC school management system for Kenyan schools, teachers and directors. Manage learners, CBC grading, report cards, attendance, fees, M-Pesa fee payments, staff and school analytics from phone or computer." />
@@ -505,6 +505,37 @@ on conflict (school_code) do nothing;
     .pwd-check span.ok{color:var(--green)}
     .form-link{font-size:.82rem;text-align:right;display:block;margin-top:-.4rem;margin-bottom:1rem}
 
+    /* PUBLIC LANDING */
+    .landing{min-height:100vh;background:#fbf8ef;color:var(--ink)}
+    .landing-nav{position:sticky;top:0;z-index:30;background:rgba(251,248,239,.94);backdrop-filter:blur(12px);border-bottom:1px solid rgba(26,60,42,.12)}
+    .landing-nav-inner{max-width:1180px;margin:0 auto;padding:.85rem 1.1rem;display:flex;align-items:center;justify-content:space-between;gap:1rem}
+    .landing-brand{display:flex;align-items:center;gap:.65rem;font-weight:800;color:var(--green)}
+    .landing-brand-badge{width:38px;height:38px;border-radius:10px;background:var(--green);color:#fff;display:grid;place-items:center;font-family:'Fraunces',serif;font-size:1.2rem}
+    .landing-links{display:flex;gap:.9rem;align-items:center;flex-wrap:wrap}
+    .landing-links a{font-size:.9rem;color:var(--ink-2)}
+    .landing-hero{max-width:1180px;margin:0 auto;padding:3.2rem 1.1rem 2rem;display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,.92fr);gap:2rem;align-items:center}
+    .landing-eyebrow{display:inline-flex;gap:.45rem;align-items:center;border:1px solid rgba(31,68,52,.16);border-radius:999px;padding:.32rem .7rem;background:#fff;color:var(--green);font-weight:700;font-size:.78rem;margin-bottom:1rem}
+    .landing h1{font-size:clamp(2.1rem,5vw,4.5rem);line-height:.98;letter-spacing:0;color:#153625;margin-bottom:1rem}
+    .landing-lead{font-size:1.07rem;color:#506359;max-width:620px;margin-bottom:1.2rem}
+    .landing-actions{display:flex;gap:.75rem;flex-wrap:wrap;margin:1.15rem 0}
+    .landing-proof{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.7rem;margin-top:1.2rem;max-width:680px}
+    .landing-proof div{background:#fff;border:1px solid rgba(26,60,42,.1);border-radius:10px;padding:.75rem;box-shadow:0 12px 28px rgba(26,60,42,.06)}
+    .landing-proof b{display:block;color:var(--green);font-size:1.2rem}
+    .landing-photos{display:grid;grid-template-columns:1.2fr .8fr;gap:.75rem}
+    .landing-photos figure{margin:0;min-height:155px;border-radius:14px;overflow:hidden;position:relative;background:#dfe8df;box-shadow:0 18px 42px rgba(26,60,42,.16)}
+    .landing-photos figure:first-child{grid-row:span 2;min-height:330px}
+    .landing-photos img{width:100%;height:100%;object-fit:cover;display:block}
+    .landing-photos figcaption{position:absolute;left:.75rem;right:.75rem;bottom:.75rem;background:rgba(21,54,37,.78);color:#fff;border-radius:8px;padding:.45rem .6rem;font-size:.78rem;line-height:1.25}
+    .landing-section{max-width:1180px;margin:0 auto;padding:2.2rem 1.1rem}
+    .landing-section h2{font-size:2rem;color:#153625}
+    .feature-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;margin-top:1rem}
+    .feature-card{background:#fff;border:1px solid rgba(26,60,42,.1);border-radius:12px;padding:1rem;box-shadow:0 12px 28px rgba(26,60,42,.06)}
+    .feature-card i{color:var(--green);font-size:1.4rem}
+    .feature-card p{color:#59675f;margin:.25rem 0 0}
+    .landing-contact{background:#123824;color:#f8f1df;border-radius:16px;padding:1.4rem;display:flex;justify-content:space-between;gap:1rem;align-items:center;flex-wrap:wrap}
+    .landing-contact a{color:#fff;font-weight:700}
+    @media(max-width:900px){.landing-hero{grid-template-columns:1fr;padding-top:2rem}.landing-proof,.feature-grid{grid-template-columns:1fr}.landing-links a:not(.btn){display:none}.landing-photos figure:first-child{min-height:230px}}
+
     /* APP SHELL */
     .shell{display:flex;min-height:100vh;align-items:stretch}
 
@@ -535,7 +566,7 @@ on conflict (school_code) do nothing;
     .sidebar .footer{padding:.85rem;border-top:1px solid var(--stone);font-size:.75rem;color:var(--muted)}
     .sidebar .footer strong{display:block;color:var(--ink);font-size:.8rem;margin-bottom:.1rem}
 
-    /* TOPBAR — mobile only */
+    /* TOPBAR â€” mobile only */
     .topbar{
       display:none;padding:.6rem 1rem;
       background:var(--surface);border-bottom:1px solid var(--stone);
@@ -570,7 +601,7 @@ on conflict (school_code) do nothing;
     .section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:.85rem;flex-wrap:wrap;gap:.5rem}
     .section-title .sub{color:var(--muted);font-size:.88rem}
 
-    /* DASHBOARD METRICS — responsive grid */
+    /* DASHBOARD METRICS â€” responsive grid */
     .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:.85rem;margin-bottom:1.25rem}
     @media(max-width:860px){.metrics{grid-template-columns:repeat(2,1fr);gap:.65rem}}
     @media(max-width:480px){.metrics{grid-template-columns:1fr 1fr;gap:.5rem}}
@@ -581,7 +612,7 @@ on conflict (school_code) do nothing;
     .metric.lg{grid-column:span 2}
     @media(max-width:480px){.metric.lg{grid-column:span 2}.metric .num{font-size:1.8rem}.metric.lg .num{font-size:2.2rem}}
 
-    /* TABLES — horizontal scroll on mobile */
+    /* TABLES â€” horizontal scroll on mobile */
     .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -.1rem}
     table{width:100%;border-collapse:collapse;min-width:400px}
     th,td{padding:.6rem .55rem;text-align:left;border-bottom:1px solid var(--stone);font-size:.88rem}
@@ -601,7 +632,7 @@ on conflict (school_code) do nothing;
     .check-picker input[type="checkbox"]{width:auto;appearance:auto;-webkit-appearance:auto;margin:0;flex-shrink:0}
     .check-picker-count{font-size:.76rem;color:var(--muted);margin-top:.28rem}
 
-    /* GRADING TABLE — the most complex mobile layout */
+    /* GRADING TABLE â€” the most complex mobile layout */
     .grading-wrap{overflow:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--stone);border-radius:var(--radius);max-height:68vh;overscroll-behavior:contain;background:#fff}
     .grading-wrap table{min-width:720px;border-collapse:collapse;table-layout:fixed}
     .grading-wrap th,.grading-wrap td{padding:.45rem .4rem;border-bottom:1px solid var(--stone);font-size:.82rem}
@@ -652,7 +683,7 @@ on conflict (school_code) do nothing;
     .score-btn.active.be{background:var(--terracotta);border-color:var(--terracotta)}
     .score-btn.active.ae{background:var(--amber);border-color:var(--amber)}
 
-    /* TOOLBAR — stacks on mobile */
+    /* TOOLBAR â€” stacks on mobile */
     .toolbar{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.85rem;align-items:flex-end}
     .toolbar .field{margin:0;min-width:120px;flex:1}
     @media(max-width:600px){
@@ -709,7 +740,7 @@ on conflict (school_code) do nothing;
       .card{box-shadow:none!important;border:1px solid #ddd!important}
     }
 
-    /* MOBILE BOTTOM NAV — quick access buttons at bottom on very small screens */
+    /* MOBILE BOTTOM NAV â€” quick access buttons at bottom on very small screens */
     @media(max-width:480px){
       main{padding:.75rem .75rem 5rem}
     }
@@ -814,7 +845,7 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
 }
 
 /*
-  ADDITIONAL SQL — run these in Supabase SQL editor if upgrading from an earlier version:
+  ADDITIONAL SQL â€” run these in Supabase SQL editor if upgrading from an earlier version:
 
   alter table public.assessments add column if not exists learning_area text;
   alter table public.assessments add column if not exists cat1 numeric;
@@ -1002,7 +1033,7 @@ window.addEventListener('appinstalled', ()=>{
   toast('Radari installed successfully.');
 });
 
-// Signed URL helper — always use this for downloading from school-files storage
+// Signed URL helper â€” always use this for downloading from school-files storage
 // bucket is private so direct public URLs won't work after security hardening
 // Usage: await getSignedUrl(fileUrl, expiresInSeconds)
 async function getSignedUrl(fileUrl, expiresIn=300){
@@ -1020,7 +1051,7 @@ async function getSignedUrl(fileUrl, expiresIn=300){
 
 function buildStrandPicker(container, strands, selectedId, onChange){
   let current = strands.find(s=>s.id===selectedId)||null;
-  const label = s=>s?`${s.grade||''} — ${s.subject} — ${s.strand}${s.sub_strand?' / '+s.sub_strand:''}`:'' ;
+  const label = s=>s?`${s.grade||''} â€” ${s.subject} â€” ${s.strand}${s.sub_strand?' / '+s.sub_strand:''}`:'' ;
 
   container.innerHTML=`<div class="strand-picker">
     <input type="text" class="sp-input" autocomplete="off" placeholder="Type to search strand..." value="${current?esc(label(current)):''}">
@@ -1070,6 +1101,14 @@ const state = {
   route:'dashboard',
 };
 
+const LANDING_PHOTOS = [
+  'https://images.unsplash.com/photo-1577896851231-70ef18881754?auto=format&fit=crop&w=1200&q=80',
+  'https://images.unsplash.com/photo-1588072432836-e10032774350?auto=format&fit=crop&w=900&q=80',
+  'https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&w=900&q=80',
+  'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?auto=format&fit=crop&w=900&q=80',
+  'https://images.unsplash.com/photo-1497633762265-9d179a990aa6?auto=format&fit=crop&w=900&q=80'
+];
+
 /* ============================================================================
  * AUTH VIEWS
  * ==========================================================================*/
@@ -1081,11 +1120,11 @@ function brandPanel(){
       <p class="tag">${TAGLINE} Track CBC competencies, attendance, fees and lesson plans from any phone.</p>
     </div>
     <div class="auth-photo-grid" aria-label="Radari being used by Kenyan schools">
-      <figure><img src="/assets/radari-training-session.png" alt="Kenyan teachers being trained on the Radari CBC school management system" loading="eager"><figcaption>Teacher onboarding and staff training</figcaption></figure>
-      <figure><img src="/assets/radari-teacher-mobile.png" alt="Teacher using Radari on a phone at school" loading="lazy"><figcaption>Works from phone or computer</figcaption></figure>
-      <figure><img src="/assets/radari-admin-training.png" alt="School administrators learning Radari in an office" loading="lazy"><figcaption>Simple for school administrators</figcaption></figure>
-      <figure><img src="/assets/radari-cbc-grading.png" alt="Teacher entering CBC marks and grading records with Radari" loading="lazy"><figcaption>CBC marks and report cards</figcaption></figure>
-      <figure><img src="/assets/radari-fee-reports.png" alt="Headteacher and bursar reviewing fee balances in Radari" loading="lazy"><figcaption>Fees, balances and reports</figcaption></figure>
+      <figure><img src="${LANDING_PHOTOS[0]}" alt="Teachers being trained on a school management system" loading="eager"><figcaption>Teacher onboarding and staff training</figcaption></figure>
+      <figure><img src="${LANDING_PHOTOS[1]}" alt="Teacher using digital classroom records" loading="lazy"><figcaption>Works from phone or computer</figcaption></figure>
+      <figure><img src="${LANDING_PHOTOS[2]}" alt="Students and teacher in a classroom" loading="lazy"><figcaption>Simple for school administrators</figcaption></figure>
+      <figure><img src="${LANDING_PHOTOS[3]}" alt="Teacher reviewing academic records" loading="lazy"><figcaption>CBC marks and report cards</figcaption></figure>
+      <figure><img src="${LANDING_PHOTOS[4]}" alt="Learner writing in class" loading="lazy"><figcaption>Fees, balances and reports</figcaption></figure>
     </div>
     <div class="auth-proof">
       <span>CBC grading and report cards</span>
@@ -1094,6 +1133,75 @@ function brandPanel(){
     </div>
     <div class="small" style="opacity:.7">Designed for Kenyan primary and junior secondary schools.</div>
   </div>`;
+}
+
+function viewLanding(){
+  document.body.innerHTML = `<div id="progress"></div><div id="toast" class="toast"></div>
+  ${installButtonHtml()}
+  <main class="landing">
+    <nav class="landing-nav">
+      <div class="landing-nav-inner">
+        <a href="#" class="landing-brand" aria-label="Radari home"><span class="landing-brand-badge">R</span><span>Radari</span></a>
+        <div class="landing-links">
+          <a href="#features">Features</a>
+          <a href="#reports">Reports</a>
+          <a href="#contact">Contact</a>
+          <button class="btn secondary" id="landingLogin">Sign in</button>
+          <button class="btn primary" id="landingSignup">Create account</button>
+        </div>
+      </div>
+    </nav>
+    <section class="landing-hero">
+      <div>
+        <div class="landing-eyebrow"><i class="ti ti-school"></i> CBC school management for Kenyan schools</div>
+        <h1>Simple records, clean report cards, calmer school days.</h1>
+        <p class="landing-lead">Radari helps private primary and junior schools manage learners, CBC grading, report cards, attendance, fees, M-Pesa updates and school analytics from phone or computer.</p>
+        <div class="landing-actions">
+          <button class="btn primary" id="heroSignup"><i class="ti ti-user-plus"></i> Start with Radari</button>
+          <a class="btn secondary" href="https://wa.me/254708095461?text=Hello%20Radari%2C%20I%20would%20like%20a%20school%20demo" target="_blank" rel="noopener"><i class="ti ti-brand-whatsapp"></i> WhatsApp demo</a>
+        </div>
+        <div class="landing-proof">
+          <div><b>CBC</b><span class="small muted">Marks, levels, comments and reports.</span></div>
+          <div><b>M-Pesa</b><span class="small muted">Fee payments and balances.</span></div>
+          <div><b>Phone ready</b><span class="small muted">Built for busy teachers.</span></div>
+        </div>
+      </div>
+      <div class="landing-photos" aria-label="Teachers and school administrators using Radari">
+        <figure><img src="${LANDING_PHOTOS[0]}" alt="Teachers being trained on Radari" loading="eager"><figcaption>Training for teachers and school administrators</figcaption></figure>
+        <figure><img src="${LANDING_PHOTOS[1]}" alt="Teacher working with learner records" loading="lazy"><figcaption>Fast learner records</figcaption></figure>
+        <figure><img src="${LANDING_PHOTOS[2]}" alt="Teacher and learners in class" loading="lazy"><figcaption>Classroom-ready grading</figcaption></figure>
+        <figure><img src="${LANDING_PHOTOS[3]}" alt="Academic records and reports" loading="lazy"><figcaption>Report cards and analytics</figcaption></figure>
+        <figure><img src="${LANDING_PHOTOS[4]}" alt="Learner writing during assessment" loading="lazy"><figcaption>Assessment history</figcaption></figure>
+      </div>
+    </section>
+    <section class="landing-section" id="features">
+      <h2>Everything schools ask for first</h2>
+      <div class="feature-grid">
+        <div class="feature-card"><i class="ti ti-users"></i><h3>Learner records</h3><p>Admissions, streams, parent details, progress and attendance in one place.</p></div>
+        <div class="feature-card"><i class="ti ti-chart-bar"></i><h3>CBC grading</h3><p>Flexible subjects, custom marks out of any score, automatic levels and comments.</p></div>
+        <div class="feature-card"><i class="ti ti-file-text"></i><h3>Report cards</h3><p>Clean printable reports with school colours, comments, position and performance trend.</p></div>
+        <div class="feature-card"><i class="ti ti-cash"></i><h3>Fees</h3><p>Manual fee posting, M-Pesa fee updates, balances and finance analytics.</p></div>
+        <div class="feature-card"><i class="ti ti-calendar-check"></i><h3>Attendance</h3><p>Daily attendance, history and downloadable class registers.</p></div>
+        <div class="feature-card"><i class="ti ti-report-analytics"></i><h3>School analytics</h3><p>Academic and finance insights for class teachers, heads and directors.</p></div>
+      </div>
+    </section>
+    <section class="landing-section" id="reports">
+      <div class="landing-contact">
+        <div>
+          <h2 style="color:#fff;margin-bottom:.25rem">Want to see Radari in your school?</h2>
+          <p style="margin:0;color:#dbe7dd">Call or WhatsApp Rudder Research and Data Analytics for setup, training and support.</p>
+        </div>
+        <div id="contact" style="display:flex;gap:.8rem;flex-wrap:wrap">
+          <a class="btn primary" href="tel:+254708095461">0708 095 461</a>
+          <a class="btn secondary" style="background:#fff" href="mailto:brucedataanalytics@gmail.com">Email us</a>
+        </div>
+      </div>
+    </section>
+  </main>`;
+  $('#landingLogin').onclick=viewLogin;
+  $('#landingSignup').onclick=viewSignup;
+  $('#heroSignup').onclick=viewSignup;
+  wireInstallButton();
 }
 
 function viewLogin(){
@@ -1667,7 +1775,7 @@ async function dashboardAdmin(m){
     <div class="metrics">
       <div class="metric"><div class="num">${students.count||0}</div><div class="lbl">Learners enrolled</div></div>
       <div class="metric"><div class="num">${teachers.count||0}</div><div class="lbl">Active teachers</div></div>
-      <div class="metric"><div class="num">${attRate===null?'—':attRate+'%'}</div><div class="lbl">Attendance today</div></div>
+      <div class="metric"><div class="num">${attRate===null?'â€”':attRate+'%'}</div><div class="lbl">Attendance today</div></div>
       <div class="metric"><div class="num">${collection}%</div><div class="lbl">Fee collection</div></div>
       <div class="metric"><div class="num" style="font-size:1.6rem">KSh ${outstanding.toLocaleString()}</div><div class="lbl">Fees outstanding</div></div>
       <div class="metric"><div class="num">${leave.count||0}</div><div class="lbl">Leave pending</div></div>
@@ -1738,7 +1846,7 @@ async function dashboardTeacher(m){
         <div class="card">
           <h3>Today's lessons</h3>
           ${todaySlots.length?`<table><thead><tr><th>Time</th><th>Grade</th><th>Stream</th><th>Subject</th></tr></thead>
-          <tbody>${todaySlots.map(r=>`<tr><td class="small">${esc(r.start_time||'')} – ${esc(r.end_time||'')}</td><td>${esc(r.grade)}</td><td>${esc(r.stream||'')}</td><td>${esc(r.subject)}</td></tr>`).join('')}</tbody></table>`
+          <tbody>${todaySlots.map(r=>`<tr><td class="small">${esc(r.start_time||'')} â€“ ${esc(r.end_time||'')}</td><td>${esc(r.grade)}</td><td>${esc(r.stream||'')}</td><td>${esc(r.subject)}</td></tr>`).join('')}</tbody></table>`
           :`<div class="muted small">No lessons scheduled for today.</div>`}
         </div>
         <div class="card">
@@ -2680,7 +2788,7 @@ function rubricPointsFromPct(pct){
 }
 function normalizePaperSubjectName(name=''){
   return String(name||'')
-    .replace(/\s*[-–—:]?\s*(paper|pp|p)\s*[0-9ivx]+$/i,'')
+    .replace(/\s*[-â€“â€”:]?\s*(paper|pp|p)\s*[0-9ivx]+$/i,'')
     .replace(/\s*\((paper|pp|p)\s*[0-9ivx]+\)$/i,'')
     .trim();
 }
@@ -2818,7 +2926,7 @@ const CBC_VALUES = [
 
 // Official report form structure: First Test, Second Test, Third Test per learning area.
 // Average Score row = simple average of the three test percentages.
-// (The official paper form has no differential weighting between tests — all three
+// (The official paper form has no differential weighting between tests â€” all three
 // contribute equally to the Average Score shown at the bottom of each learning area row.)
 function averageScore(scores){
   if(!scores) return null;
@@ -2988,8 +3096,8 @@ modules.grading = async (m)=>{
       <button class="btn primary" id="load" style="width:100%">
         <i class="ti ti-table"></i> Load class</button>
       <div class="small muted" style="margin-top:.5rem;line-height:1.6">
-        EE1=90–99% &middot; EE2=75–89% &middot; ME1=58–74% &middot; ME2=41–57% &middot;
-        AE1=31–40% &middot; AE2=21–30% &middot; BE1=11–20% &middot; BE2=1–10%
+        EE1=90â€“99% &middot; EE2=75â€“89% &middot; ME1=58â€“74% &middot; ME2=41â€“57% &middot;
+        AE1=31â€“40% &middot; AE2=21â€“30% &middot; BE1=11â€“20% &middot; BE2=1â€“10%
       </div>
     </div>
 
@@ -3015,7 +3123,7 @@ modules.grading = async (m)=>{
       return;
     }
 
-    // Load existing scores for this class — strand_id must be null (LA-level records)
+    // Load existing scores for this class â€” strand_id must be null (LA-level records)
     const {data:existing=[]}=await sb.from('assessments')
       .select('student_id,learning_area,cat1,cat2,endterm_score,score,weighted_score,remarks,teacher_id')
       .in('student_id',students.map(s=>s.id))
@@ -3080,7 +3188,7 @@ modules.grading = async (m)=>{
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.85rem;flex-wrap:wrap;gap:.5rem">
           <div>
-            <div style="font-weight:600;font-size:.95rem">${esc(grade)}${stream?' — '+esc(stream):''} <span class="badge amber" style="font-size:.72rem">Term ${term} ${year}</span></div>
+            <div style="font-weight:600;font-size:.95rem">${esc(grade)}${stream?' â€” '+esc(stream):''} <span class="badge amber" style="font-size:.72rem">Term ${term} ${year}</span></div>
             <div class="small muted">${esc(testLabel)} &nbsp;&middot;&nbsp; ${students.length} learner${students.length>1?'s':''}${teacherSubjects&&teacherSubjects.length?' &middot; Your subjects: <b>'+teacherSubjects.join(', ')+'</b>':''}${tch?.classes_taught?' &middot; Classes: <b>'+esc(tch.classes_taught)+'</b>':''}</div>
           </div>
           <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
@@ -4041,7 +4149,7 @@ function printLessonPlan(plan){
   <div class="section-label" style="margin-top:10px">Learning Resources</div>
   <table><tr><td class="resources-box filled">${esc(plan.resources||'')}</td></tr></table>
 
-  <div class="section-label">Organization of Learning <span style="font-weight:normal;text-decoration:none;text-transform:none">— How will you teach? e.g. group work, nature walk etc.</span></div>
+  <div class="section-label">Organization of Learning <span style="font-weight:normal;text-decoration:none;text-transform:none">â€” How will you teach? e.g. group work, nature walk etc.</span></div>
   <table><tr><td class="org-box filled">${esc(plan.learning_experiences||'')}</td></tr></table>
 
   <div class="section-label">Lesson Development</div>
@@ -4052,7 +4160,7 @@ function printLessonPlan(plan){
     <tr class="step-row"><td class="ltr">Step 4:</td><td></td></tr>
   </table>
 
-  <div class="section-label">Reflection on the Lesson <span style="font-weight:normal;text-decoration:none;text-transform:none">— did I succeed in achieving the learning outcomes at the end of the lesson:</span></div>
+  <div class="section-label">Reflection on the Lesson <span style="font-weight:normal;text-decoration:none;text-transform:none">â€” did I succeed in achieving the learning outcomes at the end of the lesson:</span></div>
   <table><tr><td class="reflect-box filled">${esc(plan.delivered_topic||'')}</td></tr></table>
 
   <div class="section-label" style="margin-top:14px">Approval</div>
@@ -4550,7 +4658,7 @@ modules.leave = async (m)=>{
     </div>` : ''}
 
     <div class="card">
-      <h3>Leave requests ${canApprove?'— all staff':''}</h3>
+      <h3>Leave requests ${canApprove?'â€” all staff':''}</h3>
       ${visible.length?`
       <table><thead><tr><th>Teacher</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th>${canApprove?'<th>Action</th>':''}</tr></thead>
       <tbody>${visible.map(r=>{
@@ -4625,7 +4733,7 @@ modules.leave = async (m)=>{
       const f=Object.fromEntries(new FormData(e.target));
       f.school_id=sid; f.teacher_id=myTeacher.id;
       const { error } = await sb.from('leave_requests').insert(f);
-      if(error) toast(error.message,true); else { toast('Application submitted — pending approval'); navigate('leave'); }
+      if(error) toast(error.message,true); else { toast('Application submitted â€” pending approval'); navigate('leave'); }
     };
   };
 };
@@ -4982,7 +5090,7 @@ modules.fees = async (m)=>{
       </div>`:'';
       $('#payResults').querySelectorAll('.strand-opt[data-id]').forEach(el=>el.onclick=async()=>{
         payStudentId=el.dataset.id;
-        $('#paySelName').textContent=el.querySelector('b').textContent+' — '+el.querySelector('.small').textContent;
+        $('#paySelName').textContent=el.querySelector('b').textContent+' â€” '+el.querySelector('.small').textContent;
         $('#paySelected').style.display='flex';
         $('#paySearch').style.display='none';
         $('#payResults').innerHTML='';
@@ -4990,7 +5098,7 @@ modules.fees = async (m)=>{
         const bals=balMap[payStudentId]||[];
         const sel=$('#payBal');
         sel.innerHTML=bals.length
-          ? bals.map(b=>`<option value="${b.id}" data-balance="${b.balance}" data-due="${b.amount_due}" data-paid="${b.amount_paid}">Term ${b.term} ${b.year} — Balance: KSh ${(+b.balance).toLocaleString()}</option>`).join('')
+          ? bals.map(b=>`<option value="${b.id}" data-balance="${b.balance}" data-due="${b.amount_due}" data-paid="${b.amount_paid}">Term ${b.term} ${b.year} â€” Balance: KSh ${(+b.balance).toLocaleString()}</option>`).join('')
           : `<option value="">No fee records for this learner</option>`;
         $('#periodField').style.display='';
         showBalSummary(bals[0]);
@@ -5207,7 +5315,7 @@ function printFeeStatement(student_id, studentName, balances){
   const totalPaid = balances.reduce((a,b)=>a+(+b.amount_paid||0),0);
   const totalBal = totalDue-totalPaid;
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-  <title>Fee Statement — ${studentName}</title>
+  <title>Fee Statement â€” ${studentName}</title>
   <style>
     body{font-family:Georgia,serif;color:#1c1d1a;margin:0;padding:2.5cm;font-size:13px}
     .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1f4434;padding-bottom:1rem;margin-bottom:1.5rem}
@@ -5231,7 +5339,7 @@ function printFeeStatement(student_id, studentName, balances){
   <div class="header">
     <div>
       <div class="school-name">${esc(school.name||'School')}</div>
-      <div class="school-sub">${esc(school.county||'')}${school.sub_county?' — '+esc(school.sub_county):''}<br>${esc(school.phone||'')} &nbsp; ${esc(school.email||'')}</div>
+      <div class="school-sub">${esc(school.county||'')}${school.sub_county?' â€” '+esc(school.sub_county):''}<br>${esc(school.phone||'')} &nbsp; ${esc(school.email||'')}</div>
     </div>
     <div>
       <div class="doc-title">Fee Statement</div>
@@ -5315,7 +5423,7 @@ modules.reports = async (m)=>{
     ).slice(0,10);
     if(!filtered.length){ $('#stuResults').innerHTML=`<div class="muted small" style="padding:.4rem 0">No learners match.</div>`; return; }
     $('#stuResults').innerHTML=`<div style="border:1px solid var(--stone);border-radius:var(--radius);overflow:hidden;margin-bottom:.5rem">
-      ${filtered.map(s=>`<div class="strand-opt" data-id="${s.id}" data-name="${esc(s.full_name)} — ${esc(s.grade||'')} ${esc(s.stream||'')}">
+      ${filtered.map(s=>`<div class="strand-opt" data-id="${s.id}" data-name="${esc(s.full_name)} â€” ${esc(s.grade||'')} ${esc(s.stream||'')}">
         <b>${esc(s.full_name)}</b>
         <span class="small muted" style="margin-left:.5rem">${esc(s.grade||'')} ${esc(s.stream||'')} &middot; ${esc(s.admission_number||'')}</span>
       </div>`).join('')}
@@ -5337,7 +5445,7 @@ modules.reports = async (m)=>{
   };
   if(role==='parent'&&students.length===1){
     selectedId=students[0].id; $('#stuId').value=selectedId;
-    $('#selectedName').textContent=`${students[0].full_name} — ${students[0].grade||''} ${students[0].stream||''}`;
+    $('#selectedName').textContent=`${students[0].full_name} â€” ${students[0].grade||''} ${students[0].stream||''}`;
     $('#selectedStu').style.display='flex'; $('#stuSearch').style.display='none'; $('#gen').disabled=false;
   }
 
@@ -5350,7 +5458,7 @@ modules.reports = async (m)=>{
     const {data:s}=await sb.from('students').select('*').eq('id',sidu).single();
     if(!s){ toast('Could not load learner record.',true); $('#rep').innerHTML=''; return; }
 
-    const [{data:allAss=[]},{data:att=[]},{data:health=[]},{data:allStudents=[]},{data:allStrands=[]}]=await Promise.all([
+    const [{data:allAss=[]},{data:att=[]},{data:health=[]},{data:allStudents=[]},{data:allStrands=[]},{data:historyAss=[]}]=await Promise.all([
       sb.from('assessments').select('learning_area,cat1,cat2,endterm_score,weighted_score,score,remarks,teachers(full_name)')
         .eq('student_id',sidu).eq('term',term).eq('year',year).is('strand_id',null)
         .not('learning_area','is',null),
@@ -5358,6 +5466,9 @@ modules.reports = async (m)=>{
       sb.from('student_health').select('condition_name,severity').eq('student_id',sidu),
       sb.from('students').select('id,full_name').eq('school_id',sid).eq('grade',s.grade||'').eq('stream',s.stream||''),
       sb.from('cbc_strands').select('grade,subject,instructor_name,teacher_id').eq('school_id',sid),
+      sb.from('assessments').select('learning_area,weighted_score,term,year,created_at')
+        .eq('student_id',sidu).is('strand_id',null).not('learning_area','is',null)
+        .order('year',{ascending:true}).order('term',{ascending:true}).order('created_at',{ascending:true}),
     ]);
 
     const daysPresent=att.filter(x=>x.status==='present').length;
@@ -5389,8 +5500,23 @@ modules.reports = async (m)=>{
     const overallAvg=filledRows.length?Math.round(totalMarks/filledRows.length*10)/10:null;
     const overallRc=overallAvg!=null?pctToRubricCode(overallAvg):null;
     const overallPts=overallRc?RUBRIC_BANDS.find(b=>b.code===overallRc)?.points||null:null;
+    const periodMap={};
+    historyAss.forEach(a=>{
+      if(!a.year || !a.term || a.weighted_score==null) return;
+      const key=`${a.year}-T${a.term}`;
+      if(!periodMap[key]) periodMap[key]={year:+a.year,term:+a.term,scores:[]};
+      periodMap[key].scores.push(+a.weighted_score);
+    });
+    const trend=Object.values(periodMap)
+      .filter(p=>p.scores.length)
+      .map(p=>({year:p.year,term:p.term,avg:Math.round((p.scores.reduce((a,b)=>a+b,0)/p.scores.length)*10)/10}))
+      .sort((a,b)=>(a.year-b.year)||(a.term-b.term));
+    const currentTrendIndex=trend.findIndex(p=>p.year===year && p.term===term);
+    const previousTrend=currentTrendIndex>0?trend[currentTrendIndex-1]:null;
+    const currentTrend=currentTrendIndex>=0?trend[currentTrendIndex]:(overallAvg!=null?{year,term,avg:overallAvg}:null);
+    const reportTrend=[...(previousTrend?[previousTrend]:[]),...(currentTrend?[currentTrend]:[])];
 
-    // Ranking — compare this student's avg vs classmates (load their assessments)
+    // Ranking â€” compare this student's avg vs classmates (load their assessments)
     const classIds=allStudents.map(s=>s.id);
     const {data:classAss=[]}=classIds.length>1?await sb.from('assessments')
       .select('student_id,weighted_score').in('student_id',classIds)
@@ -5406,11 +5532,11 @@ modules.reports = async (m)=>{
     const myRank=classRanked.findIndex(r=>r.id===sidu)+1||null;
     const streamSize=allStudents.length;
 
-    // Print window HTML — Image 1 inspired modern layout
+    // Print window HTML â€” Image 1 inspired modern layout
     const printHtml=buildReportCardHtml(s,laRows,{
       term,year,daysPresent,daysAbsent,totalMarks,maxMarks,
       overallAvg,overallRc,overallPts,myRank,streamSize,health,
-      school:state.school||{}
+      school:state.school||{}, reportTrend
     });
 
     $('#rep').innerHTML=`<div id="reportPreview">
@@ -5434,17 +5560,26 @@ modules.reports = async (m)=>{
   $('#prn').onclick=()=>{ const f=document.getElementById('reportFrame'); if(f){ const w=window.open('','_blank'); w.document.write(f.srcdoc); w.document.close(); setTimeout(()=>w.print(),600); } };
 };
 
-function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMarks,maxMarks,overallAvg,overallRc,overallPts,myRank,streamSize,health,school}){
+function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMarks,maxMarks,overallAvg,overallRc,overallPts,myRank,streamSize,health,school,reportTrend=[]}){
   const BAND_COLOR={EE1:'#1b5e20',EE2:'#2e7d32',ME1:'#1565c0',ME2:'#1976d2',AE1:'#e65100',AE2:'#f57c00',BE1:'#b71c1c',BE2:'#c62828'};
   const rcColor=rc=>BAND_COLOR[rc]||'#333';
   const primaryColor=school.report_primary_color||'#1a3c2a';
   const accentColor=school.report_accent_color||'#e8f5e9';
   const classTeacherComment=autoOverallComment(overallAvg, s.full_name);
   const hoiComment=autoHoiComment(overallAvg);
-  const fmt=v=>v!=null?v:'—';
+  const trendValues=reportTrend.map(p=>Number(p.avg||0));
+  const trendMax=Math.max(100,...trendValues);
+  const trendPoints=reportTrend.map((p,i)=>{
+    const x=reportTrend.length===1?60:14+(i*(92/(reportTrend.length-1)));
+    const y=74-((Number(p.avg||0)/(trendMax||100))*52);
+    return {...p,x,y};
+  });
+  const trendDelta=trendPoints.length>1?Number((trendPoints[trendPoints.length-1].avg-trendPoints[0].avg).toFixed(1)):null;
+  const trendStroke=trendDelta==null?'#666':(trendDelta>=0?'#2e7d32':'#c62828');
+  const fmt=v=>v!=null?v:'â€”';
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
-  <title>Report Card — ${s.full_name}</title>
+  <title>Report Card â€” ${s.full_name}</title>
   <style>
     @page{size:A4;margin:1.2cm}
     *{box-sizing:border-box;margin:0;padding:0}
@@ -5465,7 +5600,7 @@ function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMar
     .info-cell .lbl{color:#666;white-space:nowrap}
     .info-cell .val{font-weight:700;color:#111}
 
-    /* Performance summary box — Image 1 style */
+    /* Performance summary box â€” Image 1 style */
     .perf-box{background:${primaryColor};color:#fff;border-radius:6px;padding:8px 12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
     .perf-item{text-align:center}
     .perf-num{font-size:20px;font-weight:900;line-height:1}
@@ -5487,7 +5622,7 @@ function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMar
     .pts-badge{display:inline-block;width:20px;height:20px;border-radius:50%;font-weight:700;font-size:10px;text-align:center;line-height:20px;color:#fff}
     .avg-row td{font-weight:700;background:${accentColor};border-top:2px solid ${primaryColor};font-size:11px}
 
-    /* Levels legend — Image 1 style rounded badge */
+    /* Levels legend â€” Image 1 style rounded badge */
     .legend-box{border:1px solid #ddd;border-radius:6px;padding:8px 12px;margin-bottom:10px;display:grid;grid-template-columns:1fr 1fr;gap:4px 20px;font-size:9.5px}
     .legend-row{display:flex;gap:4px;align-items:center}
     .legend-code{width:30px;font-weight:700}
@@ -5509,6 +5644,11 @@ function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMar
     .sig-line{border-bottom:1px solid #333;height:22px;margin-bottom:0}
 
     .footer-row{display:flex;justify-content:space-between;font-size:9px;color:#666;margin-top:6px;border-top:1px solid #ddd;padding-top:5px}
+    .trend-box{border:1px solid #ddd;border-radius:6px;padding:7px 9px;margin-bottom:10px;display:grid;grid-template-columns:1fr 120px;gap:10px;align-items:center}
+    .trend-title{font-size:9px;font-weight:800;color:${primaryColor};text-transform:uppercase;letter-spacing:.04em}
+    .trend-copy{font-size:10px;color:#444;margin-top:2px}
+    .trend-delta{font-weight:800;color:${trendStroke}}
+    .trend-chart{width:120px;height:82px}
 
     @media print{body{font-size:11px}@page{margin:1cm}}
   </style></head><body>
@@ -5527,8 +5667,8 @@ function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMar
   <div class="info-strip">
     <div class="info-cell"><span class="lbl">NAME:</span><span class="val">${esc(s.full_name)}</span></div>
     <div class="info-cell"><span class="lbl">CLASS:</span><span class="val">${esc(s.grade||'')} ${esc(s.stream||'')}</span></div>
-    <div class="info-cell"><span class="lbl">ADM No:</span><span class="val">${esc(s.admission_number||'—')}</span></div>
-    <div class="info-cell"><span class="lbl">UPI / NEMIS:</span><span class="val">${esc(s.nemis_number||'—')}</span></div>
+    <div class="info-cell"><span class="lbl">ADM No:</span><span class="val">${esc(s.admission_number||'â€”')}</span></div>
+    <div class="info-cell"><span class="lbl">UPI / NEMIS:</span><span class="val">${esc(s.nemis_number||'â€”')}</span></div>
     <div class="info-cell"><span class="lbl">Days Present:</span><span class="val">${daysPresent}</span></div>
     <div class="info-cell"><span class="lbl">Days Absent:</span><span class="val" style="color:${daysAbsent>0?'#b71c1c':'inherit'}">${daysAbsent}</span></div>
   </div>
@@ -5544,17 +5684,35 @@ function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMar
   ${overallAvg!=null?`
   <div class="perf-box">
     <div class="perf-item"><div class="perf-num">${totalMarks.toFixed(1)}/${maxMarks}</div><div class="perf-lbl">Total Marks</div></div>
-    <div class="perf-item"><div class="perf-num">${overallPts||'—'}</div><div class="perf-lbl">Points</div></div>
+    <div class="perf-item"><div class="perf-num">${overallPts||'â€”'}</div><div class="perf-lbl">Points</div></div>
     <div class="perf-item"><div class="perf-num">${overallAvg}%</div><div class="perf-lbl">Average Mark</div></div>
-    <div class="perf-item"><div class="perf-badge" style="color:${rcColor(overallRc)}">${overallRc||'—'}</div><div class="perf-lbl" style="color:#ccc">Overall Level</div></div>
+    <div class="perf-item"><div class="perf-badge" style="color:${rcColor(overallRc)}">${overallRc||'â€”'}</div><div class="perf-lbl" style="color:#ccc">Overall Level</div></div>
     ${myRank?`<div class="perf-item"><div class="perf-num">${myRank}<span style="font-size:12px">/${streamSize}</span></div><div class="perf-lbl">Stream Position</div></div>`:''}
+  </div>`:''}
+
+  ${trendPoints.length?`
+  <div class="trend-box">
+    <div>
+      <div class="trend-title">Performance movement</div>
+      <div class="trend-copy">
+        ${trendPoints.length>1
+          ? `Previous Term ${trendPoints[0].term}, ${trendPoints[0].year}: <b>${trendPoints[0].avg}%</b>. Current Term ${term}, ${year}: <b>${overallAvg??'â€”'}%</b>. <span class="trend-delta">${trendDelta>=0?'Improved by':'Dropped by'} ${Math.abs(trendDelta)}%</span>.`
+          : `Current average: <b>${overallAvg??'â€”'}%</b>. More trend detail will appear after another exam or term is recorded.`}
+      </div>
+    </div>
+    <svg class="trend-chart" viewBox="0 0 120 82" role="img" aria-label="Student performance trend">
+      <line x1="10" y1="78" x2="110" y2="78" stroke="#ddd" stroke-width="1"/>
+      <line x1="10" y1="20" x2="110" y2="20" stroke="#eee" stroke-width="1"/>
+      ${trendPoints.length>1?`<polyline points="${trendPoints.map(p=>`${p.x},${p.y}`).join(' ')}" fill="none" stroke="${trendStroke}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`:''}
+      ${trendPoints.map(p=>`<circle cx="${p.x}" cy="${p.y}" r="4" fill="${trendStroke}"/><text x="${p.x}" y="${Math.max(11,p.y-8)}" text-anchor="middle" font-size="8" fill="#333">${p.avg}%</text><text x="${p.x}" y="81" text-anchor="middle" font-size="7" fill="#666">T${p.term}</text>`).join('')}
+    </svg>
   </div>`:''}
 
   ${health.length?`<div style="background:#fff8e1;border-left:4px solid #f9a825;border-radius:3px;padding:4px 8px;margin-bottom:8px;font-size:10px">
     <b>Health note:</b> ${health.map(h=>`${esc(h.condition_name)} (${esc(h.severity)})`).join(', ')}
   </div>`:''}
 
-  <!-- Main results table — Image 1 style columns -->
+  <!-- Main results table â€” Image 1 style columns -->
   <table>
     <thead>
       <tr>
@@ -5572,12 +5730,12 @@ function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMar
     <tbody>
       ${laRows.map(r=>`<tr>
         <td style="font-weight:600">${esc(r.la)}</td>
-        <td class="center">${r.t1!=null?r.t1+'/100':'—'}</td>
-        <td class="center">${r.t2!=null?r.t2+'/100':'—'}</td>
-        <td class="center">${r.t3!=null?r.t3+'/100':'—'}</td>
-        <td class="center" style="font-weight:700">${r.avg!=null?r.avg+'%':'—'}</td>
-        <td class="center">${r.rc?`<span class="rc-pill" style="background:${rcColor(r.rc)}">${r.rc}</span>`:'—'}</td>
-        <td class="center">${r.pts!=null?`<span class="pts-badge" style="background:${rcColor(r.rc)}">${r.pts}</span>`:'—'}</td>
+        <td class="center">${r.t1!=null?r.t1+'/100':'â€”'}</td>
+        <td class="center">${r.t2!=null?r.t2+'/100':'â€”'}</td>
+        <td class="center">${r.t3!=null?r.t3+'/100':'â€”'}</td>
+        <td class="center" style="font-weight:700">${r.avg!=null?r.avg+'%':'â€”'}</td>
+        <td class="center">${r.rc?`<span class="rc-pill" style="background:${rcColor(r.rc)}">${r.rc}</span>`:'â€”'}</td>
+        <td class="center">${r.pts!=null?`<span class="pts-badge" style="background:${rcColor(r.rc)}">${r.pts}</span>`:'â€”'}</td>
         <td style="font-style:italic;font-size:10px;color:#444">${esc(r.remarks)}</td>
         <td style="font-size:9.5px;color:#555">${esc(r.instructor)}</td>
       </tr>`).join('')}
@@ -5585,14 +5743,14 @@ function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMar
         <td>AVERAGE SCORE</td>
         <td class="center" colspan="3"></td>
         <td class="center">${overallAvg}%</td>
-        <td class="center"><span class="rc-pill" style="background:${rcColor(overallRc)}">${overallRc||'—'}</span></td>
-        <td class="center"><span class="pts-badge" style="background:${rcColor(overallRc)}">${overallPts||'—'}</span></td>
+        <td class="center"><span class="rc-pill" style="background:${rcColor(overallRc)}">${overallRc||'â€”'}</span></td>
+        <td class="center"><span class="pts-badge" style="background:${rcColor(overallRc)}">${overallPts||'â€”'}</span></td>
         <td colspan="2"></td>
       </tr>`:''}
     </tbody>
   </table>
 
-  <!-- Subject groupings — Arts & Sports / Social Sciences / STEM (from Image 2) -->
+  <!-- Subject groupings â€” Arts & Sports / Social Sciences / STEM (from Image 2) -->
   <div class="group-row">
     <div class="group-cell"><div class="g-lbl">Arts &amp; Sports</div></div>
     <div class="group-cell"><div class="g-lbl">Social Sciences</div></div>
@@ -5601,14 +5759,14 @@ function buildReportCardHtml(s,laRows,{term,year,daysPresent,daysAbsent,totalMar
 
   <!-- Levels legend -->
   <div class="legend-box">
-    <div class="legend-row"><span class="legend-code" style="color:${rcColor('EE1')}">EE1</span>90–100%</div>
-    <div class="legend-row"><span class="legend-code" style="color:${rcColor('AE1')}">AE1</span>31–40%</div>
-    <div class="legend-row"><span class="legend-code" style="color:${rcColor('EE2')}">EE2</span>75–89%</div>
-    <div class="legend-row"><span class="legend-code" style="color:${rcColor('AE2')}">AE2</span>21–30%</div>
-    <div class="legend-row"><span class="legend-code" style="color:${rcColor('ME1')}">ME1</span>58–74%</div>
-    <div class="legend-row"><span class="legend-code" style="color:${rcColor('BE1')}">BE1</span>11–20%</div>
-    <div class="legend-row"><span class="legend-code" style="color:${rcColor('ME2')}">ME2</span>41–57%</div>
-    <div class="legend-row"><span class="legend-code" style="color:${rcColor('BE2')}">BE2</span>1–10%</div>
+    <div class="legend-row"><span class="legend-code" style="color:${rcColor('EE1')}">EE1</span>90â€“100%</div>
+    <div class="legend-row"><span class="legend-code" style="color:${rcColor('AE1')}">AE1</span>31â€“40%</div>
+    <div class="legend-row"><span class="legend-code" style="color:${rcColor('EE2')}">EE2</span>75â€“89%</div>
+    <div class="legend-row"><span class="legend-code" style="color:${rcColor('AE2')}">AE2</span>21â€“30%</div>
+    <div class="legend-row"><span class="legend-code" style="color:${rcColor('ME1')}">ME1</span>58â€“74%</div>
+    <div class="legend-row"><span class="legend-code" style="color:${rcColor('BE1')}">BE1</span>11â€“20%</div>
+    <div class="legend-row"><span class="legend-code" style="color:${rcColor('ME2')}">ME2</span>41â€“57%</div>
+    <div class="legend-row"><span class="legend-code" style="color:${rcColor('BE2')}">BE2</span>1â€“10%</div>
   </div>
 
   <!-- Facilitator remarks -->
@@ -5876,11 +6034,11 @@ modules.revision = async (m)=>{
         </div>
         <div class="row">
           <div class="col field"><label>Exam type</label><select name="exam_type"><option>End Term Exam</option><option>CAT 1</option><option>CAT 2</option><option>Mock Exam</option><option>Revision Booklet</option><option>Past Paper</option></select></div>
-          <div class="col field"><label>Term</label><select name="term"><option value="">—</option><option>1</option><option>2</option><option>3</option></select></div>
+          <div class="col field"><label>Term</label><select name="term"><option value="">â€”</option><option>1</option><option>2</option><option>3</option></select></div>
           <div class="col field"><label>Year</label><input name="year" type="number" value="${new Date().getFullYear()}"></div>
         </div>
         <div class="field"><label>Description (optional)</label><textarea name="description" rows="2" placeholder="Brief description of what this paper covers"></textarea></div>
-        <div class="field"><label>Price (KSh) *</label><input name="price" type="number" min="0" required placeholder="e.g. 30 — enter 0 for free"></div>
+        <div class="field"><label>Price (KSh) *</label><input name="price" type="number" min="0" required placeholder="e.g. 30 â€” enter 0 for free"></div>
         <div class="field"><label>PDF file *</label>
           <input type="file" id="pdfUpload" accept="application/pdf" required style="padding:.5rem">
           <span class="small muted">Max 10MB.</span></div>
@@ -6641,7 +6799,7 @@ async function boot(){
     viewSetPassword(); return;
   }
   const { data:{ session } } = await sb.auth.getSession();
-  if(!session){ viewLogin(); return; }
+  if(!session){ viewLanding(); return; }
   state.session = session;
   state.profile = await loadProfile();
   if(state.profile?.school_id){
@@ -6664,12 +6822,12 @@ window.addEventListener('hashchange', ()=>{
 });
 
 sb.auth.onAuthStateChange((event)=>{
-  if(event==='SIGNED_OUT'){ viewLogin(); }
+  if(event==='SIGNED_OUT'){ viewLanding(); }
   if(event==='PASSWORD_RECOVERY'){ viewSetPassword(); }
 });
 
 /* ============================================================================
- * OFFLINE QUEUE — save grading scores locally when offline, sync when back
+ * OFFLINE QUEUE â€” save grading scores locally when offline, sync when back
  * ==========================================================================*/
 const OFFLINE_KEY = 'radari_offline_queue';
 
@@ -6699,11 +6857,11 @@ window.addEventListener('online', syncOfflineQueue);
  * notices, and incidents so you can see all features working immediately.
  * ==========================================================================*/
 window.seedDemoData = async function(){
-  toast('Seeding demo data — please wait...');
+  toast('Seeding demo data â€” please wait...');
   const sid = state.profile?.school_id;
   if(!sid){ toast('No school linked to your account.',true); return; }
 
-  // ── TEACHERS ────────────────────────────────────────────────────────────────
+  // â”€â”€ TEACHERS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const { data:insertedTeachers=[] } = await sb.from('teachers').insert([
     { school_id:sid, full_name:'Jane Wanjiku', tsc_number:'TSC-00123', gender:'Female', phone:'0712 345 678', email:'teacher@radari.ke', qualification:'B.Ed (Primary Education)', specialisation:'Mathematics & Science', date_joined:'2019-01-15', employment_status:'active' },
     { school_id:sid, full_name:'Peter Otieno', tsc_number:'TSC-00456', gender:'Male', phone:'0723 456 789', email:'peter.otieno@radari.ke', qualification:'Diploma in Education', specialisation:'English & Creative Arts', date_joined:'2021-03-01', employment_status:'active' },
@@ -6712,7 +6870,7 @@ window.seedDemoData = async function(){
     { school_id:sid, full_name:'Eunice Achieng', tsc_number:'TSC-01213', gender:'Female', phone:'0756 789 012', email:'achieng@radari.ke', qualification:'B.Ed (Arts)', specialisation:'Social Studies & Creative Arts', date_joined:'2018-09-03', employment_status:'active' },
   ]).select('id,full_name');
 
-  // ── STUDENTS ────────────────────────────────────────────────────────────────
+  // â”€â”€ STUDENTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const { data:insertedStudents=[] } = await sb.from('students').insert([
     // PP1
     { school_id:sid, full_name:'Liam Odhiambo', admission_number:'ADM/2024/001', grade:'PP1', stream:'A', gender:'Male', date_of_birth:'2019-04-12', father_name:'George Odhiambo', mother_name:'Rose Odhiambo', contact_phone:'0711 000 001', nationality:'Kenyan', home_county:'Nairobi' },
@@ -6739,12 +6897,12 @@ window.seedDemoData = async function(){
     { school_id:sid, full_name:'Nathan Ochieng', admission_number:'ADM/2024/017', grade:'Grade 9', stream:'A', gender:'Male', date_of_birth:'2010-09-30', father_name:'Vincent Ochieng', mother_name:'Lydia Ochieng', contact_phone:'0711 000 017', nationality:'Kenyan', home_county:'Kisumu', nemis_number:'NEM-20100930-17' },
   ]).select('id,full_name,grade');
 
-  // ── CBC STRANDS ──────────────────────────────────────────────────────────────
+  // â”€â”€ CBC STRANDS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const { data:insertedStrands=[] } = await sb.from('cbc_strands').insert([
     // PP1
     // PP1
     { school_id:sid, grade:'PP1', subject:'Language Activities', strand:'Listening & Speaking', sub_strand:'Following instructions' },
-    { school_id:sid, grade:'PP1', subject:'Mathematical Activities', strand:'Numbers', sub_strand:'Counting 1–10' },
+    { school_id:sid, grade:'PP1', subject:'Mathematical Activities', strand:'Numbers', sub_strand:'Counting 1â€“10' },
     // Grade 2
     { school_id:sid, grade:'Grade 2', subject:'English Language Activities', strand:'Reading', sub_strand:'Phonics and word recognition' },
     { school_id:sid, grade:'Grade 2', subject:'Mathematical Activities', strand:'Numbers', sub_strand:'Addition within 100' },
@@ -6780,7 +6938,7 @@ window.seedDemoData = async function(){
     { school_id:sid, grade:'Grade 9', subject:'Pre-Technical Studies', strand:'Entrepreneurship', sub_strand:'Business planning' },
   ]).select('id,grade,subject,strand');
 
-  // ── ASSESSMENTS — new strand-free schema ────────────────────────────────────
+  // â”€â”€ ASSESSMENTS â€” new strand-free schema â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // One row per student per learning area per term, strand_id = null
   const assessRows=[];
   function makeThreeTests(basePct){
@@ -6816,7 +6974,7 @@ window.seedDemoData = async function(){
   });
   if(assessRows.length) await sb.from('assessments').insert(assessRows);
 
-  // ── ATTENDANCE ─────────────────────────────────────────────────────────────
+  // â”€â”€ ATTENDANCE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const attRows = [];
   for(let d=0;d<20;d++){
     const dt=new Date(); dt.setDate(dt.getDate()-d);
@@ -6829,7 +6987,7 @@ window.seedDemoData = async function(){
   }
   if(attRows.length) await sb.from('student_attendance').upsert(attRows,{onConflict:'student_id,date'});
 
-  // ── FEES ────────────────────────────────────────────────────────────────────
+  // â”€â”€ FEES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   await sb.from('fee_structures').insert([
     { school_id:sid, grade:'PP1',    term:1, year:2025, amount:4500,  description:'Term 1 tuition' },
     { school_id:sid, grade:'Grade 2',term:1, year:2025, amount:5500,  description:'Term 1 tuition' },
@@ -6846,25 +7004,25 @@ window.seedDemoData = async function(){
   });
   await sb.from('fee_balances').insert(feeRows);
 
-  // ── HEALTH RECORDS ───────────────────────────────────────────────────────────
+  // â”€â”€ HEALTH RECORDS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const g4students = insertedStudents.filter(s=>s.grade==='Grade 4');
   const g7students = insertedStudents.filter(s=>s.grade==='Grade 7');
   const healthRows = [];
-  if(g4students[0]) healthRows.push({ student_id:g4students[0].id, condition_name:'Asthma', description:'Mild intermittent asthma triggered by dust and cold air', severity:'mild', requires_medication:true, medication_notes:'Blue Ventolin inhaler in school bag at all times', emergency_action:'Allow to sit upright and use inhaler. Rest in a well-ventilated area. Call parent if no improvement in 10 minutes.', diagnosed_by:'Dr. Kariuki — Nairobi West Hospital' });
-  if(g4students[1]) healthRows.push({ student_id:g4students[1].id, condition_name:'Nut allergy', description:'Severe allergy to groundnuts and tree nuts', severity:'moderate', requires_medication:true, medication_notes:'EpiPen in school first aid cabinet. Also carries antihistamines.', emergency_action:'Administer EpiPen immediately if anaphylaxis suspected. Call 999 and parent simultaneously.', diagnosed_by:'Dr. Mwenda — Aga Khan Hospital' });
-  if(g7students[0]) healthRows.push({ student_id:g7students[0].id, condition_name:'Epilepsy', description:'Generalised tonic-clonic seizures. Last episode was 8 months ago. Currently well controlled on medication.', severity:'severe', requires_medication:true, medication_notes:'Takes Carbamazepine 200mg every morning. Parents informed of any missed dose.', emergency_action:'Do not restrain. Clear area, protect head with soft object, time the seizure. Call 999 if seizure exceeds 5 minutes. Place in recovery position after seizure. Call parent.', diagnosed_by:'Dr. Wekesa — Kenyatta National Hospital, Neurology Dept.' });
+  if(g4students[0]) healthRows.push({ student_id:g4students[0].id, condition_name:'Asthma', description:'Mild intermittent asthma triggered by dust and cold air', severity:'mild', requires_medication:true, medication_notes:'Blue Ventolin inhaler in school bag at all times', emergency_action:'Allow to sit upright and use inhaler. Rest in a well-ventilated area. Call parent if no improvement in 10 minutes.', diagnosed_by:'Dr. Kariuki â€” Nairobi West Hospital' });
+  if(g4students[1]) healthRows.push({ student_id:g4students[1].id, condition_name:'Nut allergy', description:'Severe allergy to groundnuts and tree nuts', severity:'moderate', requires_medication:true, medication_notes:'EpiPen in school first aid cabinet. Also carries antihistamines.', emergency_action:'Administer EpiPen immediately if anaphylaxis suspected. Call 999 and parent simultaneously.', diagnosed_by:'Dr. Mwenda â€” Aga Khan Hospital' });
+  if(g7students[0]) healthRows.push({ student_id:g7students[0].id, condition_name:'Epilepsy', description:'Generalised tonic-clonic seizures. Last episode was 8 months ago. Currently well controlled on medication.', severity:'severe', requires_medication:true, medication_notes:'Takes Carbamazepine 200mg every morning. Parents informed of any missed dose.', emergency_action:'Do not restrain. Clear area, protect head with soft object, time the seizure. Call 999 if seizure exceeds 5 minutes. Place in recovery position after seizure. Call parent.', diagnosed_by:'Dr. Wekesa â€” Kenyatta National Hospital, Neurology Dept.' });
   if(healthRows.length) await sb.from('student_health').insert(healthRows);
 
-  // ── NOTICES ──────────────────────────────────────────────────────────────────
+  // â”€â”€ NOTICES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   await sb.from('notices').insert([
     { school_id:sid, title:'Term 2 Opening Date', body:'Term 2 2025 will begin on Monday 28th April 2025. All learners should report by 7:30am in full school uniform. Parents are reminded to clear all outstanding Term 1 fees before the first day of Term 2.', audience:'all', posted_by:state.profile.id },
-    { school_id:sid, title:'Parent-Teacher Meeting — 25th April', body:'The school will host a Parent-Teacher meeting on Friday 25th April 2025 at 3:00pm in the school hall. Parents of Grade 7, 8, and 9 learners are especially encouraged to attend as we will discuss the Junior Secondary assessment framework.', audience:'parents', posted_by:state.profile.id },
+    { school_id:sid, title:'Parent-Teacher Meeting â€” 25th April', body:'The school will host a Parent-Teacher meeting on Friday 25th April 2025 at 3:00pm in the school hall. Parents of Grade 7, 8, and 9 learners are especially encouraged to attend as we will discuss the Junior Secondary assessment framework.', audience:'parents', posted_by:state.profile.id },
     { school_id:sid, title:'CBC Continuous Assessment Reminder', body:'All teachers are reminded that School-Based Assessment (SBA) records for Term 1 must be submitted to the Head of Department by 15th April 2025. KNEC portal upload is due by 30th April 2025.', audience:'teachers', posted_by:state.profile.id },
-    { school_id:sid, title:'Sports Day — 20th June 2025', body:'The annual school sports day is scheduled for Friday 20th June 2025. All learners are encouraged to participate. Grade 7 to 9 learners will represent the school in inter-school athletics competitions.', audience:'all', posted_by:state.profile.id },
-    { school_id:sid, title:'Fee Payment Reminder — Term 1', body:'Term 1 2025 fees are now due. You can pay via M-Pesa Paybill 4024241 (Account: your child\'s admission number) or visit the school accounts office. Parents with payment difficulties are encouraged to speak to the Principal.', audience:'parents', posted_by:state.profile.id },
+    { school_id:sid, title:'Sports Day â€” 20th June 2025', body:'The annual school sports day is scheduled for Friday 20th June 2025. All learners are encouraged to participate. Grade 7 to 9 learners will represent the school in inter-school athletics competitions.', audience:'all', posted_by:state.profile.id },
+    { school_id:sid, title:'Fee Payment Reminder â€” Term 1', body:'Term 1 2025 fees are now due. You can pay via M-Pesa Paybill 4024241 (Account: your child\'s admission number) or visit the school accounts office. Parents with payment difficulties are encouraged to speak to the Principal.', audience:'parents', posted_by:state.profile.id },
   ]);
 
-  // ── INCIDENTS ─────────────────────────────────────────────────────────────────
+  // â”€â”€ INCIDENTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const allStudents = insertedStudents;
   if(allStudents.length>=2){
     await sb.from('incidents').insert([
@@ -6875,7 +7033,7 @@ window.seedDemoData = async function(){
     ]);
   }
 
-  // ── TIMETABLE ────────────────────────────────────────────────────────────────
+  // â”€â”€ TIMETABLE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if(insertedTeachers.length>=3){
     await sb.from('timetables').insert([
       { school_id:sid, teacher_id:insertedTeachers[0].id, grade:'Grade 4', stream:'A', subject:'Mathematics', day_of_week:'Mon', start_time:'08:00', end_time:'09:00' },
@@ -6891,23 +7049,23 @@ window.seedDemoData = async function(){
     ]);
   }
 
-  // ── LESSON PLANS ─────────────────────────────────────────────────────────────
+  // â”€â”€ LESSON PLANS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const g4MathStrand = insertedStrands.find(s=>s.grade==='Grade 4'&&s.subject==='Mathematics'&&s.strand==='Numbers');
   const g7SciStrand  = insertedStrands.find(s=>s.grade==='Grade 7'&&s.subject==='Integrated Science');
   if(insertedTeachers[0] && g4MathStrand){
     await sb.from('lesson_plans').insert([
-      { teacher_id:insertedTeachers[0].id, strand_id:g4MathStrand.id, grade:'Grade 4', term:1, year:2025, week_number:3, delivery_date:'2025-02-17', status:'delivered', planned_topic:'Introduction to fractions', learning_outcomes:'Learner should be able to identify and write simple fractions using real objects', key_inquiry:'What is a fraction? Where do we use fractions in daily life?', learning_experiences:'Learners cut oranges and bread into halves and quarters. Group activity: share objects equally and record fractions.', core_competencies:'Critical thinking, Communication', values:'Sharing, Cooperation', pci:'Life skills — sharing resources', resources:'Oranges, bread, fraction charts, exercise books', assessment_method:'Oral questions and observation during activity', delivered_topic:'Covered as planned. Most learners grasped halves and quarters. Will revisit thirds next week.' },
-      { teacher_id:insertedTeachers[0].id, strand_id:g4MathStrand.id, grade:'Grade 4', term:1, year:2025, week_number:4, delivery_date:'2025-02-24', status:'delivered', planned_topic:'Equivalent fractions', learning_outcomes:'Learner should be able to identify equivalent fractions and represent them on a number line', key_inquiry:'How can different fractions represent the same amount?', learning_experiences:'Use fraction strips and number lines. Learners work in pairs to match equivalent fractions.', core_competencies:'Critical thinking, Digital literacy', values:'Accuracy, Patience', pci:'Financial literacy — equal sharing', resources:'Fraction strips, number line chart, rulers', assessment_method:'Written exercise and pair work observation', delivered_topic:'Lesson went well. Some learners still confused with denominators > 4. Will provide remedial work.' },
-      { teacher_id:insertedTeachers[0].id, strand_id:g4MathStrand.id, grade:'Grade 4', term:1, year:2025, week_number:5, delivery_date:'2025-03-03', status:'planned', planned_topic:'Adding fractions with same denominator', learning_outcomes:'Learner should be able to add two fractions with the same denominator', key_inquiry:'How do we combine parts of the same whole?', learning_experiences:'Use fraction bars to add. Learners create their own fraction addition word problems.', core_competencies:'Numeracy, Problem solving', values:'Accuracy', pci:'Nutrition — sharing food equally', resources:'Fraction bars, worksheets, KLB Mathematics Grade 4 pg 45', assessment_method:'Individual written exercise', delivered_topic:'' },
+      { teacher_id:insertedTeachers[0].id, strand_id:g4MathStrand.id, grade:'Grade 4', term:1, year:2025, week_number:3, delivery_date:'2025-02-17', status:'delivered', planned_topic:'Introduction to fractions', learning_outcomes:'Learner should be able to identify and write simple fractions using real objects', key_inquiry:'What is a fraction? Where do we use fractions in daily life?', learning_experiences:'Learners cut oranges and bread into halves and quarters. Group activity: share objects equally and record fractions.', core_competencies:'Critical thinking, Communication', values:'Sharing, Cooperation', pci:'Life skills â€” sharing resources', resources:'Oranges, bread, fraction charts, exercise books', assessment_method:'Oral questions and observation during activity', delivered_topic:'Covered as planned. Most learners grasped halves and quarters. Will revisit thirds next week.' },
+      { teacher_id:insertedTeachers[0].id, strand_id:g4MathStrand.id, grade:'Grade 4', term:1, year:2025, week_number:4, delivery_date:'2025-02-24', status:'delivered', planned_topic:'Equivalent fractions', learning_outcomes:'Learner should be able to identify equivalent fractions and represent them on a number line', key_inquiry:'How can different fractions represent the same amount?', learning_experiences:'Use fraction strips and number lines. Learners work in pairs to match equivalent fractions.', core_competencies:'Critical thinking, Digital literacy', values:'Accuracy, Patience', pci:'Financial literacy â€” equal sharing', resources:'Fraction strips, number line chart, rulers', assessment_method:'Written exercise and pair work observation', delivered_topic:'Lesson went well. Some learners still confused with denominators > 4. Will provide remedial work.' },
+      { teacher_id:insertedTeachers[0].id, strand_id:g4MathStrand.id, grade:'Grade 4', term:1, year:2025, week_number:5, delivery_date:'2025-03-03', status:'planned', planned_topic:'Adding fractions with same denominator', learning_outcomes:'Learner should be able to add two fractions with the same denominator', key_inquiry:'How do we combine parts of the same whole?', learning_experiences:'Use fraction bars to add. Learners create their own fraction addition word problems.', core_competencies:'Numeracy, Problem solving', values:'Accuracy', pci:'Nutrition â€” sharing food equally', resources:'Fraction bars, worksheets, KLB Mathematics Grade 4 pg 45', assessment_method:'Individual written exercise', delivered_topic:'' },
     ]);
   }
   if(insertedTeachers[2] && g7SciStrand){
     await sb.from('lesson_plans').insert([
-      { teacher_id:insertedTeachers[2].id, strand_id:g7SciStrand.id, grade:'Grade 7', term:1, year:2025, week_number:2, delivery_date:'2025-02-10', status:'delivered', planned_topic:'Cell structure: plant and animal cells', learning_outcomes:'Learner should be able to identify and describe the parts of a plant cell and an animal cell', key_inquiry:'What is the basic unit of life? How are plant and animal cells similar and different?', learning_experiences:'Observe prepared slides under microscope. Draw and label cell diagrams. Compare using Venn diagram.', core_competencies:'Critical thinking, Communication, Digital literacy', values:'Curiosity, Accuracy', pci:'Health — understanding the human body', resources:'Microscopes, prepared slides, Biology textbook Grade 7, Manila paper for diagrams', assessment_method:'Labelled diagram in science notebook, quiz', delivered_topic:'All learners viewed slides. Most labelled cells correctly. Three learners needed extra explanation on chloroplasts.' },
+      { teacher_id:insertedTeachers[2].id, strand_id:g7SciStrand.id, grade:'Grade 7', term:1, year:2025, week_number:2, delivery_date:'2025-02-10', status:'delivered', planned_topic:'Cell structure: plant and animal cells', learning_outcomes:'Learner should be able to identify and describe the parts of a plant cell and an animal cell', key_inquiry:'What is the basic unit of life? How are plant and animal cells similar and different?', learning_experiences:'Observe prepared slides under microscope. Draw and label cell diagrams. Compare using Venn diagram.', core_competencies:'Critical thinking, Communication, Digital literacy', values:'Curiosity, Accuracy', pci:'Health â€” understanding the human body', resources:'Microscopes, prepared slides, Biology textbook Grade 7, Manila paper for diagrams', assessment_method:'Labelled diagram in science notebook, quiz', delivered_topic:'All learners viewed slides. Most labelled cells correctly. Three learners needed extra explanation on chloroplasts.' },
     ]);
   }
 
-  // ── ASSIGNMENTS ──────────────────────────────────────────────────────────────
+  // â”€â”€ ASSIGNMENTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if(insertedTeachers[0] && g4MathStrand){
     await sb.from('assignments').insert([
       { teacher_id:insertedTeachers[0].id, grade:'Grade 4', stream:'A', strand_id:g4MathStrand.id, title:'Week 4 Mathematics: Equivalent Fractions Exercise', description:'Complete the equivalent fractions worksheet. Show all your working. Questions 1 to 15. Due on Thursday. Ask a parent or guardian to sign your work before submission.', due_date:'2025-02-27' },
@@ -6915,7 +7073,7 @@ window.seedDemoData = async function(){
     ]);
   }
 
-  // ── LEAVE REQUESTS ───────────────────────────────────────────────────────────
+  // â”€â”€ LEAVE REQUESTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if(insertedTeachers.length>=3){
     await sb.from('leave_requests').insert([
       { teacher_id:insertedTeachers[1].id, school_id:sid, start_date:'2025-06-23', end_date:'2025-06-27', reason:'Annual leave', status:'approved', approved_by:state.profile.id },
